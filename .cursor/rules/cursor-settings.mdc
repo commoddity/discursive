@@ -1,0 +1,48 @@
+---
+description: Cursor IDE manual settings (OpenAI API key, Base URL, model aliases)
+globs: "**/README.md"
+alwaysApply: false
+---
+
+# Cursor Settings Rules
+
+## Manual approach (current default)
+
+The gateway does **not** automatically modify Cursor's `state.vscdb`. You set
+three things manually in Cursor Settings → Models:
+
+| Setting                       | Value                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------ |
+| OpenAI API Key                | Gateway key from `start` JSON (`gateway_key`) or `status` JSON (`gateway_key_masked` to verify) |
+| Override OpenAI Base URL      | `https://<your-tunnel-host>/v1` (or your BYO HTTPS URL)                       |
+| Model                         | An alias from the model table below (e.g. `gpt-5-high`, `gpt-4o-mini`)    |
+
+**Provider choice is the alias** (Kimi vs DeepSeek) — Cursor still talks only to
+the gateway; never to Moonshot/DeepSeek directly.
+
+## Model alias table
+
+Primary Agent-safe aliases (see `gateway.mdc` for full map):
+
+| Alias            | →                                              |
+| ---------------- | ---------------------------------------------- |
+| `gpt-5-high` | Moonshot `kimi-k3` (planning)                  |
+| `gpt-5-codex`    | Moonshot `kimi-k2.7-code` (coding)             |
+| `gpt-4o`         | DeepSeek `deepseek-v4-pro` (execution)         |
+| `gpt-4o-mini`    | DeepSeek `deepseek-v4-flash` (cheap execution) |
+
+Do not use `claude-*` / `gemini-*` names on the OpenAI override path.
+
+## Why manual?
+
+- Cursor's `secret://cursorAuth/openAIKey` storage differs between versions
+- Troubleshooting is easier when you can toggle the override in the UI
+- You can switch between Cursor's own models and the gateway quickly
+
+## `Cursor private network forbidden`
+
+| Symptom                                    | Cause                                 | Fix                                                                           |
+| ------------------------------------------ | ------------------------------------- | ----------------------------------------------------------------------------- |
+| Base URL to localhost fails / SSRF blocked | Cursor cloud cannot reach private IPs | Use public HTTPS tunnel or BYO URL (`tunnel.mdc`); never "fix" with 127.0.0.1 |
+
+<!-- last-verified: 2026-07 -->

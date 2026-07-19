@@ -1,0 +1,53 @@
+# https://golangci-lint.run/docs/configuration/file/
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - unconvert
+    - revive
+
+  settings:
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: var-naming
+        # Intentional names (ConfigPath, UsageTokens, …); package main has no doc.
+        - name: package-comments
+          disabled: true
+        - name: exported
+          disabled: false
+
+  exclusions:
+    generated: lax
+    rules:
+      - path: cmd/
+        text: "package-comments"
+      - path: (.+)\.go$
+        text: "stutters"
+      - path: (.+)\.go$
+        text: "should have comment"
+    paths:
+      - examples
+      - third_party$
+      - builtin$
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

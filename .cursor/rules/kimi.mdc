@@ -1,0 +1,50 @@
+---
+description: Moonshot/Kimi API models, params, streaming, tools (k3 / k2.7-code)
+globs: "**/kimi/**/*.go,**/gateway/**/*.go,**/usage/**/*.go"
+alwaysApply: false
+---
+
+# Kimi / Moonshot Provider Rules
+
+Docs: https://platform.kimi.ai/ · https://platform.kimi.ai/docs/llms.txt  
+Base URL default: `https://api.moonshot.ai/v1` — see `internal/config/urls.go`
+(override: `DISCURSIVE_MOONSHOT_BASE_URL`).
+
+## Supported models (MVP)
+
+| API model ID | Role |
+| ---- | --- |
+| `kimi-k3` | Default flagship; 1M context; always thinks |
+| `kimi-k2.7-code` | Coding |
+| `kimi-k2.7-code-highspeed` | Optional faster coding tier |
+
+## Per-model parameter matrix (do not cross-apply)
+
+| Concern | `kimi-k3` | `kimi-k2.7-code*` |
+| ---- | --- | --- |
+| Thinking | Top-level `reasoning_effort` (`"max"` only today). **Do not** send K2 `thinking` | Use K2 `thinking` object when needed; **do not** send `reasoning_effort` |
+| Sampling | Many fields fixed — **omit** temperature/top_p/penalties/n | Follow model reference; strip Cursor-only junk |
+| Tool loops | Return **complete** assistant message incl. `reasoning_content` | Preserve tool_call pairing; reasoning placeholder rules per gateway |
+| Streaming | Separate `reasoning_content` vs `content` deltas | Same OpenAI-compat SSE family |
+
+Official docs: [K3 quickstart](https://platform.kimi.ai/docs/guide/kimi-k3-quickstart),
+[Model parameter reference](https://platform.kimi.ai/docs/api/models-overview).
+
+## Out of MVP (document only)
+
+- Moonshot Formula official tools (`/tools` + `/fibers`) — Cursor already supplies
+  MCP/tools; not a transparent proxy feature. Web-search currently discouraged
+  by platform near-term.
+- Batch API, Playground, MoonPalace — ops/debug, not the Cursor gateway path.
+
+**Cross-provider:** DeepSeek models and thinking live in `deepseek.mdc`. The
+gateway model map (`gateway.mdc`) routes aliases to Moonshot **or** DeepSeek —
+do not hardcode Moonshot-only assumptions in shared sanitize code.
+
+### `K3 thinking param mismatch`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Moonshot 400 / unexpected thinking behavior on K3 | Sent K2 `thinking` or omitted required replay of `reasoning_content` | Use `reasoning_effort`; strip `thinking`; replay full assistant messages |
+
+<!-- last-verified: 2026-07 -->

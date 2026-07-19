@@ -1,0 +1,56 @@
+---
+description: DeepSeek API models, thinking, tools, errors (v4-flash / v4-pro)
+globs: "**/deepseek/**/*.go,**/gateway/**/*.go,**/usage/**/*.go"
+alwaysApply: false
+---
+
+# DeepSeek Provider Rules
+
+Docs: https://api-docs.deepseek.com/  
+Pricing: https://api-docs.deepseek.com/quick_start/pricing  
+OpenAI-compat shapes: `examples/openai-openapi/` (local reference; do not vendor)
+
+**Base URL (OpenAI format) default:** `https://api.deepseek.com` — see
+`internal/config/urls.go` (override: `DISCURSIVE_DEEPSEEK_BASE_URL`).  
+(Anthropic-compat URL exists upstream; **MVP uses OpenAI chat completions only**.)
+
+## Supported models (MVP)
+
+| API model ID | Role |
+| ---- | --- |
+| `deepseek-v4-flash` | Default cheap / high-volume execution |
+| `deepseek-v4-pro` | Harder reasoning / agentic execution |
+
+**Deprecated aliases (upstream, do not prefer in our map):** `deepseek-chat`,
+`deepseek-reasoner` (historically flash non-thinking / thinking; sunset
+2026-07-24 UTC per DeepSeek docs). Prefer `deepseek-v4-flash` / `deepseek-v4-pro`.
+
+## Thinking / sampling (MVP)
+
+| Concern | Guidance |
+| ---- | --- |
+| Thinking | Prefer explicit `thinking: {"type":"enabled"\|"disabled"}` (+ optional `reasoning_effort`) per DeepSeek docs — **do not** apply Moonshot K2 `thinking` or K3-only `reasoning_effort` semantics blindly |
+| Tools / JSON | Supported on v4 flash & pro — still run gateway sanitizer for Cursor quirks |
+| Streaming | OpenAI-compatible SSE family; separate reasoning vs content when present |
+| Auth | `Authorization: Bearer {DEEPSEEK_API_KEY}` only |
+
+Official first call: https://api-docs.deepseek.com/
+
+## Out of MVP (document only)
+
+- Anthropic Messages base URL (`/anthropic`) — not the Cursor OpenAI override path
+- FIM / chat-prefix beta endpoints unless a later task adds them
+
+### `DeepSeek thinking param mismatch`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| 400 / unexpected thinking on v4 | Sent Moonshot-only params or omitted DeepSeek `thinking` object | Apply **provider-aware** sanitize from model map (`deepseek` row); see `gateway.mdc` |
+
+### `Routed to DeepSeek without API key`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Upstream 401 after alias maps to DeepSeek | Only Moonshot key saved | Require `deepseekKeyEncrypted` when resolved provider is `deepseek` (doctor / set-key) |
+
+<!-- last-verified: 2026-07 -->

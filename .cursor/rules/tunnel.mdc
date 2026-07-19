@@ -1,0 +1,81 @@
+---
+description: Public HTTPS tunnel for Cursor (named CF default, BYO, optional Quick)
+globs: "**/tunnel/**/*.go"
+alwaysApply: false
+---
+
+# Tunnel Rules
+
+## Why a tunnel exists (not Windows-only)
+
+Cursor Override Base URL traffic is sent from **Cursor’s cloud**, which
+SSRF-blocks private/loopback addresses. A local gateway therefore needs a
+**public HTTPS** front door. This is architectural, not a Windows quirk.
+
+**Never** “simplify” by pointing Cursor at `127.0.0.1`.
+
+Tunnel is **provider-agnostic**: one public Base URL fronts the gateway; Moonshot
+vs DeepSeek routing happens inside the gateway after alias resolve (`gateway.mdc`).
+
+## Cloudflare docs (for agents)
+
+When stuck on tunnel/cloudflared behavior, start here (do not invent flags):
+
+- Hub: https://developers.cloudflare.com/tunnel/
+- Index: https://developers.cloudflare.com/tunnel/llms.txt
+- Setup: https://developers.cloudflare.com/tunnel/setup/
+- Quick Tunnels: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/
+- Downloads: https://developers.cloudflare.com/tunnel/downloads/
+
+## Modes
+
+| Mode | Behavior | Agent streaming |
+| ---- | --- | --- |
+| `named` (default) | `cloudflared tunnel run --token` (token from encrypted config); stable `PublicBaseURL` | Yes |
+| `none` | BYO `PublicBaseURL`; no cloudflared | Yes (if front door supports SSE) |
+| `quick` | TryCloudflare ephemeral `*.trycloudflare.com` | **No** (no SSE; 200 in-flight cap) |
+
+Secrets: tunnel token via `set-tunnel-token` → encrypted `config.json` only — never env SoT, never slog raw token.
+
+## Operations
+
+- Download/cache cloudflared for darwin/linux amd64/arm64 under `{dataRoot}/bin/`.
+- Supervise with `cloudflared tunnel --no-autoupdate run --token …` — **do not** use `service install` under our supervisor.
+- Kill stale processes for same port (Unix `kill`).
+- Health-probe public `/health`; restart with backoff on failure.
+- Ephemeral Quick URLs → re-apply Cursor Base URL on change (T08).
+
+### Quick Tunnel constraints
+
+| Fact | Product impact |
+| ---- | --- |
+| Ephemeral `*.trycloudflare.com` | Re-apply Cursor Base URL on change |
+| 200 in-flight cap → 429 | Heavy Agent sessions may fail |
+| No SSE | Not Agent-ready — use `named` or `none` |
+| `~/.cloudflared/config.yaml` present | Quick Tunnel may refuse to start |
+
+### `Ephemeral tunnel URL breaks Cursor`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Agent fails after gateway restart | trycloudflare.com URL rotated | Detect URL change; sync Cursor settings; notify user to retry |
+
+### `Quick Tunnel streaming / SSE broken`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Stream fails via public URL; loopback OK | Quick Tunnels do not support SSE | Use `named` or `none` (BYO) |
+
+### `Quick Tunnel won't start (config.yaml)`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| cloudflared exits / no trycloudflare URL | `config.yaml` in `~/.cloudflared` | Rename/move file; retry or use `named` |
+
+### `Named tunnel healthy but public 502/530`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| `/health` fails on public hostname | No Published application route to gateway port | CF dashboard: hostname → `http://127.0.0.1:{port}` |
+
+<!-- last-verified: 2026-07 -->

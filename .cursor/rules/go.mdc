@@ -1,0 +1,87 @@
+---
+description: Go craft for the Discursive CLI/daemon (slog, packages, tests)
+globs: "**/*.go,go.mod,go.sum"
+alwaysApply: false
+---
+
+# Go Rules — Discursive
+
+## Project Structure (target)
+
+```
+main.go             # Cobra CLI entry (thin main → cli.Execute)
+internal/
+├── config/         # AppSettings, paths, load/save
+├── crypto/         # Moonshot + DeepSeek secret protect + gateway key gen
+├── gateway/        # HTTP server, auth, sanitizer, optimizer, multi-provider proxy
+├── tunnel/         # cloudflared supervise + BYO public URL
+├── usage/          # pricing table + per-session token/cost store
+└── doctor/         # health checks aggregating the above
+```
+
+- Prefer small packages with a **package comment** stating responsibility and a
+  one-line **Contract** (what it may / must not depend on).
+- Reference behavior: `examples/use-kimi-on-cursor/src-tauri/` — reimplement in
+  Go; never vendor Rust/TS into the product tree.
+- CLI: **Cobra** — see `.cursor/rules/cobra.mdc`. No Viper for MVP.
+
+## Logging — `log/slog` (required)
+
+- All product logging uses Go stdlib **`log/slog`**.
+- Do not add logrus/zap unless the user explicitly asks.
+- Structured attrs for gateway/usage: `session_id`, `provider`, `model`,
+  `tokens_in`, `tokens_out`, `cache_hit_tokens`, `cache_miss_tokens`, `est_usd`,
+  `request_id`, `latency_ms`. Per-call `usage` is **DEBUG**; idle `usage_summary`
+  is **INFO** (`DISCURSIVE_LOG_LEVEL`, default info).
+- CLI emits slog JSON on **stdout** (not stderr) so operators can pipe:
+  `go run . start | jq .`
+- **Never** put API keys, gateway secrets, or raw Authorization headers in slog
+  attributes or messages.
+
+## Tests (hard AC)
+
+- Package logic with behavior: **table-driven tests** required for new/changed
+  exported behavior:
+  `tests := []struct{ name string; … }{ … }` + `t.Run(tt.name, …)`.
+- Cover success **and** important failure/edge cases.
+- No network in unit tests unless the task is explicitly live (`T10` / `-tags=live`).
+- Acceptance criteria for Go tasks must include `go test` for touched packages
+  (not only `go build`).
+
+## Craft
+
+- Wrap errors with `%w`; return actionable messages at CLI boundaries.
+- Auth to Moonshot / DeepSeek: `Authorization: Bearer {key}` only (OpenAI-compat).
+  Select key from resolved **provider** in the model map.
+- Verify packages with `go test` before wiring CLI; prefer `make verify` when
+  Makefile exists.
+- **Never suppress linter warnings with `//nolint` comments.** Fix the root
+  cause instead. The only exception is generated code (`*.pb.go`, `*_string.go`).
+
+## Inspiration directive (hard)
+
+- Product Go source and comments must **never** mention Claude Code or imply we
+  ship/vendor third-party agent source.
+- Never copy `examples/use-kimi-on-cursor` into the product module path; port
+  behavior.
+- Do not vendor `examples/openai-openapi/` into the binary.
+
+### `slog secrets leak`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Key material appears in logs or diagnostics | Logging request headers or config dumps wholesale | Log only masked prefixes; redact known secret fields |
+
+### `Missing table-driven coverage`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| New package behavior ships with only a smoke/`go build` check | Treated tests as optional | Add `[]struct{ name string; … }` + `t.Run` for success and edge cases before AC pass |
+
+### `JSON stdout + interactive stderr clash`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Structured slog JSON lines interleave with interactive TUI prompts, breaking both the visual flow for the user and `| jq .` pipe consumers | slog writes to stdout (default) while interactive UI also writes to stdout; the two streams intermix | Redirect interactive prompts to stderr; wrap interactive sections by replacing the default slog handler with one writing to `io.Discard`, then restoring on `defer` |
+
+<!-- last-verified: 2026-07 -->

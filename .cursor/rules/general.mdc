@@ -1,0 +1,372 @@
+---
+description: Always-applied project routing, automation, and safety rules
+alwaysApply: true
+---
+
+# Discursive — Agent Rules
+
+This file is the always-on entry for Cursor (`.cursor/rules/general.mdc`) and
+for any coding agent that loads `CLAUDE.md` (symlink → here). Domain playbooks
+live beside it as `.cursor/rules/*.mdc`. Invocable workflows live in
+`.claude/skills/*/SKILL.md`.
+
+**`.cursor/rules/` is the sole source of truth for rules.** There is no parallel
+`.claude/rules/` tree. Do not recreate one.
+
+**Hub → spoke (hard):** `general.mdc` is the always-on hub (routing, safety,
+cross-cutting). Domain playbooks are spokes (`.cursor/rules/*.mdc`). Do not
+collapse provider/API/framework detail into this file — route via the tables
+below and encode particulars in the matching spoke. New spokes must be added
+to the Routing Map and/or Problem Class table.
+
+---
+
+## CRITICAL: Read Rules Before You Act
+
+Your behavior MUST always be governed by these rule files.
+
+Mandatory protocol for EVERY task:
+
+1. **Read before you act.** Before editing, running commands, or proposing a
+   change, read the matching rule file(s) in `.cursor/rules/`.
+2. **This file (`general.mdc`) always applies.** It carries behavioral
+   guidelines, safety rails, routing, and rule-maintenance process.
+3. **Rules override your defaults.** If a rule conflicts with your instincts,
+   the rule wins.
+4. **If no rule covers the situation, stop and ask** rather than guessing.
+
+### Routing Map — Which Domain Rule To Read
+
+| When you are working on... | Read and follow |
+| ---- | --- |
+| Moonshot/Kimi API (models, thinking, tools, errors) | `.cursor/rules/kimi.mdc` (+ `gateway.mdc` if proxying) |
+| DeepSeek API (v4-flash / v4-pro, thinking, tools, errors) | `.cursor/rules/deepseek.mdc` (+ `gateway.mdc` if proxying) |
+| Local gateway, sanitizer, OpenAI-compat surface, metrics | `.cursor/rules/gateway.mdc` |
+| Cursor settings DB / model alias reference | `.cursor/rules/cursor-settings.mdc` | |
+| cloudflared tunnel / public URL / process supervision | `.cursor/rules/tunnel.mdc` |
+| macOS/Linux packaging, secrets store, autostart | `.cursor/rules/unix-packaging.mdc` |
+| Pricing table, per-session usage, cost estimates | `.cursor/rules/usage.mdc` |
+| Go packages, config, tests, lint, `log/slog` | `.cursor/rules/go.mdc` |
+| Cobra CLI commands, flags, `RunE`, help/completion | `.cursor/rules/cobra.mdc` |
+| Gateway + Cursor behavior together | `gateway.mdc` **and** `cursor-settings.mdc` (+ `kimi.mdc` / `deepseek.mdc` for upstream) |
+| Anything else or unsure | this file + ask |
+
+When a task spans multiple areas, read every applicable rule file before starting.
+
+---
+
+## Project Architecture
+
+- **Product**: Discursive — host Go CLI/daemon (macOS/Linux)
+- **Purpose**: Local OpenAI-compatible gateway that sanitizes Cursor payloads,
+  routes by **alias→provider→model** to **Moonshot Kimi** and/or **DeepSeek**,
+  exposes a public HTTPS tunnel (Cursor cloud cannot hit localhost). Cursor is
+  configured manually with the gateway API key (never upstream provider keys)
+- **Providers**: Moonshot (`kimi-k3`, `kimi-k2.7-code`[+highspeed]) and
+  DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`). Switching is **setting the
+  Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
+- **Runtime**: Go **1.26.5+**; host process — **not** Docker-primary, **not** Wails/Vue/Tauri
+- **CLI**: [Cobra](https://cobra.dev/) (`internal/cli/`); **no Viper** — config in `internal/config`
+- **Reference**: `examples/use-kimi-on-cursor/` (study/port; do not vendor Rust/TS);
+  OpenAI shapes: `examples/openai-openapi/`
+- **Docs**: https://platform.kimi.ai/ · https://api-docs.deepseek.com/
+
+```
+main.go             # Cobra CLI entry (start/stop/status/doctor/usage/…)
+internal/cli/       # Cobra command tree (`root.go`, `start.go`, …)
+internal/
+  config/            # settings, paths, portable mode
+  crypto/            # secrets + gateway key generation
+  gateway/           # HTTP server, auth, sanitizer, responses adapter, optimizer
+  tunnel/            # cloudflared Quick Tunnel (+ BYO URL mode)
+  usage/             # pricing table + per-session accounting
+  doctor/            # health checks
+planning/phases/     # MVP task INDEX + T0x stubs
+examples/use-kimi-on-cursor/  # behavioral reference
+.cursor/rules/       # this tree
+.claude/skills/      # invocable agent skills
+```
+
+### Inspiration sources (hard)
+
+- Study `examples/use-kimi-on-cursor/` (sanitizer, adapter, tunnel, Cursor patch).
+  **Reimplement in Go.** Never vendor, transpile, or paste that tree into the
+  product binary tree.
+- OpenAI request/response shapes: consult `examples/openai-openapi/` when present
+  (reference only; do not ship in the binary).
+- Kimi/Moonshot details: `.cursor/rules/kimi.mdc`. If incomplete, fetch
+  https://platform.kimi.ai/docs/ (start at llms.txt).
+- DeepSeek details: `.cursor/rules/deepseek.mdc`. If incomplete, fetch
+  https://api-docs.deepseek.com/.
+- Never name Claude Code (or inspiration origin) in product source, comments,
+  user-facing copy, or commit messages for product code. Planning/rules may say
+  at most “inspired by Claude Code.”
+
+### Build & Run (target)
+
+```bash
+go build ./...
+go test ./...
+make verify          # lint + test + build when Makefile exists
+make run             # start CLI/daemon (once wired)
+```
+
+Day-to-day: host CLI — not `wails` / Yarn / Docker Compose as the default.
+
+---
+
+## Delivery Principles
+
+**MVP sequence of record:** [`planning/phases/INDEX.md`](../../planning/phases/INDEX.md).
+Use `/task-1-plan` → `/task-2-execute` → `/task-3-complete`. Do **not** follow
+obsolete Dialectic-of-Cognition chat/KB drafts.
+
+### Layered build order
+
+MVP (T01–T10) is complete. The build is:
+
+1. ✅ Scaffold + config + slog
+2. ✅ Secrets + gateway key (Moonshot **and** DeepSeek upstream keys)
+3. ✅ Pricing + usage store (both provider tables)
+4. ✅ Sanitizer + Responses adapter + Optimizer
+5. ✅ Gateway HTTP + multi-provider proxy (alias→provider→model)
+6. ✅ Model / alias map (CLI + `/v1/models`; Kimi + DeepSeek)
+7. ✅ Tunnel (Quick Tunnel default; BYO URL mode)
+8. ✅ CLI doctor + usage report
+9. ✅ E2E / live checks
+
+Future work follows the same discipline: ship in dependency order, verify each
+layer before starting the next.
+
+### Atomic work + verification gates
+
+- Prefer small, independently checkable units over large speculative diffs.
+- Before calling a chunk done, run the cheapest proof: `go build`, `go test`,
+  doctor checks, or a manual Cursor Agent smoke path.
+- **Stop at a failed verification.** Do not pile new features on a broken layer.
+
+### Product boundaries
+
+- Runtime config/data lives under the OS app data dir (see `unix-packaging.mdc`),
+  not in this repo.
+- Upstream keys: Moonshot and DeepSeek keys stay in the app; Cursor gets
+  `sk-{alnum}` gateway key only. Provider is chosen via **model alias**.
+- Never put Moonshot or DeepSeek keys in Cursor settings or logs.
+- Do not “simplify” by pointing Cursor at `127.0.0.1` — Cursor cloud SSRF-blocks it
+  (see `tunnel.mdc`).
+
+---
+
+## Behavioral Guidelines
+
+### 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so.
+- Check whether the change belongs to gateway, tunnel, Cursor settings, usage, or packaging.
+
+### 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No Docker-primary packaging, desktop shell, or Formula official-tool proxy in MVP.
+
+### 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Match existing style, even if you'd do it differently.
+- Remove imports/variables/functions that YOUR changes made unused.
+
+### 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+For multi-step tasks, state a brief plan with verification steps:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+```
+
+Name the layer you are advancing so work stays ordered.
+
+---
+
+## Safety / Workflow Rails
+
+### No-Go Operations
+
+NEVER do these without explicit user approval:
+- Modify `.cursor/rules/` files (except via `/dialectic-of-cognition` skill)
+- Commit or push to git **outside** `/task-3-complete` (that skill commits and
+  **pushes by default**; use `/task-3-complete TXX --no-push` to skip push)
+- Force-push, rewrite shared history, or push secrets
+- Put Moonshot/Kimi or DeepSeek API keys in Cursor settings, logs, diagnostics zips, or git
+- Point Cursor Override Base URL at `127.0.0.1` / private IPs as a “fix”
+- Make Docker the default runtime
+- Run `docker`, `npm`, or `pnpm` unless the user explicitly requests
+
+### Package Managers
+
+- Go modules for the product
+- Never use npm/pnpm/Yarn for the product (reference example under `examples/`
+  may use them; do not copy that into the product tree)
+
+### Verification Defaults
+
+- Prefer **`make verify`** (lint + `go test ./...` + `go build ./...`) after
+  substantive Go edits once Makefile exists
+- Prefer **latest stable** releases for Go toolchain upgrades and new module
+  deps when the environment allows (document pins if policy blocks upgrades)
+- `/task-3-complete` **pushes** the completed branch by default (`--no-push` to
+  skip) and must emit **Manual test** commands (or `Nothing to test` + why)
+- Quick checks: `go build ./...` / `go vet ./...` / package tests under
+  `internal/gateway`, `internal/usage`, `internal/tunnel`, `internal/cursorsettings`
+- Integration proof: CLI start + doctor; live Agent path through public URL
+- If verification fails, fix that layer — do not advance to the next
+
+---
+
+## Rule Maintenance (Self-Evolving Rules)
+
+Rules must improve over time. Follow Mao's dialectic of cognition:
+
+> *From the particular to the general, then from the general to the particular.*
+
+**Operational harness**: invoke `/dialectic-of-cognition` (see
+`.claude/skills/dialectic-of-cognition/SKILL.md`) after non-trivial sessions.
+**Principles** live in this section — the skill is only the procedure.
+
+**Turboplan PoC:** this repo feeds the Turboplan methodology pack via dialectic
+**Mode C** — only extremely generalizable **process** principles (not Kimi,
+gateway, tunnel, or Go domain rules). See the skill’s Mode C gates and pack
+`PROCESS-FEEDBACK.md`. Locate pack via `TURBOPLAN_ROOT` or sibling `../turboplan`.
+
+**Trigger**: Apply this process when ANY of these are true:
+- Debugging took >5 minutes
+- External documentation was consulted
+- More than one corrective attempt was needed before the fix worked
+- The root cause was non-obvious from the error message alone
+
+Trivial fixes (typos, config values, one-line renames) should NOT trigger rule
+updates — they add noise without improving recognition.
+
+### 0. Abort gate — is this generalizable?
+
+Before extracting a principle, apply the one-sentence test: **can you state the
+rule without naming a specific file, function, class, variable, or endpoint?**
+If not, stop here — the value is in the diff, not in a rule.
+
+Good rules capture **failure modes of the framework or pattern** (everyone who
+proxies Cursor through a tunnel hits ephemeral-URL drift). Business-logic one-offs
+do not generalize. When in doubt, abort.
+
+Example that qualifies: Cursor cloud SSRF-blocks private Base URLs → encode in
+`tunnel.mdc` that a public HTTPS front door is required (names the *mechanism*).
+
+Example that does NOT qualify: “the wrong session id was passed to usage.Record”
+(names a specific bug).
+
+### 1. Particular → General (abstract)
+
+Extract the **class** of problem, not the instance.
+
+### 2. General → Particular (encode)
+
+Write into the appropriate `.cursor/rules/*.mdc`. A good entry answers:
+
+1. **What does it look like?** (symptoms)
+2. **What causes it?** (root pattern)
+3. **How do you fix it?** (actionable steps)
+
+```
+### `<Problem Class Name>`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| `<observable>` | `<root pattern>` | `<actionable steps>` |
+
+<!-- last-verified: YYYY-MM -->
+```
+
+### 3. Verify — practice tests theory
+
+Would a cold-read AI recognize the symptom and apply the fix without
+re-investigation? If not, refine.
+
+### 4. Check for contradictions
+
+When a new principle conflicts with an old one for the same symptoms, encode the
+boundary condition rather than silently overwriting.
+
+### 5. Deduplicate before adding — prefer refinement over proliferation
+
+### 6. Rule decay — keep the knowledge base alive
+
+Add `<!-- last-verified: YYYY-MM -->`. Review entries older than 6 months when
+working in that domain.
+
+### 7. File size threshold — split before rules become unreadable
+
+If a `.cursor/rules/*.mdc` file exceeds ~550 lines after an edit, propose a split
+to the user. Never split without approval.
+
+---
+
+## Routing Table — Problem Class → Rule File
+
+| Change type / Problem domain | Rule file |
+| ---- | --- |
+| Kimi/Moonshot request/response quirks | `kimi.mdc` |
+| DeepSeek request/response quirks | `deepseek.mdc` |
+| Sanitizer / tool schema / stream / model alias policy | `gateway.mdc` |
+| Cursor settings reference / model alias map | `cursor-settings.mdc` | |
+| Tunnel flapping / cloudflared missing / ephemeral URL | `tunnel.mdc` |
+| Secrets, data dirs, autostart (Unix) | `unix-packaging.mdc` |
+| Pricing, session usage, cost estimates | `usage.mdc` |
+| Go style, concurrency, slog, tests, lint | `go.mdc` |
+| Cobra command tree / flags / RunE / help | `cobra.mdc` |
+| Makefile targets / version bump / release tagging | `general.mdc` (Release Process section below) |
+| Cross-cutting / build / unknown | `general.mdc` |
+
+This table grows as entries are added to domain rule files. Update it when a
+new category is encoded. Every file under `.cursor/rules/` (except this hub’s
+self-references) must appear in the Routing Map and/or this table.
+
+---
+
+## Release Process
+
+- Version is tracked in `VERSION`.
+- `make release-patch` / `make release-minor` / `make release-major` bumps the
+  version in `VERSION`, commits, tags, and pushes. CI (`.github/workflows/release-binaries.yaml`)
+  builds and publishes binaries via GoReleaser.
+- Binary name: `discursive`. GoReleaser config: `.goreleaser.yml`.
+- Ldflags inject version/commit/date at build time via `main.version`.
+
+---
+
+## Skills Inventory
+
+| Skill | Path | Purpose |
+| ---- | --- | ---- |
+| `/dialectic-of-cognition` | `.claude/skills/dialectic-of-cognition/SKILL.md` | Capture session learnings into `.cursor/rules/*.mdc` |
+| `/task-1-plan` | `.claude/skills/task-1-plan/SKILL.md` | Plan/re-plan one `planning/phases/TXX` task |
+| `/task-2-execute` | `.claude/skills/task-2-execute/SKILL.md` | Execute one phase task until AC pass; hand off to `/task-3-complete` |
+| `/task-3-complete` | `.claude/skills/task-3-complete/SKILL.md` | Verify + dialectic + INDEX `✅` + commit + push (default) + manual test + next `<stub-stem>` branch |
+| `/audit-rules` | `.claude/skills/audit-rules/SKILL.md` | Read-only audit of rules + skills vs codebase |
+
+### Knowledge stores
+
+| Store | Use for |
+| ----- | --- |
+| `.cursor/rules/*.mdc` | Coding agent conventions / framework failure modes |
+| App data dir (see `unix-packaging.mdc`) | Runtime config, usage logs, cloudflared binary — **not** repo files |
+| `planning/phases/` | MVP task sequence of record |

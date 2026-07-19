@@ -1,0 +1,75 @@
+---
+description: Cobra CLI layout, flags, RunE, and testing (no Viper for MVP)
+globs: "**/cmd/**/*.go"
+alwaysApply: false
+---
+
+# Cobra Rules — Discursive
+
+**Docs (if stuck):** https://cobra.dev/docs/
+
+CLI framework from **T01** onward. **No Viper** for MVP — config lives in
+`internal/config` (JSON/files); Cobra owns commands and flags only. Bind flags
+into config with explicit code when needed.
+
+## Layout
+
+```
+main.go         # calls cli.Execute() (thin entry point)
+root.go         # rootCmd, persistent flags, Execute (lives in internal/cli/)
+…               # command files in internal/cli/
+```
+
+- Flat layout under `internal/cli/` (one file per command).
+- Keep `internal/*` packages **Cobra-free** where possible — pass plain values /
+  config structs from command `RunE` into packages.
+- Prefer `RunE` returning `error` over `Run` + silent exits.
+
+## Root command
+
+- Set `Use`, `Short`, `Long`.
+- Use `SilenceUsage: true` (or equivalent) when unexpected errors should not dump
+  full help — still show usage for user input mistakes when helpful.
+- Wire `log/slog` early in root / persistent PreRun; never log API keys.
+
+## Subcommands
+
+- `rootCmd.AddCommand(...)`.
+- One file per command as the tree grows (`version` / `status` stubs ok early).
+- Prefer `cmd.Context()` for cancelable work.
+
+### Help text convention
+
+- Prefix `Short` and `Long` titles with an emoji for scanability (e.g. `🚀`, `🔍`, `🛑`).
+- `Long` text should include usage examples (bare command, common argument combos).
+- Keep `Short` to one line; `Long` can be multi-paragraph with usage examples.
+
+## Flags
+
+| Kind | Use when |
+| ---- | --- |
+| Local (`Flags()`) | Only this command |
+| Persistent (`PersistentFlags()`) | Inherited by children (e.g. `--portable`, log format) |
+
+Do **not** introduce Viper. Parse flags in `RunE` / `PreRunE` and pass into
+`internal/config` helpers.
+
+## Testing
+
+- Table-driven tests for command helpers and `RunE` behavior.
+- Smoke: root `--help` / `Execute` with args via `rootCmd.SetArgs` + capture.
+- No network in unit tests unless the task is explicitly live.
+
+### `Child command does not see parent flag`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Flag works on root but missing on subcommand | Registered with `Flags()` not `PersistentFlags()` | Use `PersistentFlags()` for inherited options |
+
+### `set-*-key hangs when run without --key`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Command blocks with no prompt | `io.ReadAll(stdin)` on empty/non-TTY stdin | Detect TTY; prompt with hidden input (`golang.org/x/term`); always support `--key` flag |
+
+<!-- last-verified: 2026-07 -->

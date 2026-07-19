@@ -1,0 +1,57 @@
+---
+description: macOS/Linux install layout, secrets, autostart (host CLI, not Docker-primary)
+globs: "**/config/**/*.go,**/crypto/**/*.go,**/cmd/**/*.go"
+alwaysApply: false
+---
+
+# Unix Packaging Rules
+
+## Runtime
+
+- **Primary**: host Go CLI/daemon on macOS and Linux (Go 1.26.5+).
+- **Not** Docker-primary for MVP (Cursor DB + Keychain/libsecret are host-native).
+- Product daemon should stay CGO-free; SQLite for Cursor DB via pure-Go driver.
+
+## Data directories
+
+| Platform | Typical root |
+| ---- | --- |
+| macOS | `~/Library/Application Support/<AppName>/` |
+| Linux | XDG data/config dirs under `~/.local/share` / `~/.config` |
+
+Store: `config.json`, logs, usage JSONL, cloudflared binary. Portable mode may
+keep data next to the executable when a marker is present.
+
+## Secrets
+
+- **Do not** ship the reference’s non-Windows plaintext-base64 approach as-is.
+- Prefer macOS Keychain / Linux secret-service; fallback = encrypted file with
+  restrictive permissions (`0600`).
+- Gateway keys are local `sk-{alnum}` strings; **Moonshot and DeepSeek** keys never
+  leave the app (never in Cursor settings).
+
+## Autostart (later polish)
+
+- macOS: LaunchAgent
+- Linux: systemd user unit
+
+### `Secrets stored as plaintext base64`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Moonshot key recoverable from config.json (`moonshotKeyEncrypted` plaintext or weak encoding) | Copied Windows-reference non-DPAPI path | AES-256-GCM via `internal/crypto` + `data/master.key` (`0600`); never plaintext base64 |
+| DeepSeek key recoverable from config.json (`deepseekKeyEncrypted` plaintext or weak encoding) | Same | Same `Protect`/`Unprotect` path as Moonshot |
+
+### `Upstream URL string drift`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Proxy hits wrong host or `/v1/v1/chat/completions` | Hardcoded literals scattered; Moonshot `/v1` vs DeepSeek host root | Use `internal/config/urls.go` (`UpstreamBaseURL` / `ChatCompletionsURL`); optional `DISCURSIVE_*_BASE_URL` env only |
+
+### `Path helpers only test the host OS`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Table-driven path tests skip Linux (or macOS) cases on the other host | Resolution reads `runtime.GOOS` / env with no injection seam | Pass GOOS / HOME / XDG / exe dir via an opts struct so both platforms are covered in unit tests |
+
+<!-- last-verified: 2026-07 -->

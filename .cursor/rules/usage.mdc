@@ -1,0 +1,76 @@
+---
+description: Embedded pricing table, per-session usage, cost estimates (slog)
+globs: "**/usage/**/*.go"
+alwaysApply: false
+---
+
+# Usage & Pricing Rules
+
+## Billing that the product estimates
+
+`est_usd` uses the **upstream provider table for the real model id** (after
+alias→provider→model resolution). Never price on Cursor comparison rows.
+
+Date-stamp tables in code comments; refresh when platforms change.
+
+### Moonshot / Kimi (USD per 1M tokens)
+
+Source: https://platform.kimi.ai/docs/pricing/chat
+
+| Model | Cache hit / MTok | Input / MTok | Output / MTok |
+| ---- | --- | --- | --- |
+| `kimi-k3` | $0.30 | $3.00 | $15.00 |
+| `kimi-k2.7-code` | $0.19 | $0.95 | $4.00 |
+| `kimi-k2.7-code-highspeed` | $0.38 | $1.90 | $8.00 |
+
+### DeepSeek (USD per 1M tokens)
+
+Source: https://api-docs.deepseek.com/quick_start/pricing  
+(Independent summary cross-check: https://chat-deep.ai/pricing/ — always prefer official.)
+
+| Model | Cache hit / MTok | Cache miss (input) / MTok | Output / MTok |
+| ---- | --- | --- | --- |
+| `deepseek-v4-flash` | $0.0028 | $0.14 | $0.28 |
+| `deepseek-v4-pro` | $0.003625 | $0.435 | $0.87 |
+
+DeepSeek usage responses expose `prompt_cache_hit_tokens` /
+`prompt_cache_miss_tokens` — prefer those fields for estimates when present.
+
+## Cursor comparison (reference only — not gateway billing)
+
+| Provider | Model | Input | Cache read/hit | Output |
+| ---- | --- | --- | --- | --- |
+| Cursor | Composer 2.5 | $0.50 | $0.20 | $2.50 |
+| Cursor | Composer 2.5 (Fast) | $3.00 | $0.50 | $15.00 |
+| Cursor | Grok 4.5 | $2.00 | $0.50 | $6.00 |
+| Cursor | Grok 4.5 (Fast) | $4.00 | $1.00 | $18.00 |
+
+Peer reading (approx.): K3 ↔ Grok 4.5 family; K2.7 Code ↔ Composer 2.5 family;
+DeepSeek V4 is typically far cheaper per token than either. Do not use Cursor
+rows for live cost math.
+
+## Session accounting
+
+- **Event** = one upstream API call (one completion). Logged at **DEBUG** as `msg=usage`.
+- **Agent-task window** = consecutive events until idle (`DefaultIdleTimeout` = **30s**,
+  override `DISCURSIVE_USAGE_IDLE`). Logged at **INFO** as `msg=usage_summary`.
+- Mid-Agent pauses longer than 30s may split one task into multiple summaries —
+  set `DISCURSIVE_USAGE_IDLE=5m` (or similar) for a longer window.
+- Session id = gateway process run or explicit CLI session id (groups events).
+- Persist JSONL under app data (`usage/events.jsonl`); expose CLI `usage` later (T09).
+- Log level: `DISCURSIVE_LOG_LEVEL=debug|info|warn|error` (default `info`).
+- Never log secrets.
+
+### `Cost estimate uses wrong price row`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Usage $ doesn’t match provider invoice shape | Priced pre-mapping alias, wrong provider table, or Cursor comparison row | Resolve alias→**provider+real model**; pick Moonshot vs DeepSeek table; never Cursor rows |
+
+### `INFO flooded with every API call`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| One log line per completion at INFO | Per-call logged at Info | Use `LogEvent` at Debug; `usage_summary` at Info after idle |
+
+<!-- last-verified: 2026-07 -->

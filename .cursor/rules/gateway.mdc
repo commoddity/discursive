@@ -1,0 +1,112 @@
+---
+description: Local OpenAI-compat gateway, sanitizer, auth, streaming proxy
+globs: "**/gateway/**/*.go"
+alwaysApply: false
+---
+
+# Gateway Rules
+
+Local OpenAI-compatible HTTP server on **`127.0.0.1` only** (default port 4001).
+Public reachability is via tunnel / BYO URL — see `tunnel.mdc`.
+
+## Key model (upstream ×2 + gateway)
+
+| Key                       | Config field           | Who sees it                          |
+| ------------------------- | ---------------------- | ------------------------------------ |
+| Moonshot / Kimi API key   | `moonshotKeyEncrypted` | App only → Authorization to Moonshot |
+| DeepSeek API key          | `deepseekKeyEncrypted` | App only → Authorization to DeepSeek |
+| Gateway key (`sk-{alnum}`) | `gatewayKey`           | Cursor as “OpenAI API Key”           |
+
+Never log or return upstream provider keys. Wrong gateway key → OpenAI-shaped 401.
+Routing picks which upstream key to use from the **model map** (alias → provider).
+
+### Upstream base URLs (code SoT)
+
+Hardcoded defaults + optional env overrides live in
+`internal/config/urls.go` (`UpstreamBaseURL`, `ChatCompletionsURL`).
+
+| Provider | Default base                 | Env override                    |
+| -------- | ---------------------------- | ------------------------------- |
+| moonshot | `https://api.moonshot.ai/v1` | `DISCURSIVE_MOONSHOT_BASE_URL` |
+| deepseek | `https://api.deepseek.com`   | `DISCURSIVE_DEEPSEEK_BASE_URL` |
+
+Use those helpers so Moonshot’s `/v1` and DeepSeek’s host root never produce
+`/v1/v1/...`. Do not scatter raw URL string literals in the gateway proxy.
+
+## Endpoints (MVP)
+
+| Endpoint                    | Purpose                                              |
+| --------------------------- | ---------------------------------------------------- |
+| `GET /health`               | Status, metrics, URLs, which provider keys present   |
+| `GET\|POST /v1/models`      | Advertise aliases + real ids (+ provider)            |
+| `POST /v1/chat/completions` | Main path                                            |
+| `POST /v1/responses`        | Same handler after Responses→Chat adapt              |
+| Other `/v1/*`               | Proxy when cheap (embeddings/files) — provider-aware |
+
+## Model map (alias → provider → real id)
+
+Switching providers/models for the user is **choosing the Cursor alias** (or a
+listed real id). One table drives sanitize policy, upstream base URL, API key,
+and pricing row.
+
+### Primary Cursor aliases (Agent-first)
+
+| Cursor alias     | Provider | Real model          | Typical use         |
+| ---------------- | -------- | ------------------- | ------------------- |
+| `gpt-5-high` | moonshot | `kimi-k3`           | Planning / flagship |
+| `gpt-5-codex`    | moonshot | `kimi-k2.7-code`     | Coding              |
+| `gpt-4o`         | deepseek | `deepseek-v4-pro`   | Harder execution    |
+| `gpt-4o-mini`    | deepseek | `deepseek-v4-flash` | Cheap execution     |
+
+Set the alias manually in Cursor Settings → Models. The gateway maps it and
+picks the right base URL + API key. No auto-application to Cursor's state.vscdb
+— operators configure Cursor by hand (see `cursor-settings.mdc`).
+
+## Sanitizer order (preserve)
+
+1. Map Cursor alias → **{provider, real model}** (table above)
+2. Apply **provider- and model-aware** thinking / sampling policy
+   (`kimi.mdc` or `deepseek.mdc`)
+3. Map `max_completion_tokens` → `max_tokens`; clamp per model context
+4. Strip incompatible OpenAI/Cursor sampling fields
+5. Adapt Responses `input`/`instructions` → `messages`
+6. Repair tool_call ids / pairing; sanitize tool names + JSON Schema
+7. Seed empty probe message when tools present and messages empty
+8. Message role fixes (`developer`→`system`); reasoning placeholder for tool-call assistants when required
+
+Then proxy to the resolved provider base URL with that provider’s key. Stream
+what Cursor asked for (passthrough SSE or synthesize). Retry once on upstream
+400s mentioning `tool_call_id` (when that provider returns them).
+
+Behavioral checklist (Moonshot-oriented reference):
+`examples/use-kimi-on-cursor/src-tauri/tests/`. DeepSeek: OpenAI shapes in
+`examples/openai-openapi/` + `deepseek.mdc`.
+
+### `Cursor Agent tool schema rejected`
+
+| Symptom                                   | Cause                                                    | Fix                                              |
+| ----------------------------------------- | -------------------------------------------------------- | ------------------------------------------------ |
+| Upstream 400 on tools / empty Agent turns | MCP names, deep schemas, Responses shape, empty messages | Run full sanitizer order; seed probe; repair ids |
+
+### `Wrong upstream after alias switch`
+
+| Symptom                                                       | Cause                                                | Fix                                                            |
+| ------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------- |
+| Request hits Moonshot while alias is DeepSeek (or vice versa) | Alias map missing provider field; hardcoded base URL | Resolve provider from map every request; select base URL + key |
+
+### Go sanitizer library (`internal/gateway`)
+
+Code SoT for alias resolve + request sanitize (T04+): `ResolveModel`,
+`SanitizeRequest` → `SanitizeResult` with `Provider`, `Model`, and sanitized
+`Body`. Unknown Cursor alias → error (HTTP layer maps to 400). **Strip order:**
+apply provider thinking policy **before** stripping `reasoning_effort` — K3 must
+keep `reasoning_effort: "max"`; do not copy reference K2 “strip effort then
+inject thinking” blindly. K3: no `reasoning_content` placeholder injection.
+
+### `Unknown variant image_url / Upstream 400 on vision content`
+
+| Symptom                                                                                                                        | Cause                                                                                                                                                            | Fix                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upstream returns 400 with `unknown variant image_url` or similar; occurs when Agent chat history includes screenshots / images | Cursor resends image content (`image_url`, `input_image`, `image_file`) in Agent message history; non-vision models (DeepSeek, some Moonshot) reject image parts | Strip `image_url`, `input_image`, and `image_file` content parts in both chat-completion messages (`sanitizeMessageContent`) and Responses-shaped input (`convertInputItems`, `normalizeContentParts`). Replace with `[image omitted]` text placeholder. Applies to both `/v1/chat/completions` and `/v1/responses` paths. |
+
+<!-- last-verified: 2026-07 -->
