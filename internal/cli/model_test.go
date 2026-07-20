@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -63,7 +62,10 @@ func TestSetModelPersists(t *testing.T) {
 			if err := cmd.Execute(); err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
-			dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+			dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+			if err != nil {
+				t.Fatal(err)
+			}
 			s, err := config.Load(dataRoot)
 			if err != nil {
 				t.Fatal(err)
