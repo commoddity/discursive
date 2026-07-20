@@ -16,7 +16,7 @@ alwaysApply: false
   matching `v*`.
   - **Verify** job (every push/PR): lint + `go test ./...` + `go build ./...`.
   - **Release** job (tag pushes only): GoReleaser builds and publishes binaries
-    via `.goreleaser.yml`. Requires `secrets.GH_PAT` with write permissions.
+    via `.goreleaser.yml`. Uses the built-in `secrets.GITHUB_TOKEN` (no custom PAT needed).
 - Binary name: `discursive`. GoReleaser config: `.goreleaser.yml`.
 - Ldflags inject version/commit/date at build time via `main.version`.
 
