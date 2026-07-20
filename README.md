@@ -259,8 +259,10 @@ that shows real-time API spend and system health.
 
 <div align="center">
   <img src=".github/img/usage-dashboard.png" alt="Usage Dashboard" width="500">
-  <caption>Usage Dashboard</caption>
 </div>
+<p align="center">
+  <em>Usage Dashboard</em>
+</p>
 
 The dashboard uses Chart.js (vendored, no external CDN) and is served entirely
 from the Go binary via `embed.FS`. No separate process, port, or configuration
