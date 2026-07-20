@@ -17,15 +17,13 @@ func TestRootHelp(t *testing.T) {
 		want string
 	}{
 		{name: "help flag", args: []string{"--help"}, want: "Usage:"},
-		{name: "lists_set_moonshot", args: []string{"--help"}, want: "set-moonshot-key"},
-		{name: "lists_set_deepseek", args: []string{"--help"}, want: "set-deepseek-key"},
-		{name: "lists_rotate", args: []string{"--help"}, want: "rotate-gateway-key"},
-		{name: "lists_set_tunnel_token", args: []string{"--help"}, want: "set-tunnel-token"},
-		{name: "lists_set_public_url", args: []string{"--help"}, want: "set-public-url"},
+		{name: "lists_set", args: []string{"--help"}, want: "set"},
 		{name: "lists_init", args: []string{"--help"}, want: "init"},
 		{name: "lists_start", args: []string{"--help"}, want: "start"},
+		{name: "lists_completion", args: []string{"--help"}, want: "completion"},
 		{name: "version", args: []string{"version"}, want: "0.0.0-dev"},
 		{name: "mentions_deepseek", args: []string{"--help"}, want: "DeepSeek"},
+		{name: "completion_zsh", args: []string{"completion", "zsh"}, want: "compdef"},
 	}
 
 	for _, tt := range tests {

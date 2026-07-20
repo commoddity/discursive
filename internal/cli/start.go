@@ -19,7 +19,7 @@ import (
 )
 
 func newStartCmd() *cobra.Command {
-	var tunnelFlag, publicURLFlag string
+	var tunnelFlag, publicURLFlag, logLevelFlag string
 	var backgroundFlag, bgChildFlag bool
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -33,19 +33,30 @@ Use Ctrl-C to stop cleanly.
   --background    Detach and run in the background.  Logs go to
                   {dataRoot}/gateway.log — use 'discursive logs' to watch.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStart(cmd, tunnelFlag, publicURLFlag, backgroundFlag, bgChildFlag)
+			return runStart(cmd, tunnelFlag, publicURLFlag, logLevelFlag, backgroundFlag, bgChildFlag)
 		},
 	}
 	cmd.Flags().StringVar(&tunnelFlag, "tunnel", "", "tunnel mode: named, none, or quick (persists to config)")
 	cmd.Flags().StringVar(&publicURLFlag, "public-url", "", "public HTTPS base URL ending in /v1 (persists to config)")
+	cmd.Flags().StringVar(&logLevelFlag, "log-level", "", "log verbosity: debug, info, warn, error (overrides DISCURSIVE_LOG_LEVEL)")
 	cmd.Flags().BoolVar(&backgroundFlag, "background", false, "detach and run in the background")
 	cmd.Flags().BoolVar(&bgChildFlag, "_bg", false, "")
 	_ = cmd.Flags().MarkHidden("_bg")
+	_ = cmd.RegisterFlagCompletionFunc("tunnel", cobra.FixedCompletions(
+		[]string{"named", "none", "quick"}, cobra.ShellCompDirectiveNoFileComp,
+	))
+	_ = cmd.RegisterFlagCompletionFunc("log-level", cobra.FixedCompletions(
+		[]string{"debug", "info", "warn", "error"}, cobra.ShellCompDirectiveNoFileComp,
+	))
 	return cmd
 }
 
-func runStart(cmd *cobra.Command, tunnelFlag, publicURLFlag string, background, bgChild bool) error {
+func runStart(cmd *cobra.Command, tunnelFlag, publicURLFlag, logLevelFlag string, background, bgChild bool) error {
 	setupLogger()
+
+	if logLevelFlag != "" {
+		setupLoggerWithLevel(logLevelFlag)
+	}
 
 	opts, err := config.DefaultResolveOpts(portableFlag)
 	if err != nil {
@@ -265,7 +276,7 @@ func buildTunnelConfig(settings config.AppSettings, dataRoot, publicURL string) 
 			return nil, err
 		}
 		if tok == nil || *tok == "" {
-			return nil, fmt.Errorf("tunnel mode named requires tunnel token in config (run set-tunnel-token)")
+			return nil, fmt.Errorf("tunnel mode named requires tunnel token in config (run set --tunnel-token)")
 		}
 		cfg.Token = *tok
 	case config.TunnelModeNone:

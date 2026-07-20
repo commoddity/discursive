@@ -62,7 +62,7 @@ When a task spans multiple areas, read every applicable rule file before startin
   routes by **alias→provider→model** to **Moonshot Kimi** and/or **DeepSeek**,
   exposes a public HTTPS tunnel (Cursor cloud cannot hit localhost). Cursor is
   configured manually with the gateway API key (never upstream provider keys)
-- **Providers**: Moonshot (`kimi-k3`, `kimi-k2.7-code`[+highspeed]) and
+- **Providers**: Moonshot (`kimi-k3`, `kimi-k2.6`) and
   DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`). Switching is **setting the
   Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
 - **Runtime**: Go **1.26.5+**; host process — **not** Docker-primary, **not** Wails/Vue/Tauri

@@ -89,6 +89,11 @@ type sseUsageScanner struct {
 	buf   strings.Builder
 	usage *tokenUsage
 	found bool
+	err   *modelNotAvailableError // set when SSE chunk contains an error
+}
+
+type modelNotAvailableError struct {
+	message string
 }
 
 func (sc *sseUsageScanner) feed(p []byte) {
@@ -124,6 +129,26 @@ func (sc *sseUsageScanner) consumeLine(line string) {
 		sc.usage = &parsed
 		sc.found = true
 	}
+	if sc.err == nil {
+		sc.err = extractModelNotAvailableError(obj)
+	}
+}
+
+func extractModelNotAvailableError(obj map[string]any) *modelNotAvailableError {
+	e, ok := obj["error"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	msg, ok := e["message"].(string)
+	if !ok {
+		return nil
+	}
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "not available") ||
+		(strings.Contains(lower, "model") && (strings.Contains(lower, "not found") || strings.Contains(lower, "not available"))) {
+		return &modelNotAvailableError{message: msg}
+	}
+	return nil
 }
 
 func synthesizeSSE(completion map[string]any) []byte {

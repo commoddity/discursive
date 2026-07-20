@@ -54,7 +54,7 @@ and pricing row.
 | Cursor alias     | Provider | Real model          | Typical use         |
 | ---------------- | -------- | ------------------- | ------------------- |
 | `gpt-5-high` | moonshot | `kimi-k3`           | Planning / flagship |
-| `gpt-5-codex`    | moonshot | `kimi-k2.7-code`     | Coding              |
+| `gpt-5-codex`    | moonshot | `kimi-k2.6`          | Image-capable; thinking off by default |
 | `gpt-4o`         | deepseek | `deepseek-v4-pro`   | Harder execution    |
 | `gpt-4o-mini`    | deepseek | `deepseek-v4-flash` | Cheap execution     |
 

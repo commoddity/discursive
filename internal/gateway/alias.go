@@ -27,22 +27,17 @@ type Route struct {
 type AdvertisedModel struct {
 	ID           string
 	Provider     config.Provider
-	Experimental bool // real-id extras / highspeed — not Agent-safe until T10
+	Experimental bool // reserved for future use
 }
 
-// ListAdvertisedModels returns the canonical advertise list (aliases first, then real ids).
+// ListAdvertisedModels returns the canonical advertise list (aliases only).
 // Must stay aligned with ResolveModel cases.
 func ListAdvertisedModels() []AdvertisedModel {
 	return []AdvertisedModel{
-		{ID: "gpt-5-high", Provider: config.ProviderMoonshot},
-		{ID: "gpt-5-codex", Provider: config.ProviderMoonshot},
-		{ID: "gpt-4o", Provider: config.ProviderDeepSeek},
-		{ID: "gpt-4o-mini", Provider: config.ProviderDeepSeek},
-		{ID: "kimi-k3", Provider: config.ProviderMoonshot, Experimental: true},
-		{ID: "kimi-k2.7-code", Provider: config.ProviderMoonshot, Experimental: true},
-		{ID: "kimi-k2.7-code-highspeed", Provider: config.ProviderMoonshot, Experimental: true},
-		{ID: "deepseek-v4-pro", Provider: config.ProviderDeepSeek, Experimental: true},
-		{ID: "deepseek-v4-flash", Provider: config.ProviderDeepSeek, Experimental: true},
+		{ID: "gpt-4o", Provider: config.ProviderMoonshot},
+		{ID: "gpt-4o-mini", Provider: config.ProviderMoonshot},
+		{ID: "o1", Provider: config.ProviderDeepSeek},
+		{ID: "o3-mini", Provider: config.ProviderDeepSeek},
 	}
 }
 
@@ -50,18 +45,18 @@ func ListAdvertisedModels() []AdvertisedModel {
 // Unknown models return an error (T05 maps to 400).
 func ResolveModel(requested string) (Route, error) {
 	switch requested {
-	case "gpt-5-high":
-		return Route{config.ProviderMoonshot, "kimi-k3", PolicyK3}, nil
-	case "gpt-5-codex":
-		return Route{config.ProviderMoonshot, "kimi-k2.7-code", PolicyK2}, nil
 	case "gpt-4o":
-		return Route{config.ProviderDeepSeek, "deepseek-v4-pro", PolicyDeepSeek}, nil
+		return Route{config.ProviderMoonshot, "kimi-k3", PolicyK3}, nil
 	case "gpt-4o-mini":
+		return Route{config.ProviderMoonshot, "kimi-k2.6", PolicyK2}, nil
+	case "o1":
+		return Route{config.ProviderDeepSeek, "deepseek-v4-pro", PolicyDeepSeek}, nil
+	case "o3-mini":
 		return Route{config.ProviderDeepSeek, "deepseek-v4-flash", PolicyDeepSeek}, nil
 	case "kimi-k3":
 		return Route{config.ProviderMoonshot, "kimi-k3", PolicyK3}, nil
-	case "kimi-k2.7-code", "kimi-k2.7-code-highspeed":
-		return Route{config.ProviderMoonshot, requested, PolicyK2}, nil
+	case "kimi-k2.6":
+		return Route{config.ProviderMoonshot, "kimi-k2.6", PolicyK2}, nil
 	case "deepseek-v4-pro", "deepseek-v4-flash":
 		return Route{config.ProviderDeepSeek, requested, PolicyDeepSeek}, nil
 	default:

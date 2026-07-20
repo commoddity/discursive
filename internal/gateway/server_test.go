@@ -199,7 +199,7 @@ func TestModelsListContent(t *testing.T) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Object != "list" || len(payload.Data) != 9 {
+	if payload.Object != "list" || len(payload.Data) != 4 {
 		t.Fatalf("payload: %+v", payload)
 	}
 	ids := map[string]bool{}
@@ -209,7 +209,7 @@ func TestModelsListContent(t *testing.T) {
 		}
 		ids[m.ID] = true
 	}
-	for _, want := range []string{"gpt-5-high", "gpt-4o-mini", "kimi-k3", "deepseek-v4-flash"} {
+	for _, want := range []string{"gpt-4o", "o3-mini"} {
 		if !ids[want] {
 			t.Fatalf("missing id %s", want)
 		}
@@ -233,7 +233,7 @@ func TestProxyMoonshotAndUsage(t *testing.T) {
 	})
 
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
-		"model":    "gpt-5-high",
+		"model":    "gpt-4o",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
 	if res.StatusCode != 200 {
@@ -279,7 +279,7 @@ func TestProxyDeepSeek(t *testing.T) {
 	})
 
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
-		"model":    "gpt-4o",
+		"model":    "o1",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
 	if res.StatusCode != 200 {
@@ -300,7 +300,7 @@ func TestMissingDeepSeekKeyNoMoonshotFallback(t *testing.T) {
 		t.Fatal("must not hit upstream")
 	})
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
-		"model":    "gpt-4o",
+		"model":    "o1",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
 	if res.StatusCode != http.StatusBadGateway {
@@ -326,7 +326,7 @@ func TestStreamPassthrough(t *testing.T) {
 	})
 
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
-		"model":    "gpt-5-codex",
+		"model":    "gpt-4o-mini",
 		"stream":   true,
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
@@ -350,10 +350,10 @@ func TestStreamPassthrough(t *testing.T) {
 func TestStreamSynthesize(t *testing.T) {
 	env := setupEnv(t, "sk-moon", "", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k2.7-code"))
+		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k2.6"))
 	})
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
-		"model":    "gpt-5-codex",
+		"model":    "gpt-4o-mini",
 		"stream":   true,
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
@@ -378,11 +378,11 @@ func TestToolCallIDRetry(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k2.7-code"))
+		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k2.6"))
 	})
 
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
-		"model": "gpt-5-codex",
+		"model": "gpt-4o-mini",
 		"messages": []any{
 			map[string]any{
 				"role": "assistant",

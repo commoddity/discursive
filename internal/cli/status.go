@@ -12,19 +12,22 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/commoddity/discursive/internal/config"
-	"github.com/commoddity/discursive/internal/crypto"
 	"github.com/commoddity/discursive/internal/gateway"
 )
 
 func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var showKey bool
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "📊 Print gateway config, model aliases, provider mapping, and runtime state",
 		Long: `📊  Show configuration + runtime status.
 
-Includes: gateway key (masked), tunnel mode, public URL, active model alias,
-provider routing, all available models, whether the gateway PID is alive,
-uptime (if running), and log file path.
+Includes: gateway key (masked by default), tunnel mode, public URL, active
+model alias, provider routing, all available models, whether the gateway PID
+is alive, uptime (if running), and log file path.
+
+  discursive status              # gateway key masked
+  discursive status --show-key   # print full gateway_key for Cursor setup
 
 Use with | jq . for readable output.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -53,19 +56,20 @@ Use with | jq . for readable output.`,
 				logSize = fmt.Sprintf("%d bytes", fi.Size())
 			}
 
-			slog.Info("status",
+			attrs := []any{
 				"version", Version,
 				"alias_model", settings.AliasModel,
 				"real_model", settings.RealModel,
 				"provider", provider,
 				"has_moonshot_key", settings.HasMoonshotKey(),
 				"has_deepseek_key", settings.HasDeepSeekKey(),
-				"gateway_key_masked", crypto.MaskSecret(settings.GatewayKey),
 				"tunnel_mode", config.NormalizeTunnelMode(settings.TunnelMode),
 				"public_url", settings.PublicBaseURL,
 				"local_port", settings.LocalPort,
 				"data_root", dataRoot,
-			)
+			}
+			attrs = append(attrs, gatewayKeyLogAttrs(settings.GatewayKey, showKey)...)
+			slog.Info("status", attrs...)
 
 			slog.Info("status_models", "models", gateway.ListAdvertisedModels())
 
@@ -79,6 +83,8 @@ Use with | jq . for readable output.`,
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&showKey, "show-key", false, "print the full gateway API key (default: masked)")
+	return cmd
 }
 
 // gatewayRuntime reads the PID file and checks whether the process is alive.

@@ -20,7 +20,7 @@ func testConfig() SanitizeConfig {
 
 func TestSanitizeRequest_K3Thinking(t *testing.T) {
 	body := map[string]any{
-		"model":       "gpt-5-high",
+		"model":       "gpt-4o",
 		"messages":    []any{map[string]any{"role": "user", "content": "hi"}},
 		"thinking":    map[string]any{"type": "enabled"},
 		"temperature": 0.7,
@@ -45,7 +45,7 @@ func TestSanitizeRequest_K3Thinking(t *testing.T) {
 
 func TestSanitizeRequest_K2Thinking(t *testing.T) {
 	body := map[string]any{
-		"model":            "gpt-5-codex",
+		"model":            "gpt-4o-mini",
 		"messages":         []any{map[string]any{"role": "user", "content": "hi"}},
 		"reasoning_effort": "high",
 	}
@@ -64,7 +64,7 @@ func TestSanitizeRequest_K2Thinking(t *testing.T) {
 
 func TestSanitizeRequest_DeepSeekThinking(t *testing.T) {
 	body := map[string]any{
-		"model":    "gpt-4o",
+		"model":    "o1",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}
 	res, err := SanitizeRequest(body, testConfig())
@@ -89,7 +89,7 @@ func TestSanitizeRequest_MaxTokens(t *testing.T) {
 		{
 			name: "maps max_completion_tokens",
 			body: map[string]any{
-				"model": "gpt-5-codex", "max_completion_tokens": float64(500),
+				"model": "gpt-4o-mini", "max_completion_tokens": float64(500),
 				"messages": []any{},
 				"tools":    []any{probeTool()},
 			},
@@ -98,7 +98,7 @@ func TestSanitizeRequest_MaxTokens(t *testing.T) {
 		{
 			name: "default when missing",
 			body: map[string]any{
-				"model":    "gpt-5-codex",
+				"model":    "gpt-4o-mini",
 				"messages": []any{},
 				"tools":    []any{probeTool()},
 			},
@@ -121,7 +121,7 @@ func TestSanitizeRequest_MaxTokens(t *testing.T) {
 
 func TestSanitizeRequest_ReasoningPlaceholder(t *testing.T) {
 	body := map[string]any{
-		"model": "gpt-5-codex",
+		"model": "gpt-4o-mini",
 		"messages": []any{
 			map[string]any{
 				"role": "assistant",
@@ -151,7 +151,7 @@ func TestSanitizeRequest_ReasoningPlaceholder(t *testing.T) {
 
 func TestSanitizeRequest_DeveloperToSystem(t *testing.T) {
 	body := map[string]any{
-		"model": "gpt-5-codex",
+		"model": "gpt-4o-mini",
 		"messages": []any{
 			map[string]any{"role": "developer", "content": "rules"},
 			map[string]any{"role": "user", "content": "hi"},
@@ -169,7 +169,7 @@ func TestSanitizeRequest_DeveloperToSystem(t *testing.T) {
 
 func TestSanitizeRequest_FullPipelineResponses(t *testing.T) {
 	body := map[string]any{
-		"model":        "gpt-5-codex",
+		"model":        "gpt-4o-mini",
 		"instructions": "You are helpful.",
 		"input": []any{
 			map[string]any{"role": "user", "content": "Build a todo app"},
@@ -202,7 +202,7 @@ func TestSanitizeRequest_FullPipelineResponses(t *testing.T) {
 
 func TestSanitizeRequest_DeepSeekPipeline(t *testing.T) {
 	body := map[string]any{
-		"model":    "gpt-4o-mini",
+		"model":    "o3-mini",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}
 	res, err := SanitizeRequest(body, testConfig())
@@ -223,7 +223,7 @@ func TestSanitizeRequest_StripsImages(t *testing.T) {
 		{
 			name: "chat image_url mixed with text",
 			body: map[string]any{
-				"model": "gpt-4o-mini",
+				"model": "o3-mini",
 				"messages": []any{
 					map[string]any{
 						"role": "user",
@@ -268,7 +268,7 @@ func TestSanitizeRequest_StripsImages(t *testing.T) {
 		{
 			name: "responses input_image",
 			body: map[string]any{
-				"model": "gpt-4o-mini",
+				"model": "o3-mini",
 				"input": []any{
 					map[string]any{
 						"type":      "input_image",
@@ -293,7 +293,7 @@ func TestSanitizeRequest_StripsImages(t *testing.T) {
 		{
 			name: "responses content parts image_url",
 			body: map[string]any{
-				"model": "gpt-4o",
+				"model": "o1",
 				"input": []any{
 					map[string]any{
 						"role": "user",
@@ -345,9 +345,9 @@ func TestSanitizeRequest_PassesImagesForKimi(t *testing.T) {
 	}{
 		{
 			name:  "kimi k3 passes image_url through",
-			model: "gpt-5-high",
+			model: "gpt-4o",
 			body: map[string]any{
-				"model": "gpt-5-high",
+				"model": "gpt-4o",
 				"messages": []any{
 					map[string]any{
 						"role": "user",
@@ -363,10 +363,10 @@ func TestSanitizeRequest_PassesImagesForKimi(t *testing.T) {
 			},
 		},
 		{
-			name:  "kimi k2.7-code passes image_url through",
-			model: "gpt-5-codex",
+			name:  "kimi k2.6 passes image_url through",
+			model: "gpt-4o-mini",
 			body: map[string]any{
-				"model": "gpt-5-codex",
+				"model": "gpt-4o-mini",
 				"messages": []any{
 					map[string]any{
 						"role": "user",
@@ -381,10 +381,10 @@ func TestSanitizeRequest_PassesImagesForKimi(t *testing.T) {
 			},
 		},
 		{
-			name:  "kimi k2.7-code responses input_image passes through",
-			model: "gpt-5-codex",
+			name:  "kimi k2.6 responses input_image passes through",
+			model: "gpt-4o-mini",
 			body: map[string]any{
-				"model": "gpt-5-codex",
+				"model": "gpt-4o-mini",
 				"input": []any{
 					map[string]any{
 						"type":      "input_image",
@@ -410,7 +410,7 @@ func TestSanitizeRequest_PassesImagesForKimi(t *testing.T) {
 
 func TestSanitizeRequest_NoWarningForKimiWithImages(t *testing.T) {
 	body := map[string]any{
-		"model": "gpt-5-codex",
+		"model": "gpt-4o-mini",
 		"messages": []any{
 			map[string]any{
 				"role": "user",

@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/commoddity/discursive/internal/config"
-	"github.com/commoddity/discursive/internal/crypto"
 	"github.com/commoddity/discursive/internal/usage"
 )
 
@@ -18,6 +17,7 @@ var (
 )
 
 func NewRoot() *cobra.Command {
+	var showKey bool
 	cmd := &cobra.Command{
 		Use:           "discursive",
 		Short:         "🌉 Local OpenAI-compatible gateway → Moonshot Kimi & DeepSeek for Cursor",
@@ -25,11 +25,12 @@ func NewRoot() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRoot(cmd)
+			return runRoot(cmd, showKey)
 		},
 	}
 
 	cmd.PersistentFlags().BoolVar(&portableFlag, "portable", false, "store data next to the executable")
+	cmd.Flags().BoolVar(&showKey, "show-key", false, "print the full gateway API key (default: masked)")
 	// Log level: DISCURSIVE_LOG_LEVEL=debug|info|warn|error (default info).
 	// slog is always JSON on stdout (jq-friendly).
 
@@ -42,12 +43,7 @@ func NewRoot() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(newInitCmd())
-	cmd.AddCommand(newSetMoonshotKeyCmd())
-	cmd.AddCommand(newSetDeepSeekKeyCmd())
-	cmd.AddCommand(newRotateGatewayKeyCmd())
-	cmd.AddCommand(newSetTunnelTokenCmd())
-	cmd.AddCommand(newSetPublicURLCmd())
-	cmd.AddCommand(newSetModelCmd())
+	cmd.AddCommand(newSetCmd())
 	cmd.AddCommand(newStartCmd())
 	cmd.AddCommand(newStopCmd())
 	cmd.AddCommand(newStatusCmd())
@@ -68,7 +64,7 @@ func Execute() int {
 	return 0
 }
 
-func runRoot(cmd *cobra.Command) error {
+func runRoot(cmd *cobra.Command, showKey bool) error {
 	_ = cmd
 	setupLogger()
 
@@ -89,16 +85,17 @@ func runRoot(cmd *cobra.Command) error {
 		return err
 	}
 
-	slog.Info("discursive ready",
+	attrs := []any{
 		"data_root", root,
 		"local_port", settings.LocalPort,
 		"real_model", settings.RealModel,
 		"alias_model", settings.AliasModel,
 		"has_moonshot_key", settings.HasMoonshotKey(),
 		"has_deepseek_key", settings.HasDeepSeekKey(),
-		"gateway_key_masked", crypto.MaskSecret(settings.GatewayKey),
 		"version", Version,
-	)
+	}
+	attrs = append(attrs, gatewayKeyLogAttrs(settings.GatewayKey, showKey)...)
+	slog.Info("discursive ready", attrs...)
 	return nil
 }
 
@@ -106,5 +103,20 @@ func setupLogger() {
 	level := usage.LogLevelFromEnv()
 	opts := &slog.HandlerOptions{Level: level}
 	// stdout so operators can: go run ./cmd/kimi-cursor start | jq
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
+}
+
+func setupLoggerWithLevel(raw string) {
+	level := usage.ParseLogLevel(raw)
+	if raw != "" {
+		switch raw {
+		case "debug", "info", "warn", "error", "warning":
+			// valid; apply it
+		default:
+			slog.Warn("unknown log level, using info", "level", raw)
+			level = slog.LevelInfo
+		}
+	}
+	opts := &slog.HandlerOptions{Level: level}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
 }

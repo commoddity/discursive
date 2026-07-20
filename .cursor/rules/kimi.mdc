@@ -1,5 +1,5 @@
 ---
-description: Moonshot/Kimi API models, params, streaming, tools (k3 / k2.7-code)
+description: Moonshot/Kimi API models, params, streaming, tools (k3 / k2.6)
 globs: "**/kimi/**/*.go,**/gateway/**/*.go,**/usage/**/*.go"
 alwaysApply: false
 ---
@@ -15,12 +15,11 @@ Base URL default: `https://api.moonshot.ai/v1` — see `internal/config/urls.go`
 | API model ID | Role |
 | ---- | --- |
 | `kimi-k3` | Default flagship; 1M context; always thinks |
-| `kimi-k2.7-code` | Coding |
-| `kimi-k2.7-code-highspeed` | Optional faster coding tier |
+| `kimi-k2.6` | Image-capable coding model; both thinking modes |
 
 ## Per-model parameter matrix (do not cross-apply)
 
-| Concern | `kimi-k3` | `kimi-k2.7-code*` |
+| Concern | `kimi-k3` | `kimi-k2.6` |
 | ---- | --- | --- |
 | Thinking | Top-level `reasoning_effort` (`"max"` only today). **Do not** send K2 `thinking` | Use K2 `thinking` object when needed; **do not** send `reasoning_effort` |
 | Sampling | Many fields fixed — **omit** temperature/top_p/penalties/n | Follow model reference; strip Cursor-only junk |

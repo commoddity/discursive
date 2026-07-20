@@ -49,9 +49,9 @@ func TestSetModelPersists(t *testing.T) {
 		wantAlias string
 		wantReal  string
 	}{
-		{name: "deepseek alias", requested: "gpt-4o-mini", wantAlias: "gpt-4o-mini", wantReal: "deepseek-v4-flash"},
-		{name: "kimi alias", requested: "gpt-5-high", wantAlias: "gpt-5-high", wantReal: "kimi-k3"},
-		{name: "real id", requested: "kimi-k2.7-code", wantAlias: "kimi-k2.7-code", wantReal: "kimi-k2.7-code"},
+		{name: "deepseek alias", requested: "o3-mini", wantAlias: "o3-mini", wantReal: "deepseek-v4-flash"},
+		{name: "kimi alias", requested: "gpt-4o", wantAlias: "gpt-4o", wantReal: "kimi-k3"},
+		{name: "real k2.6", requested: "kimi-k2.6", wantAlias: "kimi-k2.6", wantReal: "kimi-k2.6"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -59,7 +59,7 @@ func TestSetModelPersists(t *testing.T) {
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
-			cmd.SetArgs([]string{"set-model", tt.requested})
+			cmd.SetArgs([]string{"set", "--model", tt.requested})
 			if err := cmd.Execute(); err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
@@ -79,8 +79,48 @@ func TestSetModelUnknown(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	cmd := NewRoot()
-	cmd.SetArgs([]string{"set-model", "not-a-model"})
+	cmd.SetArgs([]string{"set", "--model", "not-a-model"})
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestCompleteModelIDs(t *testing.T) {
+	all := completeModelIDs("")
+	if len(all) < 4 {
+		t.Fatalf("expected advertised models, got %v", all)
+	}
+	filtered := completeModelIDs("gpt-4")
+	for _, id := range filtered {
+		if !strings.HasPrefix(id, "gpt-4") {
+			t.Fatalf("unexpected id %q for prefix gpt-4", id)
+		}
+	}
+	if len(filtered) == 0 {
+		t.Fatal("expected gpt-4* completions")
+	}
+}
+
+func TestShellCompletionHints(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "log-level args", args: []string{"__complete", "log-level", ""}, want: "debug"},
+		{name: "start tunnel flag", args: []string{"__complete", "start", "--tunnel", ""}, want: "named"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := NewRoot()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(tt.args)
+			_ = cmd.Execute() // __complete exits 0 with completions on stdout
+			if !strings.Contains(out.String(), tt.want) {
+				t.Fatalf("output %q missing %q", out.String(), tt.want)
+			}
+		})
 	}
 }

@@ -42,7 +42,7 @@ build:
 fmt:
 	$(GO) fmt ./...
 
-verify: lint test build
+verify: fmt lint test build
 
 install-hooks:
 	lefthook install

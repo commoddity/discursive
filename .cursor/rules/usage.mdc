@@ -20,8 +20,7 @@ Source: https://platform.kimi.ai/docs/pricing/chat
 | Model | Cache hit / MTok | Input / MTok | Output / MTok |
 | ---- | --- | --- | --- |
 | `kimi-k3` | $0.30 | $3.00 | $15.00 |
-| `kimi-k2.7-code` | $0.19 | $0.95 | $4.00 |
-| `kimi-k2.7-code-highspeed` | $0.38 | $1.90 | $8.00 |
+| `kimi-k2.6` | $0.16 | $0.95 | $4.00 |
 
 ### DeepSeek (USD per 1M tokens)
 

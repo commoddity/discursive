@@ -103,7 +103,7 @@ func (c *Config) runNone(ctx context.Context) error {
 
 func (c *Config) runNamed(ctx context.Context) error {
 	if c.Token == "" {
-		return errors.New("named mode requires tunnel token in config (run set-tunnel-token)")
+		return errors.New("named mode requires tunnel token in config (run set --tunnel-token)")
 	}
 	if c.PublicURL == "" {
 		return errors.New("named mode requires publicBaseUrl")

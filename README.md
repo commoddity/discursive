@@ -13,9 +13,10 @@ on macOS and Linux — with full agentic and tool calling support.
 - [📦 Quickstart](#-quickstart)
 - [☁️ Setting up Cloudflare](#️-setting-up-cloudflare)
 - [🛠 Tech Stack](#-tech-stack)
-- [📁 File Structure](#-file-structure)
 - [🧠 Supported Models \& Mappings](#-supported-models--mappings)
+- [📁 File Structure](#-file-structure)
 - [🖥 CLI Commands](#-cli-commands)
+- [⌨️ Shell Completion](#️-shell-completion)
 - [🌍 Environment Variables](#-environment-variables)
 - [🔒 Security](#-security)
 - [🧪 Methodology](#-methodology)
@@ -58,18 +59,21 @@ The gateway listens on `127.0.0.1:4001`. It logs the `gateway_key` and
 `public_url` you'll need for the next step:
 
 ```bash
-discursive status | jq
+discursive status --show-key | jq
 ```
+
+Gateway keys are masked by default. Pass `--show-key` to print the full
+`gateway_key` for Cursor setup.
 
 ### 3. Configure Cursor <!-- omit in toc -->
 
 Open **Cursor Settings → Models** and enter:
 
-| Setting                  | Value                                                        |
-| ------------------------ | ------------------------------------------------------------ |
-| OpenAI API Key           | `gateway_key` from `discursive status` output                |
-| Override OpenAI Base URL | `public_url` from `discursive status` output (ends in `/v1`) |
-| Model                    | Pick an alias from the table below (e.g. `gpt-5-high`)       |
+| Setting                  | Value                                                  |
+| ------------------------ | ------------------------------------------------------ |
+| OpenAI API Key           | `gateway_key` from `discursive status --show-key`      |
+| Override OpenAI Base URL | `public_url` from `discursive status` (ends in `/v1`)  |
+| Model                    | Pick an alias from the table below (e.g. `gpt-5-high`) |
 
 Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 `Connection verified` above the Base URL field.
@@ -78,12 +82,12 @@ Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 
 Change the model alias in Cursor's model picker — no restart needed:
 
-| Cursor alias  | Provider | Real model          | Use                 |
-| ------------- | -------- | ------------------- | ------------------- |
-| `gpt-5-high`  | Moonshot | `kimi-k3`           | Planning / flagship |
-| `gpt-5-codex` | Moonshot | `kimi-k2.7-code`    | Coding              |
-| `gpt-4o`      | DeepSeek | `deepseek-v4-pro`   | Harder execution    |
-| `gpt-4o-mini` | DeepSeek | `deepseek-v4-flash` | Cheap execution     |
+| Cursor alias  | Provider | Real model          | Use                                    |
+| ------------- | -------- | ------------------- | -------------------------------------- |
+| `gpt-5-high`  | Moonshot | `kimi-k3`           | Planning / flagship                    |
+| `gpt-5-codex` | Moonshot | `kimi-k2.6`         | Image-capable; thinking off by default |
+| `gpt-4o`      | DeepSeek | `deepseek-v4-pro`   | Harder execution                       |
+| `gpt-4o-mini` | DeepSeek | `deepseek-v4-flash` | Cheap execution                        |
 
 ### 5. Switch back to Cursor's models <!-- omit in toc -->
 
@@ -114,9 +118,26 @@ a public HTTPS URL.
 | Component     | Technology                                                                                                                 |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Language      | Go 1.26.5+                                                                                                                 |
-| CLI framework | [Cobra](https://cobra.dev/)                                                                                                |  |
+| CLI framework | [Cobra](https://cobra.dev/)                                                                                                |
 | Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) Quick Tunnel or named tunnel |
 | Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek)                                                                   |
+
+---
+
+## 🧠 Supported Models & Mappings
+
+Switching providers is choosing the Cursor alias. The gateway maps it and
+picks the right upstream key + base URL. 
+
+| Cursor alias  | Provider | Real model          | Notes                                    |
+| ------------- | -------- | ------------------- | ---------------------------------------- |
+| `gpt-5-high`  | Moonshot | `kimi-k3`           | Flagship planning model; supports vision |
+| `gpt-5-codex` | Moonshot | `kimi-k2.6`         | Image-capable; thinking off by default   |
+| `gpt-4o`      | DeepSeek | `deepseek-v4-pro`   | Harder execution                         |
+| `gpt-4o-mini` | DeepSeek | `deepseek-v4-flash` | Cheap, fast execution                    |
+
+Provider choice is the alias — Cursor always talks to Discursive, never to
+Moonshot/DeepSeek directly.
 
 ---
 
@@ -140,45 +161,61 @@ planning/phases/          # MVP task sequence (T01–T10)
 
 ---
 
-## 🧠 Supported Models & Mappings
-
-Switching providers is choosing the Cursor alias. The gateway maps it and
-picks the right upstream key + base URL. 
-
-| Cursor alias  | Provider | Real model          | Notes                                    |
-| ------------- | -------- | ------------------- | ---------------------------------------- |
-| `gpt-5-high`  | Moonshot | `kimi-k3`           | Flagship planning model; supports vision |
-| `gpt-5-codex` | Moonshot | `kimi-k2.7-code`    | Code-optimized                           |
-| `gpt-4o`      | DeepSeek | `deepseek-v4-pro`   | Harder execution                         |
-| `gpt-4o-mini` | DeepSeek | `deepseek-v4-flash` | Cheap, fast execution                    |
-
-Provider choice is the alias — Cursor always talks to Discursive, never to
-Moonshot/DeepSeek directly.
-
----
-
 ## 🖥 CLI Commands
 
 All output is JSON on stdout. Pipe through `jq` for readability.
 
-| Command                                           | Description                                                                                                                                                                 |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `discursive start`                                | Start gateway on `127.0.0.1:4001`. `--background` forks to daemon. `--tunnel` (named/none/quick), `--public-url`. Auto-invokes `init` if config is incomplete on first run. |
-| `discursive stop`                                 | Send SIGTERM via PID file. No-op if not running.                                                                                                                            |
-| `discursive status`                               | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping.                                                                             |
-| `discursive logs`                                 | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail. `-n N` for last N lines.                                                           |
-| `discursive log-level [debug\|info\|warn\|error]` | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence.                                                            |
-| `discursive doctor`                               | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                      |
-| `discursive usage`                                | Token + cost estimates per session/model.                                                                                                                                   |
-| `discursive set-moonshot-key`                     | Save Moonshot/Kimi API key (encrypted at rest).                                                                                                                             |
-| `discursive set-deepseek-key`                     | Save DeepSeek API key (encrypted at rest).                                                                                                                                  |
-| `discursive set-tunnel-token`                     | Save Cloudflare tunnel token.                                                                                                                                               |
-| `discursive set-public-url`                       | Save public HTTPS base URL (`https://<host>/v1`).                                                                                                                           |
-| `discursive set-model`                            | Persist preferred Cursor alias (`gpt-5-high`, `gpt-4o-mini`, etc.).                                                                                                         |
-| `discursive rotate-gateway-key`                   | Generate a new gateway API key.                                                                                                                                             |
-| `discursive version`                              | Print version.                                                                                                                                                              |
+| Command                                               | Description                                                                                                                                                                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `discursive start`                                    | Start gateway on `127.0.0.1:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. Auto-invokes `init` if config is incomplete on first run.                                   |
+| `discursive stop`                                     | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                              |
+| `discursive status`                                   | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                              |
+| `discursive logs`                                     | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail. `-n N` for last N lines.                                                                                             |
+| `discursive log-level [debug\|info\|warn\|error]`     | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence.                                                                                              |
+| `discursive doctor`                                   | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                        |
+| `discursive usage`                                    | Token + cost estimates per session/model.                                                                                                                                                                     |
+| `discursive set`                                      | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key. |
+| `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                                                                                                              |
+| `discursive version`                                  | Print version.                                                                                                                                                                                                |
 
 JSON slog on **stdout**, interactive prompts on **stderr** — pipe-friendly.
+
+---
+
+## ⌨️ Shell Completion
+
+Cobra's built-in `completion` command generates scripts for bash, zsh, fish, and
+PowerShell. After install, Tab completes subcommands, flags, log levels, tunnel
+modes, and model aliases.
+
+**zsh** (macOS default):
+
+```bash
+# Oh My Zsh
+mkdir -p ~/.oh-my-zsh/completions
+discursive completion zsh > ~/.oh-my-zsh/completions/_discursive
+
+# Or any zsh with compinit (add to ~/.zshrc, then restart the shell):
+discursive completion zsh > "${fpath[1]}/_discursive"
+```
+
+**bash** (Linux / macOS with bash-completion):
+
+```bash
+# Linux (system-wide)
+discursive completion bash | sudo tee /etc/bash_completion.d/discursive >/dev/null
+
+# Or per-session / add to ~/.bashrc:
+source <(discursive completion bash)
+```
+
+**fish:**
+
+```bash
+discursive completion fish > ~/.config/fish/completions/discursive.fish
+```
+
+Verify: type `discursive ` then Tab — you should see subcommands.
 
 ---
 
@@ -198,9 +235,11 @@ JSON slog on **stdout**, interactive prompts on **stderr** — pipe-friendly.
 - Upstream Moonshot and DeepSeek keys are **encrypted at rest** and never sent
   to Cursor, never appear in logs
 - Cursor receives only the generated gateway key (`sk-...`)
+- Gateway key is **masked by default** in `status` / `rotate-gateway-key`;
+  pass `--show-key` when you need the full value for Cursor setup
 - Gateway binds to loopback (`127.0.0.1`); the Cloudflare tunnel is the only
   public surface
-- All output is JSON on stdout — never emit secrets or raw headers
+- All output is JSON on stdout — never emit upstream secrets or raw headers
 
 ---
 

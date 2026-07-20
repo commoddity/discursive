@@ -28,7 +28,7 @@ func TestStoreRecordAndSessionSummary(t *testing.T) {
 					PromptTokens: 1_000_000, CompletionTokens: 1_000_000, RequestID: "r2",
 				},
 				{
-					ID: "e3", SessionID: "sess-b", Provider: config.ProviderMoonshot, Model: "kimi-k2.7-code",
+					ID: "e3", SessionID: "sess-b", Provider: config.ProviderMoonshot, Model: "kimi-k2.6",
 					PromptTokens: 100_000, RequestID: "r3",
 				},
 			},

@@ -32,6 +32,18 @@ func TestEstimateUSD(t *testing.T) {
 			want:     0.30,
 		},
 		{
+			name:     "kimi_k3_partial_cache_coverage",
+			provider: config.ProviderMoonshot,
+			model:    "kimi-k3",
+			tokens: UsageTokens{
+				PromptTokens:     191_241,
+				CacheHitTokens:   94_208,
+				CompletionTokens: 232,
+			},
+			// hit: 94208 × 0.30/M, miss: (191241 - 94208) × 3.00/M, output: 232 × 15.00/M
+			want: perMillion(94208, 0.30) + perMillion(191241-94208, 3.00) + perMillion(232, 15.00),
+		},
+		{
 			name:     "kimi_k3_mixed",
 			provider: config.ProviderMoonshot,
 			model:    "kimi-k3",
@@ -43,9 +55,9 @@ func TestEstimateUSD(t *testing.T) {
 			want: perMillion(500_000, 0.30) + perMillion(500_000, 3.00) + perMillion(100_000, 15.00),
 		},
 		{
-			name:     "kimi_k27_code",
+			name:     "kimi_k26_code",
 			provider: config.ProviderMoonshot,
-			model:    "kimi-k2.7-code",
+			model:    "kimi-k2.6",
 			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
 			want:     0.95 + 4.00,
 		},

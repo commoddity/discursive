@@ -203,7 +203,7 @@ func TestLive_ChatCompletion_AssistantMessage(t *testing.T) {
 	defer func() { _ = srv.Shutdown(t.Context()) }()
 
 	res, body := liveDoJSON(t, http.MethodPost, liveGatewayAddr(port)+"/v1/chat/completions", gatewayKey, map[string]any{
-		"model":       "gpt-5-high",
+		"model":       "gpt-4o",
 		"messages":    []any{map[string]any{"role": "user", "content": "Reply with exactly: KIMI_OK"}},
 		"max_tokens":  50,
 		"temperature": 0,
@@ -269,7 +269,7 @@ func TestLive_ToolSchemaSanitized(t *testing.T) {
 	defer func() { _ = srv.Shutdown(t.Context()) }()
 
 	res, body := liveDoJSON(t, http.MethodPost, liveGatewayAddr(port)+"/v1/chat/completions", gatewayKey, map[string]any{
-		"model":    "gpt-5-high",
+		"model":    "gpt-4o",
 		"messages": []any{map[string]any{"role": "user", "content": "What is 2+2? Reply with just the number."}},
 		"tools": []any{map[string]any{
 			"type": "function",
@@ -356,7 +356,7 @@ func TestLive_MFJSEdgeCases(t *testing.T) {
 	}
 
 	res, body := liveDoJSON(t, http.MethodPost, liveGatewayAddr(port)+"/v1/chat/completions", gatewayKey, map[string]any{
-		"model":       "gpt-5-high",
+		"model":       "gpt-4o",
 		"messages":    []any{map[string]any{"role": "user", "content": "Say hi."}},
 		"max_tokens":  80,
 		"temperature": 0,
@@ -379,8 +379,8 @@ func TestLive_MFJSEdgeCases(t *testing.T) {
 						"type": "object",
 						"properties": map[string]any{
 							"val": map[string]any{
-								"type":   "string",
-								"anyOf":  []any{map[string]any{"type": "string"}, map[string]any{"type": "number"}},
+								"type":  "string",
+								"anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "number"}},
 							},
 						},
 					},
@@ -446,7 +446,7 @@ func TestLive_MCPToolNames(t *testing.T) {
 	}
 
 	res, body := liveDoJSON(t, http.MethodPost, liveGatewayAddr(port)+"/v1/chat/completions", gatewayKey, map[string]any{
-		"model":       "gpt-5-high",
+		"model":       "gpt-4o",
 		"messages":    []any{},
 		"tools":       tools,
 		"max_tokens":  80,
@@ -527,7 +527,7 @@ func TestLive_CursorAgentMultiturn(t *testing.T) {
 
 	// Turn 1 — Cursor-like first request with developer role
 	turn1Body := map[string]any{
-		"model":             "gpt-5-high",
+		"model":             "gpt-4o",
 		"temperature":       0,
 		"presence_penalty":  0,
 		"frequency_penalty": 0,
@@ -569,7 +569,7 @@ func TestLive_CursorAgentMultiturn(t *testing.T) {
 
 		// Turn 2 — Cursor replays history WITHOUT reasoning_content (null-content assistant + tool result)
 		turn2Body := map[string]any{
-			"model":       "gpt-5-high",
+			"model":       "gpt-4o",
 			"temperature": 0.2,
 			"stream":      false,
 			"messages": []any{
@@ -606,7 +606,7 @@ func TestLive_StreamingSSE(t *testing.T) {
 	defer func() { _ = srv.Shutdown(t.Context()) }()
 
 	req, _ := http.NewRequest(http.MethodPost, liveGatewayAddr(port)+"/v1/chat/completions",
-		strings.NewReader(`{"model":"gpt-5-high","stream":true,"messages":[{"role":"user","content":"Reply with exactly: STREAM_OK"}],"max_tokens":50}`))
+		strings.NewReader(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"Reply with exactly: STREAM_OK"}],"max_tokens":50}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+gatewayKey)
 
@@ -704,7 +704,7 @@ func TestLive_ResponsesFormatContext(t *testing.T) {
 	defer func() { _ = srv.Shutdown(t.Context()) }()
 
 	res, body := liveDoJSON(t, http.MethodPost, liveGatewayAddr(port)+"/v1/chat/completions", gatewayKey, map[string]any{
-		"model":        "gpt-5-high",
+		"model":        "gpt-4o",
 		"stream":       false,
 		"temperature":  0,
 		"instructions": "You are a senior engineer building a CLI.",
@@ -759,7 +759,7 @@ func TestLive_V1ResponsesEndpoint(t *testing.T) {
 	defer func() { _ = srv.Shutdown(t.Context()) }()
 
 	res, body := liveDoJSON(t, http.MethodPost, liveGatewayAddr(port)+"/v1/responses", gatewayKey, map[string]any{
-		"model":      "gpt-5-high",
+		"model":      "gpt-4o",
 		"stream":     false,
 		"input":      []any{map[string]any{"role": "user", "content": "Reply with exactly: RESPONSES_ENDPOINT_OK"}},
 		"max_tokens": 50,

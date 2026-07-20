@@ -143,7 +143,7 @@ func TestLive_Tunnel(t *testing.T) {
 
 	// Phase B: Model probe through public URL (if any key present)
 	if hasAnyKey {
-		modelToUse := "gpt-5-high"
+		modelToUse := "gpt-4o"
 		if !hasMoonshot {
 			modelToUse = "gpt-4o-mini"
 		}
@@ -168,7 +168,7 @@ func TestLive_Tunnel(t *testing.T) {
 
 	// Phase C: Streaming chat through public URL (only if Moonshot key set)
 	if hasMoonshot {
-		streamBody := `{"model":"gpt-5-high","stream":true,"messages":[{"role":"user","content":"Reply with exactly: TUNNEL_OK"}],"max_tokens":50}`
+		streamBody := `{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"Reply with exactly: TUNNEL_OK"}],"max_tokens":50}`
 		req, _ := http.NewRequest(http.MethodPost, tunnelURL+"/v1/chat/completions", strings.NewReader(streamBody))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+gatewayKey)

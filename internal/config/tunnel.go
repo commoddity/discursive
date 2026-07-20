@@ -105,10 +105,10 @@ func ValidateTunnelSettings(s AppSettings) error {
 	switch mode {
 	case TunnelModeNamed:
 		if !s.HasTunnelToken() {
-			return fmt.Errorf("tunnel mode %q requires a tunnel token (run set-tunnel-token)", mode)
+			return fmt.Errorf("tunnel mode %q requires a tunnel token (run set --tunnel-token)", mode)
 		}
 		if strings.TrimSpace(s.PublicBaseURL) == "" {
-			return fmt.Errorf("tunnel mode %q requires publicBaseUrl (https://<host>/v1); run discursive init or set-public-url / start --public-url", mode)
+			return fmt.Errorf("tunnel mode %q requires publicBaseUrl (https://<host>/v1); run discursive init or set --public-url / start --public-url", mode)
 		}
 		if _, err := NormalizePublicBaseURL(s.PublicBaseURL); err != nil {
 			return fmt.Errorf("invalid publicBaseUrl: %w", err)

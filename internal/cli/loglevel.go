@@ -25,7 +25,9 @@ func newLogLevelCmd() *cobra.Command {
 
 Levels are stored in the DISCURSIVE_LOG_LEVEL environment variable.
 Use export DISCURSIVE_LOG_LEVEL=debug in your shell profile to persist.`,
-		Args: cobra.MaximumNArgs(1),
+		Args:       cobra.MaximumNArgs(1),
+		ValidArgs:  []string{"debug", "info", "warn", "error"},
+		ArgAliases: []string{"warning"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			current := usage.LogLevelFromEnv()
 			currentName := slogLevelName(current)

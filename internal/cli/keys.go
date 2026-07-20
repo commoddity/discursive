@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -15,119 +14,13 @@ import (
 	"github.com/commoddity/discursive/internal/crypto"
 )
 
-func newSetMoonshotKeyCmd() *cobra.Command {
-	var keyFlag string
-	cmd := &cobra.Command{
-		Use:   "set-moonshot-key",
-		Short: "🌙 Save Moonshot / Kimi API key (encrypted at rest)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return setUpstreamKey(cmd, "moonshot", keyFlag)
-		},
+// gatewayKeyLogAttrs returns slog attrs for the gateway key.
+// By default the key is masked; --show-key logs the full value for Cursor setup.
+func gatewayKeyLogAttrs(key string, show bool) []any {
+	if show {
+		return []any{"gateway_key", key}
 	}
-	cmd.Flags().StringVar(&keyFlag, "key", "", "API key (omit for interactive prompt; or pipe via stdin)")
-	return cmd
-}
-
-func newSetDeepSeekKeyCmd() *cobra.Command {
-	var keyFlag string
-	cmd := &cobra.Command{
-		Use:   "set-deepseek-key",
-		Short: "🌊 Save DeepSeek API key (encrypted at rest)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return setUpstreamKey(cmd, "deepseek", keyFlag)
-		},
-	}
-	cmd.Flags().StringVar(&keyFlag, "key", "", "API key (omit for interactive prompt; or pipe via stdin)")
-	return cmd
-}
-
-func newRotateGatewayKeyCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "rotate-gateway-key",
-		Short: "🔄 Generate a new gateway API key (sk-…)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			setupLogger()
-			dataRoot, err := resolveDataRoot()
-			if err != nil {
-				return err
-			}
-			s, err := config.Load(dataRoot)
-			if err != nil {
-				return err
-			}
-			if err := s.RotateGatewayKey(); err != nil {
-				return err
-			}
-			if err := config.Save(dataRoot, s); err != nil {
-				return err
-			}
-			slog.Info("rotated gateway key",
-				"gateway_key_masked", crypto.MaskSecret(s.GatewayKey),
-				"has_moonshot_key", s.HasMoonshotKey(),
-				"has_deepseek_key", s.HasDeepSeekKey(),
-			)
-			return nil
-		},
-	}
-}
-
-func setUpstreamKey(cmd *cobra.Command, provider, keyFlag string) error {
-	setupLogger()
-	plain, err := readUpstreamKeyPlain(cmd, provider, keyFlag)
-	if err != nil {
-		return err
-	}
-	if plain == "" {
-		return fmt.Errorf("empty API key")
-	}
-
-	dataRoot, err := resolveDataRoot()
-	if err != nil {
-		return err
-	}
-	s, err := config.Load(dataRoot)
-	if err != nil {
-		return err
-	}
-
-	switch provider {
-	case "moonshot":
-		if err := s.SetMoonshotKey(dataRoot, plain); err != nil {
-			return err
-		}
-	case "deepseek":
-		if err := s.SetDeepSeekKey(dataRoot, plain); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unknown provider %q", provider)
-	}
-
-	if err := config.Save(dataRoot, s); err != nil {
-		return err
-	}
-
-	slog.Info("saved upstream key",
-		"provider", provider,
-		"key_masked", crypto.MaskSecret(plain),
-		"has_moonshot_key", s.HasMoonshotKey(),
-		"has_deepseek_key", s.HasDeepSeekKey(),
-	)
-	return nil
-}
-
-// readUpstreamKeyPlain returns the key from --key, an interactive TTY prompt, or stdin (pipe).
-func readUpstreamKeyPlain(cmd *cobra.Command, provider, keyFlag string) (string, error) {
-	var label string
-	switch provider {
-	case "moonshot":
-		label = "Moonshot"
-	case "deepseek":
-		label = "DeepSeek"
-	default:
-		label = provider
-	}
-	return readSecretPlain(cmd, label, keyFlag)
+	return []any{"gateway_key_masked", crypto.MaskSecret(key)}
 }
 
 // readSecretPlain reads a secret from flag, TTY (hidden), or stdin.

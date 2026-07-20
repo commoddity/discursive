@@ -52,7 +52,7 @@ func TestSanitizeSchema_DefinitionsToDefs(t *testing.T) {
 
 func TestSanitizeRequest_ToolNamesAndSchema(t *testing.T) {
 	body := map[string]any{
-		"model":    "gpt-5-codex",
+		"model":    "gpt-4o-mini",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 		"tools": []any{
 			map[string]any{
@@ -119,7 +119,7 @@ func TestSanitizeRequest_ToolNamesAndSchema(t *testing.T) {
 
 func TestSanitizeRequest_ToolPairingOrphan(t *testing.T) {
 	body := map[string]any{
-		"model": "gpt-5-codex",
+		"model": "gpt-4o-mini",
 		"messages": []any{
 			map[string]any{"role": "tool", "content": map[string]any{"result": "ok"}, "tool_call_id": "1"},
 		},
@@ -140,7 +140,7 @@ func TestSanitizeRequest_ToolPairingOrphan(t *testing.T) {
 
 func TestSanitizeRequest_RemapsToolCallNames(t *testing.T) {
 	body := map[string]any{
-		"model": "gpt-5-codex",
+		"model": "gpt-4o-mini",
 		"messages": []any{
 			map[string]any{
 				"role": "assistant",

@@ -111,6 +111,8 @@ func convertInputItems(items []any, stripImages bool) []any {
 					"role":    "user",
 					"content": imageOmittedPlaceholder,
 				})
+			} else {
+				messages = append(messages, responsesImageToChatMessage(item))
 			}
 		case "message", "":
 			flushPendingToolCalls(&messages, &pendingToolCalls, &unansweredCallIDs)
@@ -228,6 +230,29 @@ func extractCallID(item map[string]any) string {
 		return id
 	}
 	return stringField(item, "id")
+}
+
+// responsesImageToChatMessage converts a Responses API input_image item into
+// a chat-message with content array format for Kimi (image_url parts).
+func responsesImageToChatMessage(item map[string]any) map[string]any {
+	imgURL := stringField(item, "image_url")
+	if imgURL == "" {
+		imgURL = stringField(item, "file_id")
+	}
+	if imgURL == "" {
+		return nil
+	}
+	return map[string]any{
+		"role": "user",
+		"content": []any{
+			map[string]any{
+				"type": "image_url",
+				"image_url": map[string]any{
+					"url": imgURL,
+				},
+			},
+		},
+	}
 }
 
 func functionCallToToolCall(item map[string]any, synthIDCounter *int) map[string]any {

@@ -21,7 +21,7 @@ const (
 	DefaultRealModel = "kimi-k3"
 
 	// DefaultAliasModel is the Cursor-facing alias for DefaultRealModel.
-	DefaultAliasModel = "gpt-5-high"
+	DefaultAliasModel = "gpt-4o"
 
 	portableDataDirName = "DiscursiveData"
 	portableMarkerName  = "portable"

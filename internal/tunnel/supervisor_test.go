@@ -115,7 +115,7 @@ func TestRunNamedMissingToken(t *testing.T) {
 		PublicURL: "https://example.com/v1",
 	}
 	err := cfg.Run(context.Background())
-	if err == nil || err.Error() != "named mode requires tunnel token in config (run set-tunnel-token)" {
+	if err == nil || err.Error() != "named mode requires tunnel token in config (run set --tunnel-token)" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

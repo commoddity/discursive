@@ -32,9 +32,8 @@ type moonshotRates struct {
 }
 
 var moonshotPricing = map[string]moonshotRates{
-	"kimi-k3":                  {0.30, 3.00, 15.00},
-	"kimi-k2.7-code":           {0.19, 0.95, 4.00},
-	"kimi-k2.7-code-highspeed": {0.38, 1.90, 8.00},
+	"kimi-k3":   {0.30, 3.00, 15.00},
+	"kimi-k2.6": {0.16, 0.95, 4.00},
 }
 
 // deepseekRates USD per 1M tokens (cache hit, cache miss input, output).
@@ -89,7 +88,13 @@ func EstimateUSD(provider config.Provider, model string, u UsageTokens) (float64
 
 func splitPrompt(u UsageTokens) (hit, miss uint64) {
 	if u.CacheHitTokens > 0 || u.CacheMissTokens > 0 {
-		return u.CacheHitTokens, u.CacheMissTokens
+		hit = u.CacheHitTokens
+		miss = u.CacheMissTokens
+		// If cache fields don't cover total prompt, remainder is uncached input.
+		if covered := hit + miss; u.PromptTokens > covered {
+			miss += u.PromptTokens - covered
+		}
+		return hit, miss
 	}
 	// No cache split: treat full prompt as billable input (cache-miss / input tier).
 	return 0, u.PromptTokens

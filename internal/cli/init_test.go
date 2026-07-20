@@ -114,8 +114,8 @@ func TestSetTunnelTokenWithPublicURL(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
-		"set-tunnel-token",
-		"--token", "eyJnamed-token",
+		"set",
+		"--tunnel-token", "eyJnamed-token",
 		"--public-url", "https://named.example.com",
 	})
 	if err := cmd.Execute(); err != nil {
@@ -143,7 +143,7 @@ func TestSetPublicURL(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"set-public-url", "--url", "https://fix.example.com/v1"})
+	cmd.SetArgs([]string{"set", "--public-url", "https://fix.example.com/v1"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestSetPublicURL(t *testing.T) {
 }
 
 func TestReadLinePlainFlag(t *testing.T) {
-	cmd := newSetPublicURLCmd()
+	cmd := newSetCmd()
 	got, err := readLinePlain(cmd, "URL", "  https://x.example.com/v1  ")
 	if err != nil {
 		t.Fatal(err)

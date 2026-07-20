@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
@@ -50,6 +52,14 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Debug("proxy: sending upstream",
+		"request_id", requestID,
+		"provider", string(sanitized.Provider),
+		"model", sanitized.Model,
+		"stream", wantsStream,
+		"url", chatURL,
+	)
+
 	resp, err := s.doUpstream(r, chatURL, upstreamKey, sanitized.Body)
 	if err != nil {
 		writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("upstream request failed: %v", err), "upstream_error")
@@ -67,6 +77,14 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		if cerr != nil {
 			logRequest(requestID, "sse_copy_error", cerr.Error())
+		}
+		if scan.err != nil {
+			slog.Warn("upstream says model not available; check account balance and model access",
+				"request_id", requestID,
+				"provider", string(sanitized.Provider),
+				"model", sanitized.Model,
+				"upstream_message", scan.err.message,
+			)
 		}
 		logRequest(requestID, "status", resp.StatusCode, "provider", string(sanitized.Provider), "model", sanitized.Model, "stream", "passthrough")
 		return
@@ -103,6 +121,14 @@ func (s *Server) finishUpstream(w http.ResponseWriter, resp *http.Response, want
 		lat := time.Since(started)
 		if scan.found && scan.usage != nil {
 			s.recordUsage(provider, model, requestID, lat, *scan.usage)
+		}
+		if scan.err != nil {
+			slog.Warn("upstream says model not available; check account balance and model access",
+				"request_id", requestID,
+				"provider", string(provider),
+				"model", model,
+				"upstream_message", scan.err.message,
+			)
 		}
 		logRequest(requestID, "status", resp.StatusCode, "provider", string(provider), "model", model, "stream", "passthrough", "retry", true)
 		return
@@ -145,6 +171,22 @@ func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBo
 	var errObj map[string]any
 	if json.Unmarshal(respBody, &errObj) == nil {
 		_ = json.NewEncoder(w).Encode(errObj)
+
+		// Diagnostic logging for model-not-available errors.
+		if e, ok := errObj["error"].(map[string]any); ok {
+			if msg, ok := e["message"].(string); ok {
+				lower := strings.ToLower(msg)
+				if strings.Contains(lower, "not available") || strings.Contains(lower, "model") &&
+					(strings.Contains(lower, "not found") || strings.Contains(lower, "not available")) {
+					slog.Warn("upstream says model not available; check account balance and model access",
+						"request_id", requestID,
+						"provider", string(provider),
+						"model", model,
+						"upstream_message", msg,
+					)
+				}
+			}
+		}
 	} else {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"error": map[string]any{

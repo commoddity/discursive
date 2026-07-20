@@ -27,7 +27,7 @@ Primary Agent-safe aliases (see `gateway.mdc` for full map):
 | Alias            | →                                              |
 | ---------------- | ---------------------------------------------- |
 | `gpt-5-high` | Moonshot `kimi-k3` (planning)                  |
-| `gpt-5-codex`    | Moonshot `kimi-k2.7-code` (coding)             |
+| `gpt-5-codex`    | Moonshot `kimi-k2.6` (image-capable)         |
 | `gpt-4o`         | DeepSeek `deepseek-v4-pro` (execution)         |
 | `gpt-4o-mini`    | DeepSeek `deepseek-v4-flash` (cheap execution) |
 

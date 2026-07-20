@@ -79,7 +79,7 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 			if settings.HasMoonshotKey() {
 				return ""
 			}
-			return "Moonshot/Kimi API key is not saved (run set-moonshot-key)"
+			return "Moonshot/Kimi API key is not saved (run set --moonshot-key)"
 		}(),
 	})
 
@@ -91,7 +91,7 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 			if settings.HasDeepSeekKey() {
 				return ""
 			}
-			return "DeepSeek API key is not saved (run set-deepseek-key)"
+			return "DeepSeek API key is not saved (run set --deepseek-key)"
 		}(),
 	})
 
@@ -196,7 +196,7 @@ func checkCloudflared(dataRoot string) (bool, string) {
 	if path, err := lookPath("cloudflared"); err == nil && path != "" {
 		return true, fmt.Sprintf("found at %s", path)
 	}
-	return false, "cloudflared not found (run set-tunnel-token or install cloudflared)"
+	return false, "cloudflared not found (install cloudflared or run set --tunnel-token)"
 }
 
 func checkLogsDirWritable(dataRoot string) (bool, string) {
