@@ -212,6 +212,13 @@ JSON slog on **stdout**, interactive prompts on **stderr** — pipe-friendly.
   </a>
 </div>
 
+Discursive was developed using [Turboplan](https://github.com/commoddity/turboplan),
+a methodology for AI-assisted software delivery. Turboplan structures work into
+sequenced phases, enforces layered verification ("don't advance until the layer
+below passes"), and maintains self-evolving agent rules that capture failure
+patterns. Every feature in this project was planned, executed, and verified
+through Turboplan's task lifecycle.
+
 ---
 
 ## 📜 License
