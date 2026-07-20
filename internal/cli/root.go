@@ -85,18 +85,24 @@ func runRoot(cmd *cobra.Command, showKey bool) error {
 		return err
 	}
 
-	attrs := []any{
-		"data_root", root,
-		"local_port", settings.LocalPort,
-		"real_model", settings.RealModel,
-		"alias_model", settings.AliasModel,
-		"has_moonshot_key", settings.HasMoonshotKey(),
-		"has_deepseek_key", settings.HasDeepSeekKey(),
-		"version", Version,
+	keyField := "gateway_key_masked"
+	keyValue := maskGatewayKey(settings.GatewayKey)
+	if showKey {
+		keyField = "gateway_key"
+		keyValue = settings.GatewayKey
 	}
-	attrs = append(attrs, gatewayKeyLogAttrs(settings.GatewayKey, showKey)...)
-	slog.Info("discursive ready", attrs...)
-	return nil
+
+	out := map[string]any{
+		"data_root":        root,
+		"local_port":       settings.LocalPort,
+		"real_model":       settings.RealModel,
+		"alias_model":      settings.AliasModel,
+		"has_moonshot_key": settings.HasMoonshotKey(),
+		"has_deepseek_key": settings.HasDeepSeekKey(),
+		"version":          Version,
+		keyField:           keyValue,
+	}
+	return emitPretty(out)
 }
 
 func setupLogger() {

@@ -16,7 +16,7 @@ func TestStatusCmd_Output(t *testing.T) {
 	cmd0 := NewRoot()
 	_ = cmd0.Execute()
 
-	// Capture stdout via pipe (slog writes to os.Stdout).
+	// Capture stdout via pipe.
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -40,21 +40,27 @@ func TestStatusCmd_Output(t *testing.T) {
 	_ = r.Close()
 	output := buf.String()
 
-	// Verify JSON-slog lines contain expected fields.
+	// Parse the single JSON object.
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(output), &obj); err != nil {
+		t.Fatalf("status output is not valid JSON: %v\noutput: %s", err, output)
+	}
+
+	// Verify JSON object contains expected fields.
 	for _, field := range []string{
-		`"alias_model"`,
-		`"real_model"`,
-		`"local_port"`,
-		`"data_root"`,
-		`"version"`,
-		`"models"`,
-		`"gateway_key_masked"`,
+		"alias_model",
+		"real_model",
+		"local_port",
+		"data_root",
+		"version",
+		"models",
+		"gateway_key_masked",
 	} {
-		if !strings.Contains(output, field) {
+		if _, ok := obj[field]; !ok {
 			t.Fatalf("status output missing field %q: %s", field, output)
 		}
 	}
-	if strings.Contains(output, `"gateway_key"`) {
+	if _, ok := obj["gateway_key"]; ok {
 		t.Fatal("status without --show-key must not emit gateway_key")
 	}
 }
@@ -89,14 +95,20 @@ func TestStatusCmd_ShowKey(t *testing.T) {
 	_ = r.Close()
 	output := buf.String()
 
-	if !strings.Contains(output, `"gateway_key"`) {
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(output), &obj); err != nil {
+		t.Fatalf("status --show-key output is not valid JSON: %v\noutput: %s", err, output)
+	}
+
+	if _, ok := obj["gateway_key"]; !ok {
 		t.Fatalf("status --show-key missing gateway_key: %s", output)
 	}
-	if strings.Contains(output, `"gateway_key_masked"`) {
+	if _, ok := obj["gateway_key_masked"]; ok {
 		t.Fatal("status --show-key must not emit gateway_key_masked")
 	}
 	// Full key starts with sk-
-	if !strings.Contains(output, `"sk-`) {
+	gk, _ := obj["gateway_key"].(string)
+	if !strings.HasPrefix(gk, "sk-") {
 		t.Fatalf("status --show-key should include full sk- key: %s", output)
 	}
 }
@@ -176,16 +188,9 @@ func TestStatusCmd_ModelsAreJSON(t *testing.T) {
 	}
 	_ = r.Close()
 
-	// Each non-empty line should be parseable JSON.
-	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		var m map[string]any
-		if err := json.Unmarshal([]byte(line), &m); err != nil {
-			t.Fatalf("line %d not JSON: %q err %v", i, line, err)
-		}
+	// Parse the full output as a single JSON object.
+	var m map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
+		t.Fatalf("status output not valid JSON: %v\noutput: %s", err, buf.String())
 	}
 }

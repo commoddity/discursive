@@ -12,13 +12,15 @@ on macOS and Linux — with full agentic and tool calling support.
 
 - [📦 Quickstart](#-quickstart)
 - [☁️ Setting up Cloudflare](#️-setting-up-cloudflare)
+- [🪐 Providers](#-providers)
+  - [🐋 DeepSeek](#-deepseek)
+  - [🌙 Moonshot](#-moonshot)
 - [🛠 Tech Stack](#-tech-stack)
-- [🔄 CI / Release](#-ci--release)
-- [🧠 Supported Models \& Mappings](#-supported-models--mappings)
 - [📁 File Structure](#-file-structure)
 - [🖥 CLI Commands](#-cli-commands)
 - [⌨️ Shell Completion](#️-shell-completion)
 - [🌍 Environment Variables](#-environment-variables)
+- [🔄 CI / Release](#-ci--release)
 - [🔒 Security](#-security)
 - [🧪 Methodology](#-methodology)
 - [📜 License](#-license)
@@ -127,10 +129,10 @@ a public HTTPS URL.
 
 ## 🔄 CI / Release
 
-| Trigger                    | Job                          | What runs                                     |
-| -------------------------- | ---------------------------- | --------------------------------------------- |
-| Push to `main` / PR        | Verify (lint + test + build) | `golangci-lint` + `go test ./...` + `go build ./...` |
-| Tag `v*` (e.g. `v0.1.0`)  | Release (GoReleaser)         | Cross-compile + publish binaries to GitHub Releases |
+| Trigger                  | Job                          | What runs                                            |
+| ------------------------ | ---------------------------- | ---------------------------------------------------- |
+| Push to `main` / PR      | Verify (lint + test + build) | `golangci-lint` + `go test ./...` + `go build ./...` |
+| Tag `v*` (e.g. `v0.1.0`) | Release (GoReleaser)         | Cross-compile + publish binaries to GitHub Releases  |
 
 The verify job must pass before release runs. Releases also require
 `secrets.GH_PAT` with write access to the repository.
@@ -181,18 +183,18 @@ planning/          # MVP task sequence (T01–T10)
 
 All output is JSON on stdout. Pipe through `jq` for readability.
 
-| Command                                               | Description                                                                                                                                                                                                   |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `discursive start`                                    | Start gateway on `127.0.0.1:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. Auto-invokes `init` if config is incomplete on first run.                                   |
-| `discursive stop`                                     | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                              |
-| `discursive status`                                   | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                              |
-| `discursive logs`                                     | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail. `-n N` for last N lines.                                                                                             |
-| `discursive log-level [debug\|info\|warn\|error]`     | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence.                                                                                              |
-| `discursive doctor`                                   | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                        |
-| `discursive usage`                                    | Token + cost estimates per session/model.                                                                                                                                                                     |
-| `discursive set`                                      | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key. |
-| `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                                                                                                              |
-| `discursive version`                                  | Print version.                                                                                                                                                                                                |
+| Command                                               | Description                                                                                                                                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `discursive start`                                    | Start gateway on `127.0.0.1:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. Auto-invokes `init` if config is incomplete on first run. |
+| `discursive stop`                                     | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                                   |
+| `discursive status`                                   | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                   |
+| `discursive logs`                                     | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail. `-n N` for last N lines.                                                                                                  |
+| `discursive log-level [debug\|info\|warn\|error]`     | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence.                                                                                                   |
+| `discursive doctor`                                   | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                             |
+| `discursive usage`                                    | Token + cost estimates per session/model.                                                                                                                                                                          |
+| `discursive set`                                      | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key.      |
+| `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                                                                                                                   |
+| `discursive version`                                  | Print version.                                                                                                                                                                                                     |
 
 JSON slog on **stdout**, interactive prompts on **stderr** — pipe-friendly.
 

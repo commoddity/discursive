@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"log/slog"
 
 	"github.com/spf13/cobra"
 
@@ -17,7 +16,7 @@ func newDoctorCmd() *cobra.Command {
 		Long: `🩺  Health checks covering: API keys present? Gateway key valid? Local port free?
 Tunnel token saved? cloudflared binary found? Log dir writable?
 
-Each check is a JSON line on stdout — pipe through | jq . for readability.
+Outputs a single pretty-printed JSON object with all check results.
 Exits non-zero if any check fails.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			setupLogger()
@@ -30,13 +29,11 @@ Exits non-zero if any check fails.`,
 				return err
 			}
 			report := doctor.RunAll(settings, dataRoot)
-			for _, check := range report.Checks {
-				if check.OK {
-					slog.Info("doctor_check", "name", check.Name, "ok", true, "detail", check.Detail)
-				} else {
-					slog.Warn("doctor_check", "name", check.Name, "ok", false, "detail", check.Detail)
-				}
+
+			if err := emitPretty(report); err != nil {
+				return err
 			}
+
 			if !report.OK {
 				return fmt.Errorf("doctor: %d check(s) failed", countFailed(report))
 			}

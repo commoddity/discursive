@@ -1,17 +1,18 @@
 package usage
 
 import (
-	"bufio"
-	"encoding/json"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	_ "modernc.org/sqlite" // pure-Go SQLite driver; loaded via database/sql
+
 	"github.com/commoddity/discursive/internal/config"
 )
-
-const eventsFileName = "events.jsonl"
 
 // Event is one usage record (real model id, post-alias).
 type Event struct {
@@ -52,26 +53,80 @@ type ModelTotals struct {
 	EstUSD           float64
 }
 
-// Store persists usage JSONL under {dataRoot}/usage/.
+// Store persists usage events in SQLite under {dataRoot}/usage/.
 type Store struct {
-	dir        string
-	eventsPath string
+	db *sql.DB
 }
 
-// NewStore creates the usage directory under dataRoot.
+// NewStore creates the usage directory and opens/creates the SQLite database.
 func NewStore(dataRoot string) (*Store, error) {
 	dir := filepath.Join(dataRoot, "usage")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create usage dir: %w", err)
 	}
-	return &Store{dir: dir, eventsPath: filepath.Join(dir, eventsFileName)}, nil
+
+	dbPath := filepath.Join(dir, "usage.db")
+	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_busy_timeout=5000")
+	if err != nil {
+		return nil, fmt.Errorf("open usage db: %w", err)
+	}
+
+	if err := initSchema(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return &Store{db: db}, nil
 }
 
-// Record appends an event with computed est_usd and returns the stored event.
+// Close closes the database connection.
+func (s *Store) Close() error {
+	return s.db.Close()
+}
+
+func initSchema(db *sql.DB) error {
+	ddl := `
+	CREATE TABLE IF NOT EXISTS events (
+		id              TEXT PRIMARY KEY,
+		session_id      TEXT    NOT NULL,
+		timestamp       TEXT    NOT NULL,
+		provider        TEXT    NOT NULL,
+		model           TEXT    NOT NULL,
+		prompt_tokens   INTEGER NOT NULL DEFAULT 0,
+		completion_tokens INTEGER NOT NULL DEFAULT 0,
+		cache_hit_tokens  INTEGER NOT NULL DEFAULT 0,
+		cache_miss_tokens INTEGER NOT NULL DEFAULT 0,
+		est_usd         REAL    NOT NULL DEFAULT 0,
+		request_id      TEXT    NOT NULL DEFAULT '',
+		latency_ms      INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+	CREATE INDEX IF NOT EXISTS idx_events_session  ON events(session_id);
+	CREATE INDEX IF NOT EXISTS idx_events_prov_model ON events(provider, model);
+	`
+	if _, err := db.Exec(ddl); err != nil {
+		return fmt.Errorf("init schema: %w", err)
+	}
+	return nil
+}
+
+func newEventID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(fmt.Sprintf("crypto/rand failed: %v", err))
+	}
+	return "evt_" + hex.EncodeToString(b[:])
+}
+
+// Record inserts an event with computed est_usd and returns the stored event.
 func (s *Store) Record(ev Event) (Event, error) {
 	if ev.Timestamp.IsZero() {
 		ev.Timestamp = time.Now().UTC()
 	}
+	if ev.ID == "" {
+		ev.ID = newEventID()
+	}
+
 	tokens := UsageTokens{
 		PromptTokens:     ev.PromptTokens,
 		CompletionTokens: ev.CompletionTokens,
@@ -84,22 +139,23 @@ func (s *Store) Record(ev Event) (Event, error) {
 	}
 	ev.EstUSD = est
 
-	raw, err := json.Marshal(ev)
+	_, err = s.db.Exec(
+		`INSERT INTO events (id, session_id, timestamp, provider, model,
+		 prompt_tokens, completion_tokens, cache_hit_tokens, cache_miss_tokens,
+		 est_usd, request_id, latency_ms)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ev.ID, ev.SessionID, ev.Timestamp.Format(time.RFC3339Nano),
+		string(ev.Provider), ev.Model,
+		ev.PromptTokens, ev.CompletionTokens, ev.CacheHitTokens, ev.CacheMissTokens,
+		ev.EstUSD, ev.RequestID, ev.LatencyMS,
+	)
 	if err != nil {
-		return Event{}, fmt.Errorf("encode event: %w", err)
-	}
-	f, err := os.OpenFile(s.eventsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return Event{}, fmt.Errorf("open events: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-	if _, err := f.Write(append(raw, '\n')); err != nil {
-		return Event{}, fmt.Errorf("append event: %w", err)
+		return Event{}, fmt.Errorf("insert event: %w", err)
 	}
 	return ev, nil
 }
 
-// RecordAndObserve persists the event then feeds the idle Aggregator (DEBUG + INFO summary).
+// RecordAndObserve persists the event then feeds the idle Aggregator.
 func (s *Store) RecordAndObserve(agg *Aggregator, ev Event) error {
 	stored, err := s.Record(ev)
 	if err != nil {
@@ -111,50 +167,69 @@ func (s *Store) RecordAndObserve(agg *Aggregator, ev Event) error {
 	return nil
 }
 
-// LoadEvents reads all events from JSONL.
+// LoadEvents reads all events from SQLite ordered by timestamp.
 func (s *Store) LoadEvents() ([]Event, error) {
-	f, err := os.Open(s.eventsPath)
+	rows, err := s.db.Query(
+		`SELECT id, session_id, timestamp, provider, model,
+		 prompt_tokens, completion_tokens, cache_hit_tokens, cache_miss_tokens,
+		 est_usd, request_id, latency_ms
+		 FROM events ORDER BY timestamp ASC`)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("open events: %w", err)
+		return nil, fmt.Errorf("query events: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() { _ = rows.Close() }()
 
 	var out []Event
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := sc.Bytes()
-		if len(line) == 0 {
-			continue
-		}
+	for rows.Next() {
 		var ev Event
-		if err := json.Unmarshal(line, &ev); err != nil {
-			return nil, fmt.Errorf("parse event: %w", err)
+		var tsStr, provStr string
+		if err := rows.Scan(
+			&ev.ID, &ev.SessionID, &tsStr, &provStr, &ev.Model,
+			&ev.PromptTokens, &ev.CompletionTokens, &ev.CacheHitTokens, &ev.CacheMissTokens,
+			&ev.EstUSD, &ev.RequestID, &ev.LatencyMS,
+		); err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
 		}
+		ev.Timestamp, _ = time.Parse(time.RFC3339Nano, tsStr)
+		ev.Provider = config.Provider(provStr)
 		out = append(out, ev)
 	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("read events: %w", err)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
 	}
 	return out, nil
 }
 
-// SessionSummary aggregates events for sessionID.
+// SessionSummary aggregates events for a sessionID from SQLite.
 func (s *Store) SessionSummary(sessionID string) (SessionSummary, error) {
-	events, err := s.LoadEvents()
+	rows, err := s.db.Query(
+		`SELECT id, session_id, timestamp, provider, model,
+		 prompt_tokens, completion_tokens, cache_hit_tokens, cache_miss_tokens,
+		 est_usd, request_id, latency_ms
+		 FROM events WHERE session_id = ? ORDER BY timestamp ASC`,
+		sessionID)
 	if err != nil {
-		return SessionSummary{}, err
+		return SessionSummary{}, fmt.Errorf("query session: %w", err)
 	}
+	defer func() { _ = rows.Close() }()
+
 	sum := SessionSummary{
 		SessionID: sessionID,
 		ByModel:   make(map[string]ModelTotals),
 	}
-	for _, ev := range events {
-		if ev.SessionID != sessionID {
-			continue
+	for rows.Next() {
+		var ev Event
+		var tsStr, provStr string
+		if err := rows.Scan(
+			&ev.ID, &ev.SessionID, &tsStr, &provStr, &ev.Model,
+			&ev.PromptTokens, &ev.CompletionTokens, &ev.CacheHitTokens, &ev.CacheMissTokens,
+			&ev.EstUSD, &ev.RequestID, &ev.LatencyMS,
+		); err != nil {
+			return SessionSummary{}, fmt.Errorf("scan event: %w", err)
 		}
+		ev.Timestamp, _ = time.Parse(time.RFC3339Nano, tsStr)
+		ev.Provider = config.Provider(provStr)
+
 		sum.RequestCount++
 		sum.PromptTokens += ev.PromptTokens
 		sum.CompletionTokens += ev.CompletionTokens
@@ -171,6 +246,9 @@ func (s *Store) SessionSummary(sessionID string) (SessionSummary, error) {
 		mt.CacheMissTokens += ev.CacheMissTokens
 		mt.EstUSD += ev.EstUSD
 		sum.ByModel[ev.Model] = mt
+	}
+	if err := rows.Err(); err != nil {
+		return SessionSummary{}, fmt.Errorf("rows: %w", err)
 	}
 	return sum, nil
 }
