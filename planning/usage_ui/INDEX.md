@@ -24,6 +24,7 @@ with T09 so CLI `usage` and this UI share one SQLite store.
 
 ## Task table
 
+<<<<<<< Updated upstream
 | ID  | Title                                      | Status  | Depends-on   | Next | Layer        | Task file                                                      |
 | --- | ------------------------------------------ | ------- | ------------ | ---- | ------------ | -------------------------------------------------------------- |
 | U01 | SQLite usage store (write path)            | Pending | MVP T03 (✅)  | U02  | Persistence  | [U01-sqlite-usage-store.md](./U01-sqlite-usage-store.md)       |
@@ -31,6 +32,16 @@ with T09 so CLI `usage` and this UI share one SQLite store.
 | U03 | Embedded localhost UI (HTML + Chart.js)    | Pending | U02          | U04  | Operator UX  | [U03-embedded-usage-ui.md](./U03-embedded-usage-ui.md)         |
 | U04 | CLI wire + JSONL migrate + docs            | Pending | U01, U03     | U05  | CLI / docs   | [U04-cli-wire-migrate.md](./U04-cli-wire-migrate.md)           |
 | U05 | Usage UI smoke / verify                    | Pending | U04          | —    | E2E (track)  | [U05-usage-ui-smoke.md](./U05-usage-ui-smoke.md)               |
+=======
+| ID  | Title                                                | Status  | Depends-on          | Next | Layer              | Task file                                                              |
+| --- | ---------------------------------------------------- | ------- | ------------------- | ---- | ------------------ | ---------------------------------------------------------------------- |
+| U00 | SQLite migration + daily agg + pretty-print          | Planned | MVP T01–T10 (✅)     | U01  | Persistence + CLI  | [U00-sqlite-migration-daily-agg.md](./U00-sqlite-migration-daily-agg.md) |
+| U01 | SQLite usage store (write path polish)               | Pending | U00                 | U02  | Persistence        | [U01-sqlite-usage-store.md](./U01-sqlite-usage-store.md)               |
+| U02 | Query / aggregate API (read path)                    | Pending | U01                 | U03  | Pure query         | [U02-usage-query-api.md](./U02-usage-query-api.md)                     |
+| U03 | Embedded localhost UI (HTML + Chart.js)              | Pending | U02                 | U04  | Operator UX        | [U03-embedded-usage-ui.md](./U03-embedded-usage-ui.md)                 |
+| U04 | CLI wire + docs (always-on UI listener)              | Pending | U00, U03, T05 (✅)  | U05  | CLI / docs         | [U04-cli-wire.md](./U04-cli-wire.md)                                   |
+| U05 | Usage UI smoke / verify                              | Pending | U04                 | —    | E2E (track)        | [U05-usage-ui-smoke.md](./U05-usage-ui-smoke.md)                       |
+>>>>>>> Stashed changes
 
 ## Layer map
 

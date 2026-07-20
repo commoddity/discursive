@@ -15,6 +15,21 @@ agent** can run `/task-2-execute` next without rediscovering the design. Prefer
 running this skill on a **large / expensive** model. You do **not** implement
 product code unless the user explicitly asks.
 
+**CRITICAL — Cursor Plan File:** When Cursor is in plan mode (`Plan mode is active`),
+the skill **MUST** also produce a Cursor plan file (via the `CreatePlan` tool) in
+addition to writing the execution plan into the task markdown file. The Cursor
+plan file is the standalone plan artifact that captures the full code state
+snapshot. The task markdown file receives the same execution plan content as a
+persistent record. Both must stay in sync.
+
+- The Cursor plan filename should match the task id, e.g. `U00-sqlite-pretty-print`.
+- The plan frontmatter must include a `todos` list, one per step, in `pending` status.
+- The plan body (after `## Overview`) must match the markdown task file's
+  Execution Plan section in substance — same steps, verify gates, risks, and
+  out-of-scope notes.
+- After creating the plan, the task file's Status becomes `Planned` and the
+  INDEX.md Status column for that task is updated to `Planned`.
+
 ## Arguments
 
 - Task id: `T01` … `T10` (or path like `planning/phases/T04-sanitizer.md`)
@@ -111,7 +126,40 @@ Write for a **junior / smaller-model executor**: no implied context.
 Set Status to `Planned` only when a lesser agent could follow the plan cold.
 Append Status History row.
 
-### 4. Output to user
+### 4. Create Cursor plan file (MANDATORY in plan mode)
+
+When Cursor is in plan mode, use the `CreatePlan` tool to produce a standalone
+plan file. The plan file:
+
+- **Name:** task-id slug, e.g. `U00-sqlite-pretty-print`
+- **Overview:** one-line summary of what the task delivers
+- **Todos:** one todo per step from the Execution plan, all `status: pending`
+- **Body:** the plan content starting with `## Overview` — mirror the task
+  file's Execution Plan in substance (context, key files, steps with verify
+  gates, risks, out of scope)
+
+This plan file is what `/task-2-execute` reads from. It must be self-contained
+enough that an execute agent can follow it without re-reading the task file.
+
+After creating: update the task file's INDEX.md Status to `Planned` and append
+the Status History row.
+
+Example `CreatePlan` call template:
+
+```
+CreatePlan(
+  name: "U00-sqlite-pretty-print",
+  overview: "Replace JSONL store with SQLite, add daily aggregation to CLI, convert all CLI JSON output to pretty-printed multiline.",
+  todos: [
+    {id: "s1", content: "Step 1: Promote modernc.org/sqlite to direct dependency", status: "pending"},
+    {id: "s2", content: "Step 2: Rewrite store.go to SQLite (schema, indexes, Record, LoadEvents)", status: "pending"},
+    ...
+  ],
+  plan: "<full plan body in markdown starting with ## Overview>"
+)
+```
+
+### 5. Output to user
 
 Ready? / Key steps / AC / Execute model: default|large / Next: `/task-2-execute TXX`
 
@@ -123,3 +171,4 @@ Ready? / Key steps / AC / Execute model: default|large / Next: `/task-2-execute 
 - Leave a hand-wavy plan that forces the execute model to re-design
 - Plan Docker-as-default, Wails UI, or pointing Cursor at localhost
 - Vendor `examples/use-kimi-on-cursor` into the product tree
+- Skip creating the Cursor plan file when in plan mode
