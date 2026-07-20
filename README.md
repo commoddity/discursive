@@ -14,7 +14,7 @@
   <a href="https://thaura.ai/"><img src=".github/img/thaura.png" alt="Thaura AI" height="35" valign="middle" /></a>
 </p>
 
-<h3 align="center"><img src=".github/img/go.svg" alt="Go" height="28" valign="middle" /> Written in <a href="https://go.dev/">Go</a></h3>
+<h3 align="center">Written in <a href="https://go.dev/"><img src=".github/img/go.svg" alt="Go" height="28" valign="middle" /></a></h3>
 
 ---
 
