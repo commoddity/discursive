@@ -16,6 +16,7 @@ func newSetCmd() *cobra.Command {
 	var (
 		moonshotKey string
 		deepseekKey string
+		thauraKey   string
 		tunnelToken string
 		publicURL   string
 		gatewayKey  bool
@@ -43,12 +44,13 @@ func newSetCmd() *cobra.Command {
 Omitting flags leaves the corresponding setting unchanged.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
-			return runSet(cmd, moonshotKey, deepseekKey, tunnelToken, publicURL, gatewayKey, showKey, model)
+			return runSet(cmd, moonshotKey, deepseekKey, thauraKey, tunnelToken, publicURL, gatewayKey, showKey, model)
 		},
 	}
 
 	cmd.Flags().StringVar(&moonshotKey, "moonshot-key", "", "Moonshot/Kimi API key")
 	cmd.Flags().StringVar(&deepseekKey, "deepseek-key", "", "DeepSeek API key")
+	cmd.Flags().StringVar(&thauraKey, "thaura-key", "", "Thaura AI API key")
 	cmd.Flags().StringVar(&tunnelToken, "tunnel-token", "", "Cloudflare tunnel token")
 	cmd.Flags().StringVar(&publicURL, "public-url", "", "public HTTPS base URL (https://<host>/v1)")
 	cmd.Flags().BoolVar(&gatewayKey, "rotate-gateway-key", false, "generate a new gateway API key")
@@ -62,7 +64,7 @@ Omitting flags leaves the corresponding setting unchanged.`,
 	return cmd
 }
 
-func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, tunnelToken, publicURL string, rotateGateway, showKey bool, modelID string) error {
+func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken, publicURL string, rotateGateway, showKey bool, modelID string) error {
 	_ = cmd
 	setupLogger()
 
@@ -104,6 +106,22 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, tunnelToken, publicURL
 		}
 		slog.Info("saved upstream key",
 			"provider", "deepseek",
+			"key_masked", crypto.MaskSecret(plain),
+		)
+		anySet = true
+	}
+
+	// Thaura key
+	if thauraKey != "" {
+		plain := strings.TrimSpace(thauraKey)
+		if plain == "" {
+			return fmt.Errorf("empty thaura key")
+		}
+		if err := s.SetThauraKey(dataRoot, plain); err != nil {
+			return err
+		}
+		slog.Info("saved upstream key",
+			"provider", "thaura",
 			"key_masked", crypto.MaskSecret(plain),
 		)
 		anySet = true
@@ -159,6 +177,7 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, tunnelToken, publicURL
 		attrs := []any{
 			"has_moonshot_key", s.HasMoonshotKey(),
 			"has_deepseek_key", s.HasDeepSeekKey(),
+			"has_thaura_key", s.HasThauraKey(),
 		}
 		attrs = append(attrs, gatewayKeyLogAttrs(s.GatewayKey, showKey)...)
 		slog.Info("rotated gateway key", attrs...)
@@ -166,7 +185,7 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, tunnelToken, publicURL
 	}
 
 	if !anySet {
-		return fmt.Errorf("no flags provided; use --moonshot-key, --deepseek-key, --tunnel-token, --public-url, --rotate-gateway-key, or --model")
+		return fmt.Errorf("no flags provided; use --moonshot-key, --deepseek-key, --thaura-key, --tunnel-token, --public-url, --rotate-gateway-key, or --model")
 	}
 
 	if err := config.Save(dataRoot, s); err != nil {

@@ -178,6 +178,15 @@ func (s *Server) upstreamKey(provider config.Provider) (string, error) {
 			return "", fmt.Errorf("API key not configured for this model")
 		}
 		return *k, nil
+	case config.ProviderThaura:
+		k, err := s.settings.GetThauraKey(s.cfg.DataRoot)
+		if err != nil {
+			return "", err
+		}
+		if k == nil || *k == "" {
+			return "", fmt.Errorf("API key not configured for this model")
+		}
+		return *k, nil
 	default:
 		return "", fmt.Errorf("unsupported model")
 	}

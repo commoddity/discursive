@@ -99,6 +99,7 @@ func runRoot(cmd *cobra.Command, showKey bool) error {
 		"alias_model":      settings.AliasModel,
 		"has_moonshot_key": settings.HasMoonshotKey(),
 		"has_deepseek_key": settings.HasDeepSeekKey(),
+		"has_thaura_key":   settings.HasThauraKey(),
 		"version":          Version,
 		keyField:           keyValue,
 	}

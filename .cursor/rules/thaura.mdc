@@ -1,0 +1,56 @@
+---
+description: Thaura AI provider (models, API, pricing, sanitizer policy)
+globs: "**/gateway/alias.go,**/gateway/sanitizer.go,**/config/urls.go"
+alwaysApply: false
+---
+
+# Thaura AI Rules
+
+Thaura AI is an ethical AI provider, part of the Tech for Palestine movement.
+OpenAI-compatible API at `https://backend.thaura.ai/v1`.
+
+## Model table
+
+| Cursor alias    | Real model | Description                       |
+| --------------- | ---------- | --------------------------------- |
+| `gpt-5-nano`    | `thaura`   | OpenAI-compatible chat, vision    |
+
+## API key
+
+- Key field: `thauraKeyEncrypted` in `config.AppSettings`
+- Set via: `discursive set --thaura-key <key>` or `--thaura-key` flag on `init`
+- Retrieved via: `settings.GetThauraKey(dataRoot)` in gateway/server.go
+- Thaura is optional — the gateway works without it
+
+## Pricing (USD per 1M tokens)
+
+Source: https://thaura.ai/api-platform
+
+| Model   | Input / MTok | Output / MTok |
+| ------- | ------------ | ------------- |
+| `thaura`| $0.50        | $2.00         |
+
+No cached-token pricing documented as of 2026-07.
+
+## Sanitizer policy
+
+| Parameter          | Action                              |
+| ------------------ | ----------------------------------- |
+| `thinking`         | Deleted (Thaura doesn't support it) |
+| `reasoning_effort` | Deleted (Thaura doesn't support it) |
+
+Apply `PolicyThaura` case in `applyThinkingPolicy()` and `stripUnsupportedParams()`.
+
+## Upstream config
+
+| Item       | Value                                     |
+| ---------- | ----------------------------------------- |
+| Default URL| `https://backend.thaura.ai/v1`            |
+
+## Color (usage UI)
+
+| Provider | CSS variable | Hex       |
+| -------- | ------------ | --------- |
+| thaura   | `--thaura`   | `#d2a8ff` |
+
+<!-- last-verified: 2026-07 -->

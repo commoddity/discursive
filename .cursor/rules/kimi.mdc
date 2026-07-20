@@ -7,8 +7,7 @@ alwaysApply: false
 # Kimi / Moonshot Provider Rules
 
 Docs: https://platform.kimi.ai/ · https://platform.kimi.ai/docs/llms.txt  
-Base URL default: `https://api.moonshot.ai/v1` — see `internal/config/urls.go`
-(override: `DISCURSIVE_MOONSHOT_BASE_URL`).
+Base URL default: `https://api.moonshot.ai/v1` — see `internal/config/urls.go`.
 
 ## Supported models (MVP)
 

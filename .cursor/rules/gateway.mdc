@@ -15,6 +15,7 @@ Public reachability is via tunnel / BYO URL — see `tunnel.mdc`.
 | ------------------------- | ---------------------- | ------------------------------------ |
 | Moonshot / Kimi API key   | `moonshotKeyEncrypted` | App only → Authorization to Moonshot |
 | DeepSeek API key          | `deepseekKeyEncrypted` | App only → Authorization to DeepSeek |
+| Thaura AI API key         | `thauraKeyEncrypted`   | App only → Authorization to Thaura   |
 | Gateway key (`sk-{alnum}`) | `gatewayKey`           | Cursor as “OpenAI API Key”           |
 
 Never log or return upstream provider keys. Wrong gateway key → OpenAI-shaped 401.
@@ -25,10 +26,11 @@ Routing picks which upstream key to use from the **model map** (alias → provid
 Hardcoded defaults + optional env overrides live in
 `internal/config/urls.go` (`UpstreamBaseURL`, `ChatCompletionsURL`).
 
-| Provider | Default base                 | Env override                    |
-| -------- | ---------------------------- | ------------------------------- |
-| moonshot | `https://api.moonshot.ai/v1` | `DISCURSIVE_MOONSHOT_BASE_URL` |
-| deepseek | `https://api.deepseek.com`   | `DISCURSIVE_DEEPSEEK_BASE_URL` |
+| Provider | Default base                 |
+| -------- | ---------------------------- |
+| moonshot | `https://api.moonshot.ai/v1` |
+| deepseek | `https://api.deepseek.com`   |
+| thaura   | `https://backend.thaura.ai/v1` |
 
 Use those helpers so Moonshot’s `/v1` and DeepSeek’s host root never produce
 `/v1/v1/...`. Do not scatter raw URL string literals in the gateway proxy.
@@ -53,10 +55,11 @@ and pricing row.
 
 | Cursor alias     | Provider | Real model          | Typical use         |
 | ---------------- | -------- | ------------------- | ------------------- |
-| `gpt-5-high` | moonshot | `kimi-k3`           | Planning / flagship |
-| `gpt-5-codex`    | moonshot | `kimi-k2.6`          | Image-capable; thinking off by default |
+| `gpt-5-high`     | moonshot | `kimi-k3`           | Planning / flagship |
+| `gpt-5-codex`    | moonshot | `kimi-k2.6`         | Image-capable; thinking off by default |
 | `gpt-4o`         | deepseek | `deepseek-v4-pro`   | Harder execution    |
 | `gpt-4o-mini`    | deepseek | `deepseek-v4-flash` | Cheap execution     |
+| `gpt-5-nano`     | thaura   | `thaura`            | Ethical AI; optional provider |
 
 Set the alias manually in Cursor Settings → Models. The gateway maps it and
 picks the right base URL + API key. No auto-application to Cursor's state.vscdb

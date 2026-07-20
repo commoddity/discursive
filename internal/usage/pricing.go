@@ -14,6 +14,7 @@ import (
 // Sources: https://platform.kimi.ai/docs/pricing/chat
 //
 //	https://api-docs.deepseek.com/quick_start/pricing
+//	https://thaura.ai/api-platform
 
 var ErrUnknownModel = errors.New("unknown model for pricing")
 
@@ -45,6 +46,17 @@ type deepseekRates struct {
 var deepseekPricing = map[string]deepseekRates{
 	"deepseek-v4-flash": {0.0028, 0.14, 0.28},
 	"deepseek-v4-pro":   {0.003625, 0.435, 0.87},
+}
+
+// thauraRates USD per 1M tokens (input, output).
+// Source: https://thaura.ai/api-platform
+// TODO: confirm whether Thaura exposes cached-token pricing; not documented as of 2026-07.
+type thauraRates struct {
+	input, output float64
+}
+
+var thauraPricing = map[string]thauraRates{
+	"thaura": {0.50, 2.00},
 }
 
 // cursorComparisonUSD is REFERENCE ONLY — never used by EstimateUSD.
@@ -80,6 +92,14 @@ func EstimateUSD(provider config.Provider, model string, u UsageTokens) (float64
 		hit, miss := splitPrompt(u)
 		return perMillion(hit, r.cacheHit) +
 			perMillion(miss, r.cacheMiss) +
+			perMillion(u.CompletionTokens, r.output), nil
+	case config.ProviderThaura:
+		r, ok := thauraPricing[model]
+		if !ok {
+			return 0, fmt.Errorf("%w: thaura %q", ErrUnknownModel, model)
+		}
+		// No cache split: full prompt billed at input rate.
+		return perMillion(u.PromptTokens, r.input) +
 			perMillion(u.CompletionTokens, r.output), nil
 	default:
 		return 0, fmt.Errorf("%w: provider %q", ErrUnknownModel, provider)

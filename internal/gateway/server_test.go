@@ -199,7 +199,7 @@ func TestModelsListContent(t *testing.T) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Object != "list" || len(payload.Data) != 4 {
+	if payload.Object != "list" || len(payload.Data) != 5 {
 		t.Fatalf("payload: %+v", payload)
 	}
 	ids := map[string]bool{}
@@ -209,7 +209,7 @@ func TestModelsListContent(t *testing.T) {
 		}
 		ids[m.ID] = true
 	}
-	for _, want := range []string{"gpt-4o", "o3-mini"} {
+	for _, want := range []string{"gpt-4o", "o3-mini", "gpt-5-nano"} {
 		if !ids[want] {
 			t.Fatalf("missing id %s", want)
 		}

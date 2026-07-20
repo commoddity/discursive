@@ -95,7 +95,19 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 		}(),
 	})
 
-	// 3. gateway_key_valid
+	// 3. thaura_key_present
+	checks = append(checks, Check{
+		Name: "thaura_key_present",
+		OK:   settings.HasThauraKey(),
+		Detail: func() string {
+			if settings.HasThauraKey() {
+				return ""
+			}
+			return "optional: Thaura AI API key not saved (run set --thaura-key to enable the gpt-5-nano alias)"
+		}(),
+	})
+
+	// 4. gateway_key_valid
 	gkOk := crypto.IsOpenAIStyleGatewayKey(settings.GatewayKey)
 	checks = append(checks, Check{
 		Name: "gateway_key_valid",

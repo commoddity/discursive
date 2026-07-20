@@ -133,6 +133,9 @@ func applyThinkingPolicy(body map[string]any, route Route, thinkingDisabled bool
 		if !isDeepSeekValidReasoningEffort(body["reasoning_effort"]) {
 			delete(body, "reasoning_effort")
 		}
+	case PolicyThaura:
+		delete(body, "thinking")
+		delete(body, "reasoning_effort")
 	}
 }
 
@@ -153,6 +156,8 @@ func stripUnsupportedParams(body map[string]any, route Route) {
 		if !isDeepSeekValidReasoningEffort(body["reasoning_effort"]) {
 			delete(body, "reasoning_effort")
 		}
+	case PolicyThaura:
+		delete(body, "reasoning_effort")
 	}
 
 	if rf, ok := body["response_format"].(map[string]any); ok {

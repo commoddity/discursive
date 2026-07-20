@@ -152,6 +152,7 @@ func serveGateway(dataRoot string, settings config.AppSettings) error {
 		PID:            os.Getpid(),
 		HasMoonshotKey: settings.HasMoonshotKey(),
 		HasDeepSeekKey: settings.HasDeepSeekKey(),
+		HasThauraKey:   settings.HasThauraKey(),
 		TunnelMode:     config.NormalizeTunnelMode(settings.TunnelMode),
 		PublicURL:      publicURL,
 		LocalPort:      int(settings.LocalPort),

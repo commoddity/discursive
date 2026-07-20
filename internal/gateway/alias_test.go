@@ -23,6 +23,8 @@ func TestResolveModel(t *testing.T) {
 		{name: "real kimi-k2.6", request: "kimi-k2.6", provider: config.ProviderMoonshot, model: "kimi-k2.6", policy: PolicyK2},
 		{name: "real deepseek pro", request: "deepseek-v4-pro", provider: config.ProviderDeepSeek, model: "deepseek-v4-pro", policy: PolicyDeepSeek},
 		{name: "real deepseek flash", request: "deepseek-v4-flash", provider: config.ProviderDeepSeek, model: "deepseek-v4-flash", policy: PolicyDeepSeek},
+		{name: "thaura alias", request: "gpt-5-nano", provider: config.ProviderThaura, model: "thaura", policy: PolicyThaura},
+		{name: "real thaura", request: "thaura", provider: config.ProviderThaura, model: "thaura", policy: PolicyThaura},
 		{name: "unknown", request: "gpt-3.5-turbo", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -46,10 +48,10 @@ func TestResolveModel(t *testing.T) {
 
 func TestListAdvertisedModels(t *testing.T) {
 	list := ListAdvertisedModels()
-	if len(list) != 4 {
-		t.Fatalf("len=%d want 4", len(list))
+	if len(list) != 5 {
+		t.Fatalf("len=%d want 5", len(list))
 	}
-	var sawMoonshot, sawDeepSeek bool
+	var sawMoonshot, sawDeepSeek, sawThaura bool
 	for i, m := range list {
 		if _, err := ResolveModel(m.ID); err != nil {
 			t.Fatalf("list[%d] id %q not resolvable: %v", i, m.ID, err)
@@ -60,8 +62,11 @@ func TestListAdvertisedModels(t *testing.T) {
 		if m.Provider == config.ProviderDeepSeek {
 			sawDeepSeek = true
 		}
+		if m.Provider == config.ProviderThaura {
+			sawThaura = true
+		}
 	}
-	if !sawMoonshot || !sawDeepSeek {
-		t.Fatal("expected both providers in advertise list")
+	if !sawMoonshot || !sawDeepSeek || !sawThaura {
+		t.Fatal("expected all three providers in advertise list")
 	}
 }
