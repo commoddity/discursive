@@ -179,3 +179,146 @@ func cursorRef() CursorReference {
 		OutputPer1M: out,
 	}
 }
+
+// ProviderBreakdown summarizes usage for a single provider.
+type ProviderBreakdown struct {
+	Provider        string  `json:"provider"`
+	RequestCount    uint64  `json:"request_count"`
+	TokensIn        uint64  `json:"tokens_in"`
+	TokensOut       uint64  `json:"tokens_out"`
+	CacheHitTokens  uint64  `json:"cache_hit_tokens"`
+	CacheMissTokens uint64  `json:"cache_miss_tokens"`
+	EstUSD          float64 `json:"est_usd"`
+}
+
+// SessionInfo holds summary for a single session.
+type SessionInfo struct {
+	SessionID     string  `json:"session_id"`
+	RequestCount  uint64  `json:"request_count"`
+	TokensIn      uint64  `json:"tokens_in"`
+	TokensOut     uint64  `json:"tokens_out"`
+	EstUSD        float64 `json:"est_usd"`
+	FirstSeen     string  `json:"first_seen"`
+	LastSeen      string  `json:"last_seen"`
+}
+
+// QueryMonthToDate returns a DailySummary for the current month (UTC).
+func (s *Store) QueryMonthToDate() (DailySummary, error) {
+	now := time.Now().UTC()
+	start := now.Format("2006-01-01")
+	rows, err := s.db.Query(
+		`SELECT id, session_id, timestamp, provider, model,
+		 prompt_tokens, completion_tokens, cache_hit_tokens, cache_miss_tokens,
+		 est_usd, request_id, latency_ms
+		 FROM events WHERE date(timestamp) >= ? ORDER BY timestamp ASC`, start)
+	if err != nil {
+		return DailySummary{}, fmt.Errorf("query mtd: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return buildDailySummary(rows, start, "")
+}
+
+// QueryByModel returns all-time usage breakdown by model.
+func (s *Store) QueryByModel() ([]ModelBreakdown, error) {
+	rows, err := s.db.Query(
+		`SELECT provider, model,
+		 COUNT(*) as reqs,
+		 COALESCE(SUM(prompt_tokens),0),
+		 COALESCE(SUM(completion_tokens),0),
+		 COALESCE(SUM(cache_hit_tokens),0),
+		 COALESCE(SUM(cache_miss_tokens),0),
+		 COALESCE(SUM(est_usd),0)
+		 FROM events
+		 GROUP BY provider, model
+		 ORDER BY SUM(est_usd) DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("query by model: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []ModelBreakdown
+	for rows.Next() {
+		var mb ModelBreakdown
+		if err := rows.Scan(&mb.Provider, &mb.Model,
+			&mb.RequestCount, &mb.TokensIn, &mb.TokensOut,
+			&mb.CacheHitTokens, &mb.CacheMissTokens, &mb.EstUSD); err != nil {
+			return nil, fmt.Errorf("scan model: %w", err)
+		}
+		mb.EstUSD = RoundUSD(mb.EstUSD)
+		out = append(out, mb)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return out, nil
+}
+
+// QueryByProvider returns all-time usage breakdown by provider.
+func (s *Store) QueryByProvider() ([]ProviderBreakdown, error) {
+	rows, err := s.db.Query(
+		`SELECT provider,
+		 COUNT(*) as reqs,
+		 COALESCE(SUM(prompt_tokens),0),
+		 COALESCE(SUM(completion_tokens),0),
+		 COALESCE(SUM(cache_hit_tokens),0),
+		 COALESCE(SUM(cache_miss_tokens),0),
+		 COALESCE(SUM(est_usd),0)
+		 FROM events
+		 GROUP BY provider
+		 ORDER BY SUM(est_usd) DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("query by provider: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []ProviderBreakdown
+	for rows.Next() {
+		var pb ProviderBreakdown
+		if err := rows.Scan(&pb.Provider,
+			&pb.RequestCount, &pb.TokensIn, &pb.TokensOut,
+			&pb.CacheHitTokens, &pb.CacheMissTokens, &pb.EstUSD); err != nil {
+			return nil, fmt.Errorf("scan provider: %w", err)
+		}
+		pb.EstUSD = RoundUSD(pb.EstUSD)
+		out = append(out, pb)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return out, nil
+}
+
+// QuerySessions returns a list of all unique sessions with summary info.
+func (s *Store) QuerySessions() ([]SessionInfo, error) {
+	rows, err := s.db.Query(
+		`SELECT session_id,
+		 COUNT(*) as reqs,
+		 COALESCE(SUM(prompt_tokens),0),
+		 COALESCE(SUM(completion_tokens),0),
+		 COALESCE(SUM(est_usd),0),
+		 MIN(timestamp) as first_seen,
+		 MAX(timestamp) as last_seen
+		 FROM events
+		 GROUP BY session_id
+		 ORDER BY MAX(timestamp) DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("query sessions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []SessionInfo
+	for rows.Next() {
+		var si SessionInfo
+		if err := rows.Scan(&si.SessionID,
+			&si.RequestCount, &si.TokensIn, &si.TokensOut, &si.EstUSD,
+			&si.FirstSeen, &si.LastSeen); err != nil {
+			return nil, fmt.Errorf("scan session: %w", err)
+		}
+		si.EstUSD = RoundUSD(si.EstUSD)
+		out = append(out, si)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return out, nil
+}
