@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,7 +33,10 @@ func TestInitNonInteractiveFlags(t *testing.T) {
 		t.Fatal("plaintext tunnel token in output")
 	}
 
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
 	s, err := config.Load(dataRoot)
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -67,7 +69,10 @@ func TestInitStdinPipe(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
 	s, err := config.Load(dataRoot)
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -122,7 +127,10 @@ func TestSetTunnelTokenWithPublicURL(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
 	s, err := config.Load(dataRoot)
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -148,7 +156,10 @@ func TestSetPublicURL(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
 	s, err := config.Load(dataRoot)
 	if err != nil {
 		t.Fatalf("load: %v", err)

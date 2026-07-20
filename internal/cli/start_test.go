@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,7 +69,10 @@ func TestStartAutoSetupNonInteractiveErrors(t *testing.T) {
 func TestStartSkipsSetupWhenConfigured(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
 
 	s := config.DefaultSettings()
 	if err := s.EnsureGatewayKey(); err != nil {
@@ -98,7 +100,10 @@ func TestStartSkipsSetupWhenConfigured(t *testing.T) {
 func TestSetupFillsOnlyMissingPublicURL(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
 
 	s := config.DefaultSettings()
 	if err := s.EnsureGatewayKey(); err != nil {

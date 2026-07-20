@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -49,7 +48,10 @@ func TestSetMoonshotKeyFromFlag(t *testing.T) {
 		t.Fatal("plaintext key in output")
 	}
 
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
 	s, err := config.Load(dataRoot)
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -73,7 +75,10 @@ func TestSetDeepSeekKeyFromFlag(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
 	s, err := config.Load(dataRoot)
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -112,7 +117,10 @@ func TestSetModelFlag(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
 	s, err := config.Load(dataRoot)
 	if err != nil {
 		t.Fatal(err)

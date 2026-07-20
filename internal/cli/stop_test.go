@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func TestStopCmd_NoPidFile(t *testing.T) {
@@ -28,7 +30,10 @@ func TestStopCmd_DeadPidFile(t *testing.T) {
 	_ = cmd.Execute()
 
 	// Simulate a PID file with a non-existent PID.
-	dataRoot := filepath.Join(home, "Library", "Application Support", "Discursive")
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +50,7 @@ func TestStopCmd_DeadPidFile(t *testing.T) {
 	}
 
 	// PID file should ideally be cleaned up after failed signal.
-	_, err := os.Stat(pidPath)
+	_, err = os.Stat(pidPath)
 	_ = err // may or may not exist
 }
 
