@@ -13,6 +13,7 @@ on macOS and Linux — with full agentic and tool calling support.
 - [📦 Quickstart](#-quickstart)
 - [☁️ Setting up Cloudflare](#️-setting-up-cloudflare)
 - [🛠 Tech Stack](#-tech-stack)
+- [🔄 CI / Release](#-ci--release)
 - [🧠 Supported Models \& Mappings](#-supported-models--mappings)
 - [📁 File Structure](#-file-structure)
 - [🖥 CLI Commands](#-cli-commands)
@@ -121,6 +122,21 @@ a public HTTPS URL.
 | CLI framework | [Cobra](https://cobra.dev/)                                                                                                |
 | Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) Quick Tunnel or named tunnel |
 | Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek)                                                                   |
+
+---
+
+## 🔄 CI / Release
+
+| Trigger                    | Job                          | What runs                                     |
+| -------------------------- | ---------------------------- | --------------------------------------------- |
+| Push to `main` / PR        | Verify (lint + test + build) | `golangci-lint` + `go test ./...` + `go build ./...` |
+| Tag `v*` (e.g. `v0.1.0`)  | Release (GoReleaser)         | Cross-compile + publish binaries to GitHub Releases |
+
+The verify job must pass before release runs. Releases also require
+`secrets.GH_PAT` with write access to the repository.
+
+Binaries are built via [GoReleaser](https://goreleaser.com/) and published at
+https://github.com/commoddity/discursive/releases.
 
 ---
 

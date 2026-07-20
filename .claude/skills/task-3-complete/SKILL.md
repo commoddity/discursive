@@ -100,8 +100,7 @@ Record results in the task **Verification** section if not already current.
 ### 3. Dialectic (mandatory)
 
 Read and **fully execute** `.claude/skills/dialectic-of-cognition/SKILL.md`
-(Modes A and B as applicable, then **Mode C** triage for Turboplan process
-feedback — almost always a skip). Summarize the skill’s output in your close-out.
+(Modes A and B as applicable). Summarize the skill’s output in your close-out.
 
 ### 4. Downstream task sync
 

@@ -1,0 +1,37 @@
+---
+description: CI workflow, release tagging, and GitHub Actions deprecation handling
+globs: ".github/workflows/*.yml,.github/workflows/*.yaml,.goreleaser.yml,Makefile,VERSION"
+alwaysApply: false
+---
+
+# Release Rules — Discursive
+
+## Release Process
+
+- Version is tracked in `VERSION`.
+- `make release-patch` / `make release-minor` / `make release-major` bumps the
+  version in `VERSION`, commits, tags, and pushes.
+- **Tag push triggers CI:** the `.github/workflows/release-binaries.yaml`
+  workflow runs on push to `main`, pull requests to `main`, and pushes of tags
+  matching `v*`.
+  - **Verify** job (every push/PR): lint + `go test ./...` + `go build ./...`.
+  - **Release** job (tag pushes only): GoReleaser builds and publishes binaries
+    via `.goreleaser.yml`. Requires `secrets.GH_PAT` with write permissions.
+- Binary name: `discursive`. GoReleaser config: `.goreleaser.yml`.
+- Ldflags inject version/commit/date at build time via `main.version`.
+
+## Problem Classes
+
+### `GitHub Actions Node.js deprecation`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| CI logs warn "Node 20 is being deprecated" and list action names | Workflow pins action major versions (`@v4`, `@v5`, `@v7`) that target a deprecated Node.js runtime; GitHub forces them onto the current runtime with a deprecation warning | Check each action's repo for the latest major version (`@v5`, `@v6`, `@v9`, etc.) that targets the current Node.js LTS; bump all at once to avoid a mixed deprecation/clean state |
+
+### `Release job only runs on tag pushes`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| "verify" passes but "release" didn't run; no binaries published | The `if: startsWith(github.ref, 'refs/tags/v')` guard on the release job — pushes to main and PRs only trigger verify | Push a version tag (`v0.1.0`) via `make release-patch` or `git tag v0.1.0 && git push origin v0.1.0` |
+
+<!-- last-verified: 2026-07 -->
