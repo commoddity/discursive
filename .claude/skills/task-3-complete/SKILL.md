@@ -147,7 +147,7 @@ If `origin` is missing, say so, skip push, and tell the user how to add a remote
 ### 8. Manual test handoff (mandatory)
 
 Write commands the **human** can run to manually exercise this task’s change.
-Be concrete for this Go CLI/gateway (e.g. `go run ./cmd/discursive …`,
+Be concrete for this Go CLI/gateway (e.g. `go run . …`,
 `make run`, `curl` against local/gateway URL, doctor output). Include:
 
 - How to start / invoke

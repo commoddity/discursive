@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/img/discursive.png" alt="Discursive" width="600" />
+  <img src=".github/img/Discursive.png" alt="Discursive" width="600" />
 </p>
 
 A local OpenAI-compatible gateway that lets [Cursor](https://cursor.com) use

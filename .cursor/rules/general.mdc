@@ -228,7 +228,7 @@ NEVER do these without explicit user approval:
 - `/task-3-complete` **pushes** the completed branch by default (`--no-push` to
   skip) and must emit **Manual test** commands (or `Nothing to test` + why)
 - Quick checks: `go build ./...` / `go vet ./...` / package tests under
-  `internal/gateway`, `internal/usage`, `internal/tunnel`, `internal/cursorsettings`
+  `internal/gateway`, `internal/usage`, `internal/tunnel`, `internal/cli`
 - Integration proof: CLI start + doctor; live Agent path through public URL
 - If verification fails, fix that layer — do not advance to the next
 

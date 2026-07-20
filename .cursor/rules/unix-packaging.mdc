@@ -1,6 +1,6 @@
 ---
 description: macOS/Linux install layout, secrets, autostart (host CLI, not Docker-primary)
-globs: "**/config/**/*.go,**/crypto/**/*.go,**/cmd/**/*.go"
+globs: "**/config/**/*.go,**/crypto/**/*.go,**/main.go"
 alwaysApply: false
 ---
 
