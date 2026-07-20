@@ -1,7 +1,7 @@
 ---
 name: task-1-plan
 description: >
-  Plan or re-plan a single MVP phase task from planning/phases/. Produce a
+  Plan or re-plan a single MVP phase task from planning/. Produce a
   handoff-ready plan so a lesser/cheaper model can run /task-2-execute. Prefer
   a large model for this skill. Manual only — /task-1-plan TXX.
 disable-model-invocation: true
@@ -10,7 +10,7 @@ allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 
 # /task-1-plan — Plan one atomic MVP task
 
-You refine **one** task file under `planning/phases/` so a **lesser / cheaper
+You refine **one** task file under `planning/` so a **lesser / cheaper
 agent** can run `/task-2-execute` next without rediscovering the design. Prefer
 running this skill on a **large / expensive** model. You do **not** implement
 product code unless the user explicitly asks.
@@ -32,8 +32,8 @@ persistent record. Both must stay in sync.
 
 ## Arguments
 
-- Task id: `T01` … `T10` (or path like `planning/phases/T04-sanitizer.md`)
-- If omitted: read `planning/phases/INDEX.md`, pick the first `Pending`/`Planned`
+- Task id: `T01` … `T10` (or path like `planning/T04-sanitizer.md`)
+- If omitted: read `planning/INDEX.md`, pick the first `Pending`/`Planned`
   task whose Depends-on is `✅` / `Done` / `—`.
 
 ## Hard constraints (never violate in the plan)
@@ -49,7 +49,7 @@ persistent record. Both must stay in sync.
 7. **Inspiration** — study `examples/use-kimi-on-cursor/` → reimplement in Go; never vendor.
 8. **Agent-safe aliases** — full primary table in `gateway.mdc` (Kimi + DeepSeek;
    five aliases). Do not invent a Moonshot-only map.
-9. Sequence of record: `planning/phases/INDEX.md`.
+9. Sequence of record: `planning/INDEX.md`.
 10. Stay inside this task’s Acceptance Criteria — no gold plating (Simplicity First).
 11. Execution plan steps must use `→ verify:` pairs (Goal-Driven Execution).
 12. **Handoff fidelity:** the plan must be technically detailed enough for a
@@ -71,7 +71,7 @@ persistent record. Both must stay in sync.
 
 ### 1. Load context
 
-- Read `planning/phases/INDEX.md`
+- Read `planning/INDEX.md`
 - Read the target task file end-to-end
 - Read depends-on task’s **Learnings** / **Verification** if `✅` / `Done`
 - Skim `.cursor/rules/general.mdc` + matching domain rules (`kimi`, `deepseek`,

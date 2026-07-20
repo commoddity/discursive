@@ -1,7 +1,7 @@
 ---
 name: task-2-execute
 description: >
-  Execute one Planned/Pending MVP phase task from planning/phases/. Implement
+  Execute one Planned/Pending MVP phase task from planning/. Implement
   until acceptance criteria pass, record verification, then hand off to
   /task-3-complete. Manual only — /task-2-execute TXX.
 disable-model-invocation: true
@@ -10,7 +10,7 @@ allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 
 # /task-2-execute — Execute one atomic MVP task
 
-You implement **exactly one** task from `planning/phases/`. Stop when Acceptance
+You implement **exactly one** task from `planning/`. Stop when Acceptance
 criteria pass (or blocked). Closing the task (dialectic, INDEX ✅, downstream
 sync, commit, push, Manual test) is **`/task-3-complete`**.
 
@@ -61,7 +61,7 @@ the user before heavy work if they are still on a small model.
 
 ### 0. Preconditions
 
-- Read task + `planning/phases/INDEX.md`
+- Read task + `planning/INDEX.md`
 - Depends-on is `✅` / `Done` / `—`
 - If no Execution plan section, run `/task-1-plan` first
 

@@ -1,0 +1,26 @@
+---
+description: Test craft — cross-platform test data paths, t.Setenv, table-driven tests
+globs: "**/*_test.go"
+alwaysApply: false
+---
+
+# Testing Rules — Discursive
+
+Tests run on both macOS (development) and Linux (CI). Write tests that pass on
+both without conditional paths.
+
+## Problem Classes
+
+### `Tests with t.Setenv("HOME") use hardcoded platform paths`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Tests pass on macOS but fail on Linux CI: config written to XDG path (`~/.local/share/Discursive`) but test loads from hardcoded macOS path (`~/Library/Application Support/Discursive`) | Tests set `HOME` via `t.Setenv` but construct `dataRoot` with `filepath.Join(home, "Library", "Application Support", ...)` instead of the app's own cross-platform resolver | Use `config.DataRoot(config.ResolveOpts{Home: home})` to resolve the data root; never hardcode OS-specific data directories in tests |
+
+### `CI vs local test divergence`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Tests pass locally (`go test`) but fail in CI with no obvious code change | OS-dependent paths, runtime.GOOS assumptions, or missing `GOFLAGS` for tag-filtered tests | Run `GOFLAGS="-tags=!live" go test ./...` to match CI; verify `config.DataRoot()` usage in all tests that set `HOME` |
+
+<!-- last-verified: 2026-07 -->

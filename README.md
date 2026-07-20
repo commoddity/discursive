@@ -13,6 +13,7 @@ on macOS and Linux — with full agentic and tool calling support.
 - [📦 Quickstart](#-quickstart)
 - [☁️ Setting up Cloudflare](#️-setting-up-cloudflare)
 - [🛠 Tech Stack](#-tech-stack)
+- [🔄 CI / Release](#-ci--release)
 - [🧠 Supported Models \& Mappings](#-supported-models--mappings)
 - [📁 File Structure](#-file-structure)
 - [🖥 CLI Commands](#-cli-commands)
@@ -124,6 +125,21 @@ a public HTTPS URL.
 
 ---
 
+## 🔄 CI / Release
+
+| Trigger                    | Job                          | What runs                                     |
+| -------------------------- | ---------------------------- | --------------------------------------------- |
+| Push to `main` / PR        | Verify (lint + test + build) | `golangci-lint` + `go test ./...` + `go build ./...` |
+| Tag `v*` (e.g. `v0.1.0`)  | Release (GoReleaser)         | Cross-compile + publish binaries to GitHub Releases |
+
+The verify job must pass before release runs. Releases also require
+`secrets.GH_PAT` with write access to the repository.
+
+Binaries are built via [GoReleaser](https://goreleaser.com/) and published at
+https://github.com/commoddity/discursive/releases.
+
+---
+
 ## 🧠 Supported Models & Mappings
 
 Switching providers is choosing the Cursor alias. The gateway maps it and
@@ -156,7 +172,7 @@ internal/
   usage/                  # Pricing tables, token/cost store, slog helpers
 .cursor/rules/            # Agent conventions
 .claude/skills/           # Invocable workflows
-planning/phases/          # MVP task sequence (T01–T10)
+planning/          # MVP task sequence (T01–T10)
 ```
 
 ---

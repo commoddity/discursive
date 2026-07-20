@@ -64,10 +64,10 @@ Examples:
 ## Branch naming
 
 - Branch = stub **filename** without `.md` (no folder path): `<stub-stem>`
-  - Example current: `T01-scaffold-config-slog` (not `planning/phases/T01-scaffold-config-slog`)
+  - Example current: `T01-scaffold-config-slog` (not `planning/T01-scaffold-config-slog`)
   - Example next: `T02-secrets-gateway-key` (from **Next** task’s stub file)
 - Do **not** use `task-TXX` / `task-TYY`.
-- Do **not** prefix with `planning/phases/`.
+- Do **not** prefix with `planning/`.
 
 If not already on the current task’s stub-stem branch, warn and either
 checkout/create it or ask — do not commit on `main`/`master` by surprise.
@@ -76,7 +76,7 @@ checkout/create it or ask — do not commit on `main`/`master` by surprise.
 
 ### 1. Preconditions
 
-- Read `planning/phases/INDEX.md` and the target task file
+- Read `planning/INDEX.md` and the target task file
 - Confirm Acceptance criteria are checked (or Status is already complete)
 - If AC failed / Blocked: stop — do not mark ✅, do not commit, do not push
 - Note whether `--no-push` is set
@@ -100,8 +100,7 @@ Record results in the task **Verification** section if not already current.
 ### 3. Dialectic (mandatory)
 
 Read and **fully execute** `.claude/skills/dialectic-of-cognition/SKILL.md`
-(Modes A and B as applicable, then **Mode C** triage for Turboplan process
-feedback — almost always a skip). Summarize the skill’s output in your close-out.
+(Modes A and B as applicable). Summarize the skill’s output in your close-out.
 
 ### 4. Downstream task sync
 
@@ -114,7 +113,7 @@ If nothing stale: say so.
 1. Task file: Status → `Done` (or `✅`); fill **Learnings**; Verification / Files touched;
    fill **Manual test (for humans)** (commands + what to look for, or
    `Nothing to test — <why>`)
-2. `planning/phases/INDEX.md`: set that row’s Status to **`✅`**
+2. `planning/INDEX.md`: set that row’s Status to **`✅`**
 3. Status History rows on task file (+ INDEX notes if used)
 4. Confirm Depends-on consumers still make sense
 

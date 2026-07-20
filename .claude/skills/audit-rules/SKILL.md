@@ -27,10 +27,10 @@ skill files for mechanical accuracy against the live codebase. This is a
 4. **DO flag contradictions** and **gaps**.
 5. **DO flag skill frontmatter issues**.
 6. **Scaffolding awareness**: until phase tasks land app source
-   (`planning/phases/INDEX.md` T01+), many `cmd/` / `internal/` paths will not
+   (`planning/INDEX.md` T01+), many `cmd/` / `internal/` paths will not
    exist yet. Flag those as `PENDING_SCAFFOLD`, not `BROKEN`. Reference:
    `examples/use-kimi-on-cursor/` (may be present). Sequence of record is
-   `planning/phases/INDEX.md`.
+   `planning/INDEX.md`.
 
 ---
 

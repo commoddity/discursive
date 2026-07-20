@@ -9,6 +9,9 @@ temp/
 *.tmp
 *~
 
+# Local planning (not product code)
+planning/
+
 # OS
 .DS_Store
 Thumbs.db
