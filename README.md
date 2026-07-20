@@ -2,7 +2,7 @@
   <img src=".github/img/Discursive.png" alt="Discursive" width="600" />
 </p>
 
-A local OpenAI-compatible gateway that lets [Cursor](https://cursor.com) use alternative providers with full agentic and tool calling support.
+A local OpenAI-compatible gateway that lets [Cursor](https://cursor.com) use alternative providers with full agentic functionality..
 
 Supported providers:
 - [Moonshot Kimi](https://platform.kimi.ai/)
@@ -138,8 +138,8 @@ windows and native reasoning capabilities.
 
 | API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                            |
 | ------------ | ---------------- | ------------ | ------------- | ----------------------------------------------- |
-| `kimi-k3`    | $0.30          | $3.00       | $15.00      | Flagship; 1M-token context, always thinks       |
-| `kimi-k2.6`  | $0.16          | $0.95       | $4.00        | Image-capable coding model; both thinking modes |
+| `kimi-k3`    | $0.30            | $3.00        | $15.00        | Flagship; 1M-token context, always thinks       |
+| `kimi-k2.6`  | $0.16            | $0.95        | $4.00         | Image-capable coding model; both thinking modes |
 
 - Pricing: https://platform.kimi.ai/docs/pricing/chat
 - API docs: https://platform.kimi.ai/docs/
@@ -157,8 +157,8 @@ models at a fraction of the cost per token.
 
 | API model ID        | Cache hit / MTok | Cache miss / MTok | Output / MTok | Role                                 |
 | ------------------- | ---------------- | ----------------- | ------------- | ------------------------------------ |
-| `deepseek-v4-pro`   | $0.003625      | $0.435          | $0.87        | Harder reasoning / agentic execution |
-| `deepseek-v4-flash` | $0.0028        | $0.14           | $0.28        | Cheap, high-volume execution         |
+| `deepseek-v4-pro`   | $0.003625        | $0.435            | $0.87         | Harder reasoning / agentic execution |
+| `deepseek-v4-flash` | $0.0028          | $0.14             | $0.28         | Cheap, high-volume execution         |
 
 - Pricing: https://api-docs.deepseek.com/quick_start/pricing
 - API docs: https://api-docs.deepseek.com/
@@ -175,8 +175,8 @@ models at a fraction of the cost per token.
 excellence with ethical principles, designed to support Palestinian liberation
 and mission-aligned technology development.
 
-| API model ID | Input / MTok | Output / MTok | Role                                    |
-| ------------ | ------------ | ------------- | --------------------------------------- |
+| API model ID | Input / MTok | Output / MTok | Role                                         |
+| ------------ | ------------ | ------------- | -------------------------------------------- |
 | `thaura`     | $0.50        | $2.00         | OpenAI-compatible chat, vision, and tool use |
 
 - Pricing: https://thaura.ai/api-platform
@@ -221,7 +221,7 @@ and mission-aligned technology development.
 | Language      | Go 1.26.5+                                                                                                                 |
 | CLI framework | [Cobra](https://cobra.dev/)                                                                                                |
 | Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) Quick Tunnel or named tunnel |
-| Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura)                                                                        |
+| Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura)                                                          |
 
 ---
 
@@ -267,18 +267,18 @@ needed — it starts automatically with `discursive start`.
 
 All output is JSON on stdout. Pipe through `jq` for readability.
 
-| Command                                               | Description                                                                                                                                                                                                        |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `discursive start`                                    | Start gateway on `127.0.0.1:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. Auto-invokes `init` if config is incomplete on first run. |
-| `discursive stop`                                     | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                                   |
-| `discursive status`                                   | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                   |
-| `discursive logs`                                     | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail. `-n N` for last N lines.                                                                                                  |
-| `discursive log-level [debug\|info\|warn\|error]`     | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence.                                                                                                   |
-| `discursive doctor`                                   | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                             |
-| `discursive usage`                                    | Token + cost estimates per session/model.                                                                                                                                                                          |
-| `discursive set`                                      | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key.      |
-| `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                                                                                                                   |
-| `discursive version`                                  | Print version.                                                                                                                                                                                                     |
+| Command                                               | Description                                                                                                                                                                                                                   |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `discursive start`                                    | Start gateway on `127.0.0.1:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. Auto-invokes `init` if config is incomplete on first run.            |
+| `discursive stop`                                     | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                                              |
+| `discursive status`                                   | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                              |
+| `discursive logs`                                     | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail. `-n N` for last N lines.                                                                                                             |
+| `discursive log-level [debug\|info\|warn\|error]`     | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence.                                                                                                              |
+| `discursive doctor`                                   | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                                        |
+| `discursive usage`                                    | Token + cost estimates per session/model.                                                                                                                                                                                     |
+| `discursive set`                                      | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key. |
+| `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                                                                                                                              |
+| `discursive version`                                  | Print version.                                                                                                                                                                                                                |
 
 JSON slog on **stdout**, interactive prompts on **stderr** — pipe-friendly.
 
@@ -323,10 +323,10 @@ Verify: type `discursive ` then Tab — you should see subcommands.
 
 ## 🌍 Environment Variables
 
-| Variable                       | Purpose                                                   | Default                      |
-| ------------------------------ | --------------------------------------------------------- | ---------------------------- |
-| `DISCURSIVE_LOG_LEVEL`         | Log verbosity: `debug`, `info`, `warn`, `error`           | `info`                       |
-| `DISCURSIVE_USAGE_IDLE`        | Idle window before emitting a usage summary (Go duration) | `30s`                        |
+| Variable                | Purpose                                                   | Default |
+| ----------------------- | --------------------------------------------------------- | ------- |
+| `DISCURSIVE_LOG_LEVEL`  | Log verbosity: `debug`, `info`, `warn`, `error`           | `info`  |
+| `DISCURSIVE_USAGE_IDLE` | Idle window before emitting a usage summary (Go duration) | `30s`   |
 
 ---
 
