@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/commoddity/discursive/internal/usage"
 )
@@ -25,6 +26,7 @@ type HealthInfo struct {
 	TunnelMode     string `json:"tunnel_mode"`
 	PublicURL      string `json:"public_url"`
 	LocalPort      int    `json:"local_port"`
+	GatewayKey     string `json:"gateway_key"`
 }
 
 //go:embed static
@@ -32,10 +34,11 @@ var staticFS embed.FS
 
 // Server serves the usage dashboard on a loopback listener.
 type Server struct {
-	addr    string
-	store   *usage.Store
-	httpSrv *http.Server
-	health  HealthInfo
+	addr      string
+	store     *usage.Store
+	httpSrv   *http.Server
+	health    HealthInfo
+	startTime time.Time
 }
 
 // NewServer creates a usage UI server backed by the given store.
@@ -101,10 +104,15 @@ func (s *Server) Shutdown() error {
 // SetHealth sets the runtime health info displayed on the dashboard.
 func (s *Server) SetHealth(h HealthInfo) {
 	s.health = h
+	s.startTime = time.Now()
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.health)
+	h := s.health
+	if !s.startTime.IsZero() {
+		h.UptimeSeconds = int64(time.Since(s.startTime).Seconds())
+	}
+	writeJSON(w, h)
 }
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {

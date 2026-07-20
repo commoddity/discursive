@@ -156,6 +156,7 @@ func serveGateway(dataRoot string, settings config.AppSettings) error {
 		TunnelMode:     config.NormalizeTunnelMode(settings.TunnelMode),
 		PublicURL:      publicURL,
 		LocalPort:      int(settings.LocalPort),
+		GatewayKey:     settings.GatewayKey,
 	})
 	if err := uiSrv.Start(); err != nil {
 		slog.Warn("usage_ui_start_failed", "err", err)

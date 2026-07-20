@@ -44,10 +44,19 @@ td { color: var(--text); }
 tr:hover td { background: rgba(255,255,255,0.02); }
 .session-row { cursor: pointer; }
 .session-row:hover td { background: rgba(88,166,255,0.05); }
-.health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
-.health-item { display: flex; align-items: center; gap: 8px; font-size: 0.875rem; }
-.health-item-wide { grid-column: span 2; }
-.health-item .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.health-grid { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 0; }
+.health-col { padding: 12px 12px; border-bottom: 1px solid var(--border); }
+.health-col:nth-child(n+4) { border-bottom: none; }
+.health-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.health-val { font-size: 0.85rem; color: var(--text); word-break: break-all; }
+.health-btn { font-size: 0.72rem; padding: 3px 12px; border-radius: 5px; border: 1px solid var(--border); background: rgba(48,54,61,0.6); color: var(--text-muted); cursor: pointer; white-space: nowrap; font-weight: 500; letter-spacing: 0.2px; transition: all 0.15s; }
+.health-btn:hover { background: rgba(88,166,255,0.12); border-color: rgba(88,166,255,0.3); color: var(--accent); }
+.health-btn:active { background: rgba(88,166,255,0.18); }
+.health-btn.copy-btn { color: var(--accent2); border-color: rgba(63,185,80,0.25); background: rgba(63,185,80,0.08); }
+.health-btn.copy-btn:hover { background: rgba(63,185,80,0.16); border-color: rgba(63,185,80,0.45); }
+.health-btn.copied-flash { color: var(--accent2) !important; border-color: var(--accent2) !important; background: rgba(63,185,80,0.2) !important; }
+.gw-key-blur { color: transparent; text-shadow: 0 0 6px var(--text-muted); user-select: none; cursor: default; }
+.gw-key-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .dot-ok { background: var(--accent2); }
 .dot-warn { background: var(--warn); }
 .dot-err { background: var(--danger); }
@@ -67,33 +76,33 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 </div>
 
 <div class="card" id="health-card">
-  <h2>System Health</h2>
+  <h2>💚 System Health</h2>
   <div class="loading" id="health-loading">Loading...</div>
   <div class="health-grid" id="health-grid" style="display:none"></div>
   <div class="error" id="health-error" style="display:none"></div>
 </div>
 
 <div class="card" id="mtd-card">
-  <h2>Month to Date</h2>
+  <h2>📅 Month to Date</h2>
   <div class="loading" id="mtd-loading">Loading...</div>
   <div class="summary" id="mtd-summary" style="display:none"></div>
   <div class="error" id="mtd-error" style="display:none"></div>
 </div>
 
 <div class="card">
-  <h2>Spend by Day</h2>
+  <h2>📊 Spend by Day</h2>
   <div class="chart-box"><canvas id="chart-by-day"></canvas></div>
 </div>
 
 <div class="card">
   <div class="charts">
-    <div><h2>Spend by Model</h2><div class="chart-box"><canvas id="chart-by-model"></canvas></div></div>
-    <div><h2>Spend by Provider</h2><div class="chart-box"><canvas id="chart-by-provider"></canvas></div></div>
+    <div><h2>🤖 Spend by Model</h2><div class="chart-box"><canvas id="chart-by-model"></canvas></div></div>
+    <div><h2>🏢 Spend by Provider</h2><div class="chart-box"><canvas id="chart-by-provider"></canvas></div></div>
   </div>
 </div>
 
 <div class="card">
-  <h2>Sessions</h2>
+  <h2>🧩 Sessions</h2>
   <div class="loading" id="sessions-loading">Loading...</div>
   <table style="display:none" id="sessions-table">
     <thead><tr><th>Session ID</th><th>Requests</th><th>Tokens In</th><th>Tokens Out</th><th>Est. USD</th><th>Last Seen</th></tr></thead>
@@ -142,18 +151,45 @@ async function loadHealth() {
     document.getElementById('health-loading').style.display = 'none';
     const grid = document.getElementById('health-grid');
     grid.style.display = 'grid';
-    const items = [
-      { label: 'Gateway', ok: true, val: 'PID ' + h.pid + ' · up ' + fmtUptime(h.uptime_seconds) },
-      { label: 'Tunnel', ok: h.tunnel_mode !== 'none', val: h.tunnel_mode + (h.public_url ? ' · ' + h.public_url : ''), wide: true },
-      { label: 'Version', ok: true, val: h.version },
-      { label: 'Port', ok: true, val: String(h.local_port) },
-    ];
-    grid.innerHTML = items.map(i =>
-      '<div class="health-item' + (i.wide ? ' health-item-wide' : '') + '">' +
-        '<div class="dot ' + (i.ok ? 'dot-ok' : 'dot-err') + '"></div>' +
-        '<div><strong>' + i.label + '</strong><br><span style="color:var(--text-muted);font-size:0.8rem">' + i.val + '</span></div>' +
-      '</div>'
-    ).join('');
+
+    const raw = h.gateway_key || '';
+    const up = fmtUptime(h.uptime_seconds);
+
+    grid.innerHTML =
+      '<div class="health-col">' +
+        '<div class="health-label">⚙️ Gateway</div>' +
+        '<div class="health-val">PID ' + h.pid + '</div>' +
+      '</div>' +
+      '<div class="health-col health-col-wide">' +
+        '<div class="health-label">☁️ Tunnel</div>' +
+        '<div class="health-val" style="display:flex;align-items:center;gap:8px;word-break:normal;">' +
+          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">' + (h.public_url || '—') + '</span>' +
+          (h.public_url ? '<button class="health-btn copy-btn" onclick="copyToClipboard(event, \'' + h.public_url + '\')">Copy URL</button>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="health-col">' +
+        '<div class="health-label">🏷️ Version</div>' +
+        '<div class="health-val">' + h.version + '</div>' +
+      '</div>' +
+      '<div class="health-col">' +
+        '<div class="health-label">🔌 Port</div>' +
+        '<div class="health-val">' + String(h.local_port) + '</div>' +
+      '</div>' +
+      '<div class="health-col health-col-wide">' +
+        '<div class="health-label">🔐 Gateway Key</div>' +
+        '<div class="health-val" style="display:flex;align-items:center;gap:8px;word-break:normal;">' +
+          '<span id="gw-key-text" class="gw-key-text gw-key-blur">' + raw + '</span>' +
+            '<button class="health-btn" onclick="toggleGatewayKey()" id="gw-key-toggle">Show Key</button>' +
+            '<button class="health-btn copy-btn" onclick="copyGatewayKey()">Copy Key</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="health-col">' +
+        '<div class="health-label">⏱️ Uptime</div>' +
+        '<div class="health-val">' + up + '</div>' +
+      '</div>';
+
+    // Store gateway key for toggle/copy
+    grid.dataset.gatewayKey = raw;
 
     // Provider indicator dots in header
     const providers = document.getElementById('provider-indicators');
@@ -174,6 +210,37 @@ async function loadHealth() {
     document.getElementById('health-error').style.display = 'block';
     document.getElementById('health-error').textContent = 'Error: ' + e.message;
   }
+}
+
+let gatewayKeyVisible = false;
+function toggleGatewayKey() {
+  const txt = document.getElementById('gw-key-text');
+  const btn = document.getElementById('gw-key-toggle');
+  const grid = document.getElementById('health-grid');
+  const raw = grid.dataset.gatewayKey;
+  gatewayKeyVisible = !gatewayKeyVisible;
+  if (gatewayKeyVisible) {
+    txt.classList.remove('gw-key-blur');
+    txt.title = raw;
+    btn.textContent = 'Hide Key';
+  } else {
+    txt.classList.add('gw-key-blur');
+    txt.removeAttribute('title');
+    btn.textContent = 'Show Key';
+  }
+}
+function copyToClipboard(ev, text) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = ev.target;
+    btn.classList.add('copied-flash');
+    setTimeout(() => btn.classList.remove('copied-flash'), 1200);
+  }).catch(() => {});
+}
+function copyGatewayKey() {
+  const grid = document.getElementById('health-grid');
+  const raw = grid.dataset.gatewayKey;
+  copyToClipboard(event, raw);
 }
 
 // MTD summary

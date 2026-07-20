@@ -60,6 +60,7 @@ func newTestServer(t *testing.T) *Server {
 		TunnelMode:     "quick",
 		PublicURL:      "https://example.trycloudflare.com/v1",
 		LocalPort:      4001,
+		GatewayKey:     "sk-test-gateway-key-for-dashboard",
 	})
 	return srv
 }

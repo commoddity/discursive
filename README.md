@@ -2,7 +2,7 @@
   <img src=".github/img/Discursive.png" alt="Discursive" width="600" />
 </p>
 
-A local OpenAI-compatible gateway that lets [Cursor](https://cursor.com) use alternative providers with full agentic functionality..
+A local OpenAI-compatible gateway that lets [Cursor](https://cursor.com) use alternative providers with full agentic functionality.
 
 Supported providers:
 - [Moonshot Kimi](https://platform.kimi.ai/)
@@ -216,12 +216,12 @@ and mission-aligned technology development.
 
 ## 🛠 Tech Stack
 
-| Component     | Technology                                                                                                                 |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Language      | Go 1.26.5+                                                                                                                 |
-| CLI framework | [Cobra](https://cobra.dev/)                                                                                                |
-| Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) Quick Tunnel or named tunnel |
-| Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura)                                                          |
+| Component     | Technology                                                                                                 |
+| ------------- | ---------------------------------------------------------------------------------------------------------- |
+| Language      | Go 1.26.5+                                                                                                 |
+| CLI framework | [Cobra](https://cobra.dev/)                                                                                |
+| Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) named tunnel |
+| Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura)                                          |
 
 ---
 
