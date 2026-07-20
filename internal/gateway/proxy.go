@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
@@ -79,11 +78,11 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			logRequest(requestID, "sse_copy_error", cerr.Error())
 		}
 		if scan.err != nil {
-			slog.Warn("upstream says model not available; check account balance and model access",
+			slog.Error("upstream_error",
 				"request_id", requestID,
 				"provider", string(sanitized.Provider),
 				"model", sanitized.Model,
-				"upstream_message", scan.err.message,
+				"body", scan.err.message,
 			)
 		}
 		logRequest(requestID, "status", resp.StatusCode, "provider", string(sanitized.Provider), "model", sanitized.Model, "stream", "passthrough")
@@ -123,11 +122,11 @@ func (s *Server) finishUpstream(w http.ResponseWriter, resp *http.Response, want
 			s.recordUsage(provider, model, requestID, lat, *scan.usage)
 		}
 		if scan.err != nil {
-			slog.Warn("upstream says model not available; check account balance and model access",
+			slog.Error("upstream_error",
 				"request_id", requestID,
 				"provider", string(provider),
 				"model", model,
-				"upstream_message", scan.err.message,
+				"body", scan.err.message,
 			)
 		}
 		logRequest(requestID, "status", resp.StatusCode, "provider", string(provider), "model", model, "stream", "passthrough", "retry", true)
@@ -172,22 +171,22 @@ func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBo
 	if json.Unmarshal(respBody, &errObj) == nil {
 		_ = json.NewEncoder(w).Encode(errObj)
 
-		// Diagnostic logging for model-not-available errors.
-		if e, ok := errObj["error"].(map[string]any); ok {
-			if msg, ok := e["message"].(string); ok {
-				lower := strings.ToLower(msg)
-				if strings.Contains(lower, "not available") || strings.Contains(lower, "model") &&
-					(strings.Contains(lower, "not found") || strings.Contains(lower, "not available")) {
-					slog.Warn("upstream says model not available; check account balance and model access",
-						"request_id", requestID,
-						"provider", string(provider),
-						"model", model,
-						"upstream_message", msg,
-					)
-				}
-			}
-		}
+		// Always log the full upstream error body at ERROR level.
+		slog.Error("upstream_error",
+			"request_id", requestID,
+			"status", status,
+			"provider", string(provider),
+			"model", model,
+			"body", string(respBody),
+		)
 	} else {
+		slog.Error("upstream_error",
+			"request_id", requestID,
+			"status", status,
+			"provider", string(provider),
+			"model", model,
+			"body", string(respBody),
+		)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"error": map[string]any{
 				"message": fmt.Sprintf("upstream status %d", status),
