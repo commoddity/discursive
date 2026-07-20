@@ -206,16 +206,11 @@ JSON slog on **stdout**, interactive prompts on **stderr** — pipe-friendly.
 
 ## 🧪 Methodology
 
-<a href="https://github.com/commoddity/turboplan">
-  <img src=".github/img/turboplan.png" alt="Turboplan" width="600" />
-</a>
-
-Discursive was developed using [Turboplan](https://github.com/commoddity/turboplan),
-a methodology for AI-assisted software delivery. Turboplan structures work into
-sequenced phases, enforces layered verification ("don't advance until the layer
-below passes"), and maintains self-evolving agent rules that capture failure
-patterns. Every feature in this project was planned, executed, and verified
-through Turboplan's task lifecycle.
+<div align="center">
+  <a href="https://github.com/commoddity/turboplan">
+    <img src=".github/img/turboplan.png" alt="Turboplan" width="400" />
+  </a>
+</div>
 
 ---
 

@@ -89,9 +89,9 @@ func TestSanitizeRequest_MaxTokens(t *testing.T) {
 		{
 			name: "maps max_completion_tokens",
 			body: map[string]any{
-				"model":                 "gpt-5-codex",	"max_completion_tokens": float64(500),
-				"messages":              []any{},
-				"tools":                 []any{probeTool()},
+				"model": "gpt-5-codex", "max_completion_tokens": float64(500),
+				"messages": []any{},
+				"tools":    []any{probeTool()},
 			},
 			want: 500,
 		},

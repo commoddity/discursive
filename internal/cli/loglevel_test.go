@@ -20,10 +20,10 @@ func TestLevelEmoji(t *testing.T) {
 		{level: slog.LevelInfo, want: "ℹ️"},
 		{level: slog.LevelWarn, want: "⚠️"},
 		{level: slog.LevelError, want: "🚨"},
-		{level: slog.Level(-10), want: "🐛"},     // below debug → debug (first match)
-		{level: slog.Level(4), want: "⚠️"},        // equals LevelWarn → warn
-		{level: slog.Level(6), want: "🚨"},         // between warn and error → error (default)
-		{level: slog.Level(12), want: "🚨"},        // above error → error (default)
+		{level: slog.Level(-10), want: "🐛"}, // below debug → debug (first match)
+		{level: slog.Level(4), want: "⚠️"},  // equals LevelWarn → warn
+		{level: slog.Level(6), want: "🚨"},   // between warn and error → error (default)
+		{level: slog.Level(12), want: "🚨"},  // above error → error (default)
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("level-%d", tt.level), func(t *testing.T) {
@@ -45,8 +45,8 @@ func TestSlogLevelName(t *testing.T) {
 		{level: slog.LevelWarn, want: "warn"},
 		{level: slog.LevelError, want: "error"},
 		{level: slog.Level(-10), want: "debug"},
-		{level: slog.Level(4), want: "warn"},   // equals LevelWarn
-		{level: slog.Level(6), want: "error"},  // between warn and error → error (default)
+		{level: slog.Level(4), want: "warn"},  // equals LevelWarn
+		{level: slog.Level(6), want: "error"}, // between warn and error → error (default)
 		{level: slog.Level(12), want: "error"},
 	}
 	for _, tt := range tests {

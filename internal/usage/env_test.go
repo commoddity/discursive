@@ -9,8 +9,8 @@ import (
 )
 
 func TestIdleTimeoutFromEnv_Default(t *testing.T) {
-	os.Unsetenv(EnvUsageIdleTimeout)
-	t.Cleanup(func() { os.Unsetenv(EnvUsageIdleTimeout) })
+	_ = os.Unsetenv(EnvUsageIdleTimeout)
+	t.Cleanup(func() { _ = os.Unsetenv(EnvUsageIdleTimeout) })
 
 	if got := IdleTimeoutFromEnv(); got != DefaultIdleTimeout {
 		t.Fatalf("got %v want %v", got, DefaultIdleTimeout)
@@ -44,8 +44,8 @@ func TestIdleTimeoutFromEnv_Empty(t *testing.T) {
 }
 
 func TestLogLevelFromEnv_Default(t *testing.T) {
-	os.Unsetenv(EnvLogLevel)
-	t.Cleanup(func() { os.Unsetenv(EnvLogLevel) })
+	_ = os.Unsetenv(EnvLogLevel)
+	t.Cleanup(func() { _ = os.Unsetenv(EnvLogLevel) })
 
 	if got := LogLevelFromEnv(); got != slog.LevelInfo {
 		t.Fatalf("got %v want LevelInfo", got)

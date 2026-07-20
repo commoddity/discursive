@@ -31,10 +31,12 @@ Use export DISCURSIVE_LOG_LEVEL=debug in your shell profile to persist.`,
 			currentName := slogLevelName(current)
 
 			if len(args) == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s  Log level: %s\n",
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  Log level: %s\n",
 					levelEmoji(current), currentName)
-				fmt.Fprintf(cmd.OutOrStdout(), "   💡  Set with: %s\n", "discursive log-level <debug|info|warn|error>")
-				fmt.Fprintf(cmd.OutOrStdout(), "   💡  Persist with: %s\n", "export DISCURSIVE_LOG_LEVEL=debug")
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   💡  Set with: %s\n",
+					"discursive log-level <debug|info|warn|error>")
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   💡  Persist with: %s\n",
+					"export DISCURSIVE_LOG_LEVEL=debug")
 				return nil
 			}
 
@@ -55,11 +57,11 @@ Use export DISCURSIVE_LOG_LEVEL=debug in your shell profile to persist.`,
 			}
 			reloadLogger(level)
 
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  Log level set to %s\n",
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  Log level set to %s\n",
 				levelEmoji(level), levelName)
-			fmt.Fprintf(cmd.OutOrStdout(), "   💡  Current process: %s\n", levelName)
-			fmt.Fprintf(cmd.OutOrStdout(), "   💡  To persist across sessions:\n")
-			fmt.Fprintf(cmd.OutOrStdout(), "          export DISCURSIVE_LOG_LEVEL=%s\n", levelName)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   💡  Current process: %s\n", levelName)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   💡  To persist across sessions:\n")
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "          export DISCURSIVE_LOG_LEVEL=%s\n", levelName)
 			return nil
 		},
 	}

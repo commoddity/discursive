@@ -48,13 +48,13 @@ func printLogs(w io.Writer, logPath string, lastN int) error {
 	f, err := os.Open(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Fprintf(w, "📄  No log file yet at %s\n", logPath)
-			fmt.Fprintf(w, "💡  Start the gateway with:  discursive start --background\n")
+			_, _ = fmt.Fprintf(w, "📄  No log file yet at %s\n", logPath)
+			_, _ = fmt.Fprintf(w, "💡  Start the gateway with:  discursive start --background\n")
 			return nil
 		}
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if lastN <= 0 {
 		return formatLogLines(w, f)
@@ -90,14 +90,14 @@ func tailLogs(w io.Writer, logPath string) error {
 			return err
 		}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Seek to end.
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(w, "📄  Following %s  (Ctrl-C to stop)\n\n", logPath)
+	_, _ = fmt.Fprintf(w, "📄  Following %s  (Ctrl-C to stop)\n\n", logPath)
 
 	reader := bufio.NewReader(f)
 	for {
@@ -131,7 +131,7 @@ func writePrettyLine(w io.Writer, raw string) {
 	var obj map[string]any
 	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
 		// Not valid JSON — print raw.
-		fmt.Fprintln(w, raw)
+		_, _ = fmt.Fprintln(w, raw)
 		return
 	}
 
@@ -155,8 +155,8 @@ func writePrettyLine(w io.Writer, raw string) {
 	// Pretty-print with indent, prefixed by level.
 	pretty, err := json.MarshalIndent(obj, "  ", "  ")
 	if err != nil {
-		fmt.Fprintln(w, raw)
+		_, _ = fmt.Fprintln(w, raw)
 		return
 	}
-	fmt.Fprintf(w, "%s  %s\n", prefix, string(pretty))
+	_, _ = fmt.Fprintf(w, "%s  %s\n", prefix, string(pretty))
 }

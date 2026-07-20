@@ -116,4 +116,3 @@ func processAlive(pid int) bool {
 	err = proc.Signal(os.Signal(nil))
 	return err == nil
 }
-
