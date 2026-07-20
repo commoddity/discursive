@@ -13,12 +13,15 @@
   --text-muted: #8b949e;
   --accent: #58a6ff;
   --accent2: #3fb950;
+  --danger: #f85149;
+  --warn: #d29922;
   --moonshot: #f78166;
   --deepseek: #79c0ff;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
-h1 { font-size: 1.5rem; margin-bottom: 24px; color: var(--text); }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 24px; max-width: 1100px; margin: 0 auto; }
+.header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.header img { height: 32px; width: auto; }
 h2 { font-size: 1.1rem; color: var(--text-muted); margin-bottom: 12px; font-weight: 500; }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
@@ -33,10 +36,15 @@ th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--bor
 th { color: var(--text-muted); font-weight: 500; }
 td { color: var(--text); }
 tr:hover td { background: rgba(255,255,255,0.02); }
-.model-row { cursor: pointer; }
-.model-row:hover td { background: rgba(88,166,255,0.05); }
 .session-row { cursor: pointer; }
 .session-row:hover td { background: rgba(88,166,255,0.05); }
+.health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.health-item { display: flex; align-items: center; gap: 8px; font-size: 0.875rem; }
+.health-item-wide { grid-column: span 2; }
+.health-item .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot-ok { background: var(--accent2); }
+.dot-warn { background: var(--warn); }
+.dot-err { background: var(--danger); }
 .loading { color: var(--text-muted); padding: 40px; text-align: center; }
 .error { color: #f85149; padding: 16px; }
 .moonshot { color: var(--moonshot); }
@@ -46,7 +54,16 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 </style>
 </head>
 <body>
-<h1>Discursive Usage Dashboard</h1>
+<div class="header">
+  <img src="/static/discursive.png" alt="Discursive">
+</div>
+
+<div class="card" id="health-card">
+  <h2>System Health</h2>
+  <div class="loading" id="health-loading">Loading...</div>
+  <div class="health-grid" id="health-grid" style="display:none"></div>
+  <div class="error" id="health-error" style="display:none"></div>
+</div>
 
 <div class="card" id="mtd-card">
   <h2>Month to Date</h2>
@@ -93,6 +110,11 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 const fmtNum = (n) => n.toLocaleString();
 const fmtUSD = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 const fmtDate = (s) => s ? s.replace('T',' ').substring(0,16) : '';
+const fmtUptime = (s) => {
+  if (!s || s < 0) return '—';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+};
 
 let curChart = null, modelChart = null, provChart = null;
 
@@ -100,6 +122,34 @@ async function api(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
   return r.json();
+}
+
+// Health
+async function loadHealth() {
+  try {
+    const h = await api('/api/health');
+    document.getElementById('health-loading').style.display = 'none';
+    const grid = document.getElementById('health-grid');
+    grid.style.display = 'grid';
+    const items = [
+      { label: 'Gateway', ok: true, val: 'PID ' + h.pid + ' · up ' + fmtUptime(h.uptime_seconds) },
+      { label: 'Tunnel', ok: h.tunnel_mode !== 'none', val: h.tunnel_mode + (h.public_url ? ' · ' + h.public_url : ''), wide: true },
+      { label: 'Moonshot Key', ok: h.has_moonshot_key, val: h.has_moonshot_key ? 'Configured' : 'Missing' },
+      { label: 'DeepSeek Key', ok: h.has_deepseek_key, val: h.has_deepseek_key ? 'Configured' : 'Missing' },
+      { label: 'Version', ok: true, val: h.version },
+      { label: 'Port', ok: true, val: String(h.local_port) },
+    ];
+    grid.innerHTML = items.map(i =>
+      '<div class="health-item' + (i.wide ? ' health-item-wide' : '') + '">' +
+        '<div class="dot ' + (i.ok ? 'dot-ok' : 'dot-err') + '"></div>' +
+        '<div><strong>' + i.label + '</strong><br><span style="color:var(--text-muted);font-size:0.8rem">' + i.val + '</span></div>' +
+      '</div>'
+    ).join('');
+  } catch(e) {
+    document.getElementById('health-loading').style.display = 'none';
+    document.getElementById('health-error').style.display = 'block';
+    document.getElementById('health-error').textContent = 'Error: ' + e.message;
+  }
 }
 
 // MTD summary
@@ -255,7 +305,7 @@ async function loadSessionDetail(sessionId) {
   }
 }
 
-loadMTD(); loadByDay(); loadByModel(); loadByProvider(); loadSessions();
+loadHealth(); loadMTD(); loadByDay(); loadByModel(); loadByProvider(); loadSessions();
 </script>
 </body>
 </html>

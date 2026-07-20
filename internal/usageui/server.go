@@ -14,6 +14,18 @@ import (
 	"github.com/commoddity/discursive/internal/usage"
 )
 
+// HealthInfo holds gateway runtime health data for the dashboard.
+type HealthInfo struct {
+	Version        string `json:"version"`
+	PID            int    `json:"pid"`
+	UptimeSeconds  int64  `json:"uptime_seconds"`
+	HasMoonshotKey bool   `json:"has_moonshot_key"`
+	HasDeepSeekKey bool   `json:"has_deepseek_key"`
+	TunnelMode     string `json:"tunnel_mode"`
+	PublicURL      string `json:"public_url"`
+	LocalPort      int    `json:"local_port"`
+}
+
 //go:embed static
 var staticFS embed.FS
 
@@ -22,6 +34,7 @@ type Server struct {
 	addr    string
 	store   *usage.Store
 	httpSrv *http.Server
+	health  HealthInfo
 }
 
 // NewServer creates a usage UI server backed by the given store.
@@ -59,6 +72,7 @@ func (s *Server) Start() error {
 	})
 
 	// API endpoints.
+	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/summary", s.handleSummary)
 	mux.HandleFunc("/api/by-day", s.handleByDay)
 	mux.HandleFunc("/api/by-model", s.handleByModel)
@@ -81,6 +95,15 @@ func (s *Server) Shutdown() error {
 		return s.httpSrv.Close()
 	}
 	return nil
+}
+
+// SetHealth sets the runtime health info displayed on the dashboard.
+func (s *Server) SetHealth(h HealthInfo) {
+	s.health = h
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.health)
 }
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {

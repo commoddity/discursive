@@ -42,7 +42,17 @@ func testStore(t *testing.T) *usage.Store {
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	store := testStore(t)
-	return &Server{addr: "", store: store}
+	srv := &Server{addr: "", store: store}
+	srv.SetHealth(HealthInfo{
+		Version:        "0.0.0-test",
+		PID:            12345,
+		HasMoonshotKey: true,
+		HasDeepSeekKey: true,
+		TunnelMode:     "quick",
+		PublicURL:      "https://example.trycloudflare.com/v1",
+		LocalPort:      4001,
+	})
+	return srv
 }
 
 func doJSON(t *testing.T, srv *Server, path string) *httptest.ResponseRecorder {
@@ -55,6 +65,7 @@ func doJSON(t *testing.T, srv *Server, path string) *httptest.ResponseRecorder {
 	mux.HandleFunc("/api/by-model", srv.handleByModel)
 	mux.HandleFunc("/api/by-provider", srv.handleByProvider)
 	mux.HandleFunc("/api/sessions", srv.handleSessions)
+	mux.HandleFunc("/api/health", srv.handleHealth)
 
 	req := httptest.NewRequest("GET", path, nil)
 	w := httptest.NewRecorder()
@@ -160,6 +171,27 @@ func TestAPISessions(t *testing.T) {
 	}
 	if len(sessions) < 1 {
 		t.Fatalf("expected at least 1 session, got %d", len(sessions))
+	}
+}
+
+func TestAPIHealth(t *testing.T) {
+	srv := newTestServer(t)
+	w := doJSON(t, srv, "/api/health")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var h HealthInfo
+	if err := json.Unmarshal(w.Body.Bytes(), &h); err != nil {
+		t.Fatal(err)
+	}
+	if h.Version != "0.0.0-test" {
+		t.Fatalf("version: %q", h.Version)
+	}
+	if h.TunnelMode != "quick" {
+		t.Fatalf("tunnel_mode: %q", h.TunnelMode)
+	}
+	if !h.HasMoonshotKey {
+		t.Fatal("expected has_moonshot_key")
 	}
 }
 

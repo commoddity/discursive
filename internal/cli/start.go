@@ -147,6 +147,15 @@ func serveGateway(dataRoot string, settings config.AppSettings) error {
 
 	// Start the usage UI (always-on, loopback only).
 	uiSrv := usageui.NewServer("127.0.0.1:4002", srv.Store())
+	uiSrv.SetHealth(usageui.HealthInfo{
+		Version:        Version,
+		PID:            os.Getpid(),
+		HasMoonshotKey: settings.HasMoonshotKey(),
+		HasDeepSeekKey: settings.HasDeepSeekKey(),
+		TunnelMode:     config.NormalizeTunnelMode(settings.TunnelMode),
+		PublicURL:      publicURL,
+		LocalPort:      int(settings.LocalPort),
+	})
 	if err := uiSrv.Start(); err != nil {
 		slog.Warn("usage_ui_start_failed", "err", err)
 	}
