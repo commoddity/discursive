@@ -5,4 +5,4 @@ pre-commit:
   parallel: false
   commands:
     verify:
-      run: make verify && git add $(git diff --name-only --diff-filter=M)
+      run: make verify && git add -u
