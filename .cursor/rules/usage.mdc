@@ -72,4 +72,10 @@ rows for live cost math.
 | ----- | ---- | ----- |
 | One log line per completion at INFO | Per-call logged at Info | Use `LogEvent` at Debug; `usage_summary` at Info after idle |
 
+### `Zero cache-hit tokens despite large prompt — code or upstream?`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| `cache_hit_tokens=0` + `cache_miss_tokens=0` with large `prompt_tokens` makes the operator suspect a parsing bug | Upstream genuinely returned no cache data (cold request, prefix change, or provider switch) | Add a diagnostic `slog.Debug` at the single choke point (`recordUsage`) that fires when `CacheHitTokens==0 && CacheMissTokens==0 && PromptTokens>1024`. This signals "upstream reported no cache" vs silent "might be broken." The log confirms the data path is working correctly; 0 cache hits on request 1 of a new session is expected, not a bug. |
+
 <!-- last-verified: 2026-07 -->
