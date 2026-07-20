@@ -46,4 +46,26 @@ do not hardcode Moonshot-only assumptions in shared sanitize code.
 | ----- | ---- | ----- |
 | Moonshot 400 / unexpected thinking behavior on K3 | Sent K2 `thinking` or omitted required replay of `reasoning_content` | Use `reasoning_effort`; strip `thinking`; replay full assistant messages |
 
+## Kimi Context Caching
+
+- **Fully automatic, content-prefix-hash based.** No API parameters required.
+  Cache fires when the request prefix matches a previously-seen prefix within
+  the TTL window (5-30 minutes).
+- **`prompt_cache_key` is a routing hint, NOT cache control.** It increases
+  the probability of keeping related requests on the same cluster (where warm
+  KV cache lives), but does not create, bind, or partition caches. Kimi's
+  `kimi-cli` uses it for this purpose.
+- **First request to Kimi in a session is always cold.** Cache hits begin on
+  request 2+ when the prefix matches. Switching providers mid-session resets
+  cache state (new prefix, new cluster).
+- **256-token chunk alignment** for cached reads. Small prefix changes
+  (including `reasoning_content` on non-K3 models) can shift alignment
+  boundaries and reduce cacheable tokens.
+- **Generation parameters** (`temperature`, `top_p`, `reasoning_effort`) do
+  NOT participate in cache identity. Our sanitizer sets `reasoning_effort:
+  "max"` for all K3 requests — this is stable and cache-friendly.
+- **`cached_tokens`** is the single field Kimi returns for cache hits (unlike
+  DeepSeek's `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`). Our
+  `parseUsageObject` derives hit/miss from it.
+
 <!-- last-verified: 2026-07 -->
