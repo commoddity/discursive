@@ -2,14 +2,19 @@
   <img src=".github/img/Discursive.png" alt="Discursive" width="600" />
 </p>
 
-A local OpenAI-compatible gateway that lets [Cursor](https://cursor.com) use alternative providers with full agentic functionality.
+<p align="center">
+  A gateway proxy that enables <a href="https://cursor.com">Cursor</a>'s full agentic workflow with alternative providers.
+</p>
 
-Supported providers:
-- [Moonshot Kimi](https://platform.kimi.ai/)
-- [DeepSeek](https://api-docs.deepseek.com/)
-- [Thaura AI](https://thaura.ai/)
+<p align="center">
+  <a href="https://platform.kimi.ai/"><img src=".github/img/moonshot-white.svg" alt="Moonshot Kimi" height="35" valign="middle" /></a>
+  &ensp;&middot;&ensp;
+  <a href="https://api-docs.deepseek.com/"><img src=".github/img/deepseek.svg" alt="DeepSeek" height="35" valign="middle" /></a>
+  &ensp;&middot;&ensp;
+  <a href="https://thaura.ai/"><img src=".github/img/thaura.png" alt="Thaura AI" height="35" valign="middle" /></a>
+</p>
 
-Written in Go.
+<h3 align="center"><img src=".github/img/go.svg" alt="Go" height="28" valign="middle" /> Written in <a href="https://go.dev/">Go</a></h3>
 
 ---
 
