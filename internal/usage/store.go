@@ -55,8 +55,12 @@ type ModelTotals struct {
 
 // Store persists usage events in SQLite under {dataRoot}/usage/.
 type Store struct {
-	db *sql.DB
+	db     *sql.DB
+	dbPath string
 }
+
+// DBPath returns the filesystem path to the SQLite database.
+func (s *Store) DBPath() string { return s.dbPath }
 
 // NewStore creates the usage directory and opens/creates the SQLite database.
 func NewStore(dataRoot string) (*Store, error) {
@@ -76,7 +80,7 @@ func NewStore(dataRoot string) (*Store, error) {
 		return nil, err
 	}
 
-	return &Store{db: db}, nil
+	return &Store{db: db, dbPath: dbPath}, nil
 }
 
 // Close closes the database connection.
@@ -251,4 +255,18 @@ func (s *Store) SessionSummary(sessionID string) (SessionSummary, error) {
 		return SessionSummary{}, fmt.Errorf("rows: %w", err)
 	}
 	return sum, nil
+}
+
+// DeleteEventsBefore deletes all events with timestamp before the given cutoff.
+// Returns the number of deleted rows.
+func (s *Store) DeleteEventsBefore(cutoff time.Time) (int64, error) {
+	res, err := s.db.Exec(
+		`DELETE FROM events WHERE timestamp < ?`,
+		cutoff.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete events before %v: %w", cutoff, err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }

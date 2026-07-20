@@ -74,16 +74,60 @@ func (s *Store) QueryLastNDays(n int) ([]DailySummary, error) {
 		return nil, fmt.Errorf("query last n days: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
+	return scanDaySummaries(rows)
+}
 
+// QueryByDaySince returns DailySummary entries grouped by day since a given time.
+// When window is sub-day (e.g. 1h/3h/12h), groups by a configurable bucket.
+// bucketMinutes: 0 means group by day (date). >0 means group by floor(timestamp / bucket).
+func (s *Store) QueryByDaySince(since time.Time, bucketMinutes int) ([]DailySummary, error) {
+	var rows *sql.Rows
+	var err error
+	if bucketMinutes > 0 {
+		bucketSecs := bucketMinutes * 60
+		rows, err = s.db.Query(
+			`SELECT strftime('%Y-%m-%dT%H:%M:00',
+			 datetime((CAST(strftime('%s', timestamp) AS INTEGER) / ?) * ?, 'unixepoch')) as bucket,
+			 COUNT(*) as reqs,
+			 COALESCE(SUM(prompt_tokens),0),
+			 COALESCE(SUM(completion_tokens),0),
+			 COALESCE(SUM(cache_hit_tokens),0),
+			 COALESCE(SUM(cache_miss_tokens),0),
+			 COALESCE(SUM(est_usd),0)
+			 FROM events WHERE timestamp >= ?
+			 GROUP BY bucket
+			 ORDER BY bucket ASC`, bucketSecs, bucketSecs, since.UTC().Format(time.RFC3339))
+	} else {
+		rows, err = s.db.Query(
+			`SELECT date(timestamp) as day,
+			 COUNT(*) as reqs,
+			 COALESCE(SUM(prompt_tokens),0),
+			 COALESCE(SUM(completion_tokens),0),
+			 COALESCE(SUM(cache_hit_tokens),0),
+			 COALESCE(SUM(cache_miss_tokens),0),
+			 COALESCE(SUM(est_usd),0)
+			 FROM events WHERE timestamp >= ?
+			 GROUP BY day
+			 ORDER BY day ASC`, since.UTC().Format(time.RFC3339))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query by day since: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanDaySummaries(rows)
+}
+
+// scanDaySummaries scans rows grouped by a time bucket into DailySummary slices.
+func scanDaySummaries(rows *sql.Rows) ([]DailySummary, error) {
 	var out []DailySummary
 	for rows.Next() {
-		var day string
+		var bucket string
 		var ds DailySummary
-		if err := rows.Scan(&day, &ds.RequestCount, &ds.TokensIn,
+		if err := rows.Scan(&bucket, &ds.RequestCount, &ds.TokensIn,
 			&ds.TokensOut, &ds.CacheHitTokens, &ds.CacheMissTokens, &ds.EstUSD); err != nil {
-			return nil, fmt.Errorf("scan day: %w", err)
+			return nil, fmt.Errorf("scan day/bucket: %w", err)
 		}
-		ds.Date = day
+		ds.Date = bucket
 		ds.EstUSD = RoundUSD(ds.EstUSD)
 		ds.CursorReference = cursorRef()
 		out = append(out, ds)
@@ -218,6 +262,26 @@ func (s *Store) QueryMonthToDate() (DailySummary, error) {
 	return buildDailySummary(rows, start, "")
 }
 
+// QueryByModelSince returns usage breakdown by model since a given time.
+func (s *Store) QueryByModelSince(since time.Time) ([]ModelBreakdown, error) {
+	rows, err := s.db.Query(
+		`SELECT provider, model,
+		 COUNT(*) as reqs,
+		 COALESCE(SUM(prompt_tokens),0),
+		 COALESCE(SUM(completion_tokens),0),
+		 COALESCE(SUM(cache_hit_tokens),0),
+		 COALESCE(SUM(cache_miss_tokens),0),
+		 COALESCE(SUM(est_usd),0)
+		 FROM events WHERE timestamp >= ?
+		 GROUP BY provider, model
+		 ORDER BY SUM(est_usd) DESC`, since.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("query by model since: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanModelBreakdowns(rows)
+}
+
 // QueryByModel returns all-time usage breakdown by model.
 func (s *Store) QueryByModel() ([]ModelBreakdown, error) {
 	rows, err := s.db.Query(
@@ -235,7 +299,10 @@ func (s *Store) QueryByModel() ([]ModelBreakdown, error) {
 		return nil, fmt.Errorf("query by model: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
+	return scanModelBreakdowns(rows)
+}
 
+func scanModelBreakdowns(rows *sql.Rows) ([]ModelBreakdown, error) {
 	var out []ModelBreakdown
 	for rows.Next() {
 		var mb ModelBreakdown
@@ -251,6 +318,26 @@ func (s *Store) QueryByModel() ([]ModelBreakdown, error) {
 		return nil, fmt.Errorf("rows: %w", err)
 	}
 	return out, nil
+}
+
+// QueryByProviderSince returns usage breakdown by provider since a given time.
+func (s *Store) QueryByProviderSince(since time.Time) ([]ProviderBreakdown, error) {
+	rows, err := s.db.Query(
+		`SELECT provider,
+		 COUNT(*) as reqs,
+		 COALESCE(SUM(prompt_tokens),0),
+		 COALESCE(SUM(completion_tokens),0),
+		 COALESCE(SUM(cache_hit_tokens),0),
+		 COALESCE(SUM(cache_miss_tokens),0),
+		 COALESCE(SUM(est_usd),0)
+		 FROM events WHERE timestamp >= ?
+		 GROUP BY provider
+		 ORDER BY SUM(est_usd) DESC`, since.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("query by provider since: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanProviderBreakdowns(rows)
 }
 
 // QueryByProvider returns all-time usage breakdown by provider.
@@ -270,7 +357,10 @@ func (s *Store) QueryByProvider() ([]ProviderBreakdown, error) {
 		return nil, fmt.Errorf("query by provider: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
+	return scanProviderBreakdowns(rows)
+}
 
+func scanProviderBreakdowns(rows *sql.Rows) ([]ProviderBreakdown, error) {
 	var out []ProviderBreakdown
 	for rows.Next() {
 		var pb ProviderBreakdown
@@ -290,17 +380,38 @@ func (s *Store) QueryByProvider() ([]ProviderBreakdown, error) {
 
 // QuerySessions returns a list of all unique sessions with summary info.
 func (s *Store) QuerySessions() ([]SessionInfo, error) {
-	rows, err := s.db.Query(
-		`SELECT session_id,
-		 COUNT(*) as reqs,
-		 COALESCE(SUM(prompt_tokens),0),
-		 COALESCE(SUM(completion_tokens),0),
-		 COALESCE(SUM(est_usd),0),
-		 MIN(timestamp) as first_seen,
-		 MAX(timestamp) as last_seen
-		 FROM events
-		 GROUP BY session_id
-		 ORDER BY MAX(timestamp) DESC`)
+	return s.QuerySessionsSince(time.Time{})
+}
+
+// QuerySessionsSince returns sessions whose last event is since a given time.
+func (s *Store) QuerySessionsSince(since time.Time) ([]SessionInfo, error) {
+	var rows *sql.Rows
+	var err error
+	if since.IsZero() {
+		rows, err = s.db.Query(
+			`SELECT session_id,
+			 COUNT(*) as reqs,
+			 COALESCE(SUM(prompt_tokens),0),
+			 COALESCE(SUM(completion_tokens),0),
+			 COALESCE(SUM(est_usd),0),
+			 MIN(timestamp) as first_seen,
+			 MAX(timestamp) as last_seen
+			 FROM events
+			 GROUP BY session_id
+			 ORDER BY MAX(timestamp) DESC`)
+	} else {
+		rows, err = s.db.Query(
+			`SELECT session_id,
+			 COUNT(*) as reqs,
+			 COALESCE(SUM(prompt_tokens),0),
+			 COALESCE(SUM(completion_tokens),0),
+			 COALESCE(SUM(est_usd),0),
+			 MIN(timestamp) as first_seen,
+			 MAX(timestamp) as last_seen
+			 FROM events WHERE timestamp >= ?
+			 GROUP BY session_id
+			 ORDER BY MAX(timestamp) DESC`, since.UTC().Format(time.RFC3339))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("query sessions: %w", err)
 	}
@@ -321,4 +432,26 @@ func (s *Store) QuerySessions() ([]SessionInfo, error) {
 		return nil, fmt.Errorf("rows: %w", err)
 	}
 	return out, nil
+}
+
+// DBStats holds database-level statistics.
+type DBStats struct {
+	EventCount   int64  `json:"event_count"`
+	SessionCount int64  `json:"session_count"`
+	DBFileSize   int64  `json:"db_file_size"`
+	FirstEvent   string `json:"first_event"`
+	LastEvent    string `json:"last_event"`
+}
+
+// QueryStats returns aggregated database statistics.
+func (s *Store) QueryStats() (DBStats, error) {
+	var stats DBStats
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&stats.EventCount); err != nil {
+		return stats, fmt.Errorf("count events: %w", err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(DISTINCT session_id) FROM events`).Scan(&stats.SessionCount); err != nil {
+		return stats, fmt.Errorf("count sessions: %w", err)
+	}
+	_ = s.db.QueryRow(`SELECT COALESCE(MIN(timestamp),''), COALESCE(MAX(timestamp),'') FROM events`).Scan(&stats.FirstEvent, &stats.LastEvent)
+	return stats, nil
 }

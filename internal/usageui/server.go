@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/commoddity/discursive/internal/usage"
@@ -82,6 +83,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/by-model", s.handleByModel)
 	mux.HandleFunc("/api/by-provider", s.handleByProvider)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
+	mux.HandleFunc("/api/stats", s.handleStats)
 
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -125,7 +127,22 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleByDay(w http.ResponseWriter, r *http.Request) {
-	days, err := s.store.QueryLastNDays(30)
+	since, err := parseSinceParam(r)
+	if err != nil {
+		http.Error(w, "invalid since parameter", http.StatusBadRequest)
+		return
+	}
+	if since.IsZero() {
+		days, err := s.store.QueryLastNDays(30)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, days)
+		return
+	}
+	bucketMins := parseBucketParam(r)
+	days, err := s.store.QueryByDaySince(since, bucketMins)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -134,7 +151,17 @@ func (s *Server) handleByDay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleByModel(w http.ResponseWriter, r *http.Request) {
-	models, err := s.store.QueryByModel()
+	since, err := parseSinceParam(r)
+	if err != nil {
+		http.Error(w, "invalid since parameter", http.StatusBadRequest)
+		return
+	}
+	var models []usage.ModelBreakdown
+	if since.IsZero() {
+		models, err = s.store.QueryByModel()
+	} else {
+		models, err = s.store.QueryByModelSince(since)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -143,7 +170,17 @@ func (s *Server) handleByModel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleByProvider(w http.ResponseWriter, r *http.Request) {
-	providers, err := s.store.QueryByProvider()
+	since, err := parseSinceParam(r)
+	if err != nil {
+		http.Error(w, "invalid since parameter", http.StatusBadRequest)
+		return
+	}
+	var providers []usage.ProviderBreakdown
+	if since.IsZero() {
+		providers, err = s.store.QueryByProvider()
+	} else {
+		providers, err = s.store.QueryByProviderSince(since)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -162,7 +199,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, ds)
 		return
 	}
-	sessions, err := s.store.QuerySessions()
+	since, err := parseSinceParam(r)
+	if err != nil {
+		http.Error(w, "invalid since parameter", http.StatusBadRequest)
+		return
+	}
+	sessions, err := s.store.QuerySessionsSince(since)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -170,7 +212,52 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, sessions)
 }
 
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.store.QueryStats()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Attach DB file size from the filesystem.
+	if fi, err := os.Stat(s.store.DBPath()); err == nil {
+		stats.DBFileSize = fi.Size()
+	}
+	writeJSON(w, stats)
+}
+
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// parseSinceParam extracts an optional ISO-8601 since timestamp from query params.
+func parseSinceParam(r *http.Request) (time.Time, error) {
+	s := r.URL.Query().Get("since")
+	if s == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t, nil
+}
+
+// parseBucketParam extracts an optional bucket duration from the query string.
+// Accepted values: "10m", "30m", "2h", "12h", "1d". Returns minutes.
+func parseBucketParam(r *http.Request) int {
+	switch r.URL.Query().Get("bucket") {
+	case "10m":
+		return 10
+	case "30m":
+		return 30
+	case "2h":
+		return 120
+	case "12h":
+		return 720
+	case "1d":
+		return 0 // group by date(), not minute-bucket
+	default:
+		return 0
+	}
 }

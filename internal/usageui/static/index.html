@@ -15,20 +15,26 @@
   --accent2: #3fb950;
   --danger: #f85149;
   --warn: #d29922;
-  --moonshot: #f78166;
-  --deepseek: #79c0ff;
-  --thaura: #d2a8ff;
+  --moonshot: #7c3aed;
+  --moonshot-light: #a78bfa;
+  --deepseek: #2563eb;
+  --deepseek-light: #60a5fa;
+  --thaura: #059669;
+  --thaura-light: #34d399;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 24px; max-width: 1100px; margin: 0 auto; }
-.header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
 .header img { height: 32px; width: auto; }
 .header .providers { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .header .provider-indicator { display: flex; align-items: center; gap: 6px; opacity: 0.4; transition: opacity 0.2s; }
 .header .provider-indicator.enabled { opacity: 1; }
 .header .provider-indicator img { height: 22px; width: auto; }
 .header .provider-indicator .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-h2 { font-size: 1.1rem; color: var(--text-muted); margin-bottom: 12px; font-weight: 500; }
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+h2 { font-size: 1.1rem; color: var(--text-muted); font-weight: 500; }
+.time-select { font-size: 0.8rem; padding: 4px 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
+.time-select:focus { outline: none; border-color: var(--accent); }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
 .stat { text-align: center; }
@@ -37,6 +43,9 @@ h2 { font-size: 1.1rem; color: var(--text-muted); margin-bottom: 12px; font-weig
 .stat .sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
 .chart-box { height: 260px; position: relative; }
+.chart-legend { display: flex; align-items: center; gap: 16px; margin-bottom: 4px; }
+.chart-legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.72rem; color: var(--text-muted); }
+.chart-legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
 th { color: var(--text-muted); font-weight: 500; }
@@ -67,6 +76,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .thaura { color: var(--thaura); }
 .usd { font-variant-numeric: tabular-nums; text-align: right !important; }
 .num { font-variant-numeric: tabular-nums; text-align: right !important; }
+.stats-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.78rem; color: var(--text-muted); }
+.retention-info { position: relative; display: inline-flex; align-items: center; cursor: help; }
+.retention-info .icon { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; }
+.retention-info .tooltip { display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.5; }
+.retention-info .tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--border); }
+.retention-info:hover .tooltip { display: block; }
 </style>
 </head>
 <body>
@@ -90,14 +105,40 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 </div>
 
 <div class="card">
-  <h2>📊 Spend by Day</h2>
+  <div class="card-header">
+    <h2>📊 Spend by Period</h2>
+    <select class="time-select" id="time-range">
+      <option value="1h">1 hour</option>
+      <option value="3h">3 hours</option>
+      <option value="12h">12 hours</option>
+      <option value="24h">24 hours</option>
+      <option value="7d" selected>1 week</option>
+      <option value="30d">1 month</option>
+    </select>
+  </div>
+  <div class="chart-legend" id="by-period-legend" style="display:none">
+    <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:var(--accent)"></div> Cache miss</div>
+    <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:var(--accent); opacity:0.35"></div> Cache hit</div>
+  </div>
   <div class="chart-box"><canvas id="chart-by-day"></canvas></div>
+  <div class="stats-row">
+    <div class="retention-info">
+      <span class="icon">?</span>
+      <span class="tooltip" id="retention-tooltip">Loading...</span>
+    </div>
+  </div>
 </div>
 
 <div class="card">
   <div class="charts">
-    <div><h2>🤖 Spend by Model</h2><div class="chart-box"><canvas id="chart-by-model"></canvas></div></div>
-    <div><h2>🏢 Spend by Provider</h2><div class="chart-box"><canvas id="chart-by-provider"></canvas></div></div>
+    <div>
+      <h2>🤖 Spend by Model</h2>
+      <div class="chart-box"><canvas id="chart-by-model"></canvas></div>
+    </div>
+    <div>
+      <h2>🏢 Spend by Provider</h2>
+      <div class="chart-box"><canvas id="chart-by-provider"></canvas></div>
+    </div>
   </div>
 </div>
 
@@ -132,19 +173,88 @@ const fmtUptime = (s) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
   return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
 };
-const PROVIDER_COLORS = { moonshot: '#f78166', deepseek: '#79c0ff', thaura: '#d2a8ff' };
+const PROVIDER_COLORS = { moonshot: '#7c3aed', deepseek: '#2563eb', thaura: '#059669' };
+const PROVIDER_LIGHT = { moonshot: '#a78bfa', deepseek: '#60a5fa', thaura: '#34d399' };
 function providerColor(p) { return PROVIDER_COLORS[p] || '#8b949e'; }
+function providerLight(p) { return PROVIDER_LIGHT[p] || '#c9d1d9'; }
 function providerClass(p) { return PROVIDER_COLORS[p] ? p : 'deepseek'; }
 
-let curChart = null, modelChart = null, provChart = null;
+// Vertical gradient from color at top to light variant at bottom
+function makeGradient(ctx, color) {
+  const g = ctx.createLinearGradient(0, 0, 0, 260);
+  g.addColorStop(0, color);
+  // blend to ~30% opacity at bottom for a pleasant fade
+  g.addColorStop(1, color + '4D');
+  return g;
+}
 
+// Shared tooltip: shows cache hit & miss for the whole stacked bar with %.
+function makeCacheTooltip() {
+  return {
+    mode: 'index',
+    intersect: false,
+    callbacks: {
+      title: ctx => ctx[0].label,
+      label: ctx => {
+        // Only emit once per index (first dataset item).
+        if (ctx.datasetIndex !== 0) return '';
+        const i = ctx.dataIndex;
+        const ds = ctx.chart.data.datasets;
+        const missVal = ds[0].data[i];
+        const hitVal  = ds[1].data[i];
+        const total = +hitVal + +missVal;
+        const hitPct = total > 0 ? (+hitVal / total * 100).toFixed(0) : 0;
+        const missPct = total > 0 ? (+missVal / total * 100).toFixed(0) : 0;
+        return [
+          'Cache miss: $' + fmtUSD(+missVal) + ' / ' + missPct + '%',
+          'Cache hit:  $' + fmtUSD(+hitVal) + ' / ' + hitPct + '%',
+        ];
+      },
+    },
+  };
+}
+
+// Provider pricing URLs
+const PRICING_URLS = {
+  moonshot: 'https://platform.kimi.ai/docs/pricing',
+  deepseek: 'https://api-docs.deepseek.com/quick_start/pricing',
+  thaura: 'https://thaura.ai/pricing'
+};
+
+let chartByDay = null, chartByModel = null, chartByProv = null;
+
+// --- localStorage for time range ---
+const LS_KEY = 'discursive_usageui_time_range';
+function getSavedRange() {
+  return localStorage.getItem(LS_KEY) || '7d';
+}
+function saveRange(val) {
+  localStorage.setItem(LS_KEY, val);
+}
+
+// Time range resolution
+function timeRangeToSince(val) {
+  const now = new Date();
+  const map = {
+    '1h': 60*60*1000,
+    '3h': 3*60*60*1000,
+    '12h': 12*60*60*1000,
+    '24h': 24*60*60*1000,
+    '7d': 7*24*60*60*1000,
+    '30d': 30*24*60*60*1000
+  };
+  const ms = map[val] || 7*24*60*60*1000;
+  return new Date(now.getTime() - ms).toISOString();
+}
+
+// Common fetch wrapper
 async function api(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
   return r.json();
 }
 
-// Health
+// --- Health ---
 async function loadHealth() {
   try {
     const h = await api('/api/health');
@@ -188,10 +298,9 @@ async function loadHealth() {
         '<div class="health-val">' + up + '</div>' +
       '</div>';
 
-    // Store gateway key for toggle/copy
     grid.dataset.gatewayKey = raw;
 
-    // Provider indicator dots in header
+    // Provider indicator dots in header (with pricing links)
     const providers = document.getElementById('provider-indicators');
     const provData = [
       { id: 'moonshot', name: 'Moonshot',  logo: '/static/moonshot.svg', ok: h.has_moonshot_key },
@@ -201,7 +310,9 @@ async function loadHealth() {
     providers.innerHTML = provData.map(p =>
       '<div class="provider-indicator' + (p.ok ? ' enabled' : '') + '" title="' + p.name + ': ' + (p.ok ? 'Configured' : 'Not configured') + '">' +
         '<div class="dot ' + (p.ok ? 'dot-ok' : 'dot-err') + '"></div>' +
-        '<img src="' + p.logo + '" alt="' + p.name + '" />' +
+        '<a href="' + (PRICING_URLS[p.id] || '#') + '" target="_blank" rel="noopener" title="' + p.name + ' pricing" style="display:flex;align-items:center;">' +
+          '<img src="' + p.logo + '" alt="' + p.name + '" />' +
+        '</a>' +
       '</div>'
     ).join('');
 
@@ -243,7 +354,7 @@ function copyGatewayKey() {
   copyToClipboard(event, raw);
 }
 
-// MTD summary
+// --- MTD summary ---
 async function loadMTD() {
   try {
     const s = await api('/api/summary');
@@ -263,90 +374,247 @@ async function loadMTD() {
   }
 }
 
-// By day chart
+function timeRangeToBucket(val) {
+  const map = { '1h': '10m', '3h': '10m', '12h': '30m', '24h': '2h', '7d': '12h', '30d': '1d' };
+  return map[val] || '1d';
+}
+
+// --- Spend by Period (was By Day) ---
 async function loadByDay() {
   try {
-    const days = await api('/api/by-day');
-    const labels = days.map(d => d.date).reverse();
-    const data = days.map(d => d.est_usd).reverse();
-    curChart = new Chart(document.getElementById('chart-by-day'), {
+    const range = getSavedRange();
+    const since = timeRangeToSince(range);
+    const bucket = timeRangeToBucket(range);
+    const days = await api('/api/by-day?since=' + encodeURIComponent(since) + '&bucket=' + bucket);
+    const labels = days.map(d => d.date);
+    const cashMiss = days.map(d => Number((d.est_usd * (d.cache_miss_tokens + d.cache_hit_tokens) === 0 ? d.est_usd : d.est_usd * d.cache_miss_tokens / Math.max(1, d.cache_miss_tokens + d.cache_hit_tokens))));
+
+    // Approximate cache-hit vs cache-miss cost split using token ratio
+    const totalCash = days.map(d => d.est_usd);
+    const cashHit = days.map(d => {
+      const total = d.cache_miss_tokens + d.cache_hit_tokens;
+      if (total === 0) return 0;
+      return d.est_usd * (d.cache_hit_tokens / total);
+    });
+
+    // Cleaner approach: use separate cost approximations.
+    // cache_miss = prompt - cache_hit cost; cache_hit cost from cache tokens / 1M * cache rate
+    // Actually, the backend already stores per-event est_usd.
+    // For the UI we approximate: if we have cache_hit/cache_miss, the spend breakdown is proportional,
+    // but better: the data doesn't have cache cost broken out per-day.
+    // Let's just show the cashHit/cashMiss approximation.
+    const missData = days.map(d => {
+      const denom = d.cache_miss_tokens + d.cache_hit_tokens;
+      if (denom === 0) return d.est_usd;
+      // cache_miss accounts for the "regular input" portion.
+      // We approximate as: missTokens/(missTokens+hitTokens) of the est_usd
+      return Number((d.est_usd * d.cache_miss_tokens / denom).toFixed(6));
+    });
+    const hitData = days.map(d => {
+      const denom = d.cache_miss_tokens + d.cache_hit_tokens;
+      if (denom === 0) return 0;
+      return Number((d.est_usd * d.cache_hit_tokens / denom).toFixed(6));
+    });
+
+    if (chartByDay) chartByDay.destroy();
+    chartByDay = new Chart(document.getElementById('chart-by-day'), {
       type: 'bar',
-      data: { labels, datasets: [{ label: 'Est. USD', data, backgroundColor: '#58a6ff', borderRadius: 4 }] },
+      data: {
+        labels,
+        datasets: [
+          { label: 'Cache miss', data: missData, backgroundColor: '#58a6ff', borderRadius: 4 },
+          { label: 'Cache hit',  data: hitData,  backgroundColor: 'rgba(88,166,255,0.35)', borderRadius: 0 },
+        ]
+      },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: makeCacheTooltip(),
+        },
         scales: {
-          x: { ticks: { color: '#8b949e', maxTicksLimit: 14 } },
-          y: { ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
+          x: {
+            stacked: true,
+            ticks: { color: '#8b949e', maxTicksLimit: 14 }
+          },
+          y: {
+            stacked: true,
+            ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) }
+          }
         }
       }
     });
+    document.getElementById('by-period-legend').style.display = 'flex';
   } catch(e) { /* chart stays empty */ }
 }
 
-// By model chart
+// --- DB Stats ---
+async function loadStats() {
+  try {
+    const s = await api('/api/stats');
+    const kb = s.db_file_size / 1024;
+    document.getElementById('retention-tooltip').innerHTML =
+      'Events: ' + s.event_count.toLocaleString() + '<br>' +
+      'Sessions: ' + s.session_count.toLocaleString() + '<br>' +
+      'DB file: ' + (kb < 1024 ? kb.toFixed(1) + ' KB' : (kb / 1024).toFixed(1) + ' MB') + '<br>' +
+      'Data span: ' + formatShortDate(s.first_event) + ' \u2013 ' + formatShortDate(s.last_event) + '<br>' +
+      '<br><em>Purge old data: <code>discursive usage purge --max-age 90d</code></em>';
+  } catch(e) {
+    document.getElementById('retention-tooltip').textContent = 'Unable to load stats';
+  }
+}
+
+function formatShortDate(s) {
+  if (!s) return '-';
+  return s.substring(0, 10);
+}
+
+// --- By Model ---
 async function loadByModel() {
   try {
-    const models = await api('/api/by-model');
-    const labels = models.map(m => m.provider+' / '+m.model);
-    const data = models.map(m => m.est_usd);
-    const colors = models.map(m => providerColor(m.provider));
-    modelChart = new Chart(document.getElementById('chart-by-model'), {
+    const range = getSavedRange();
+    const since = timeRangeToSince(range);
+    const models = await api('/api/by-model?since=' + encodeURIComponent(since));
+    const modelLabels = models.map(m => m.provider+' / '+m.model);
+    const modelColors = models.map(m => providerColor(m.provider));
+    const modelLight = models.map(m => providerLight(m.provider));
+
+    // Compute cache-hit vs cache-miss dollar split per model
+    const missData = models.map(m => {
+      const denom = m.cache_miss_tokens + m.cache_hit_tokens;
+      if (denom === 0) return m.est_usd;
+      return Number((m.est_usd * m.cache_miss_tokens / denom).toFixed(6));
+    });
+    const hitData = models.map(m => {
+      const denom = m.cache_miss_tokens + m.cache_hit_tokens;
+      if (denom === 0) return 0;
+      return Number((m.est_usd * m.cache_hit_tokens / denom).toFixed(6));
+    });
+
+    const ctxModel = document.getElementById('chart-by-model').getContext('2d');
+    const missGradients = modelColors.map(c => makeGradient(ctxModel, c));
+    const hitGradients = modelLight.map(c => makeGradient(ctxModel, c));
+
+    if (chartByModel) chartByModel.destroy();
+    chartByModel = new Chart(document.getElementById('chart-by-model'), {
       type: 'bar',
-      data: { labels, datasets: [{ label: 'Est. USD', data, backgroundColor: colors, borderRadius: 4 }] },
+      data: {
+        labels: modelLabels,
+        datasets: [
+          { label: 'Cache miss', data: missData, backgroundColor: missGradients, borderRadius: 4 },
+          { label: 'Cache hit',  data: hitData,  backgroundColor: hitGradients, borderRadius: 0 },
+        ]
+      },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: makeCacheTooltip(),
+        },
         scales: {
-          x: { ticks: { color: '#8b949e' } },
-          y: { ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
+          x: { stacked: true, ticks: { color: '#8b949e' } },
+          y: { stacked: true, ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
         }
       }
     });
   } catch(e) { /* chart stays empty */ }
 }
 
-// By provider chart
+// --- By Provider ---
 async function loadByProvider() {
   try {
-    const provs = await api('/api/by-provider');
-    const labels = provs.map(p => p.provider);
-    const data = provs.map(p => p.est_usd);
-    const colors = provs.map(p => providerColor(p.provider));
-    provChart = new Chart(document.getElementById('chart-by-provider'), {
+    const range = getSavedRange();
+    const since = timeRangeToSince(range);
+    const provs = await api('/api/by-provider?since=' + encodeURIComponent(since));
+    const provLabels = provs.map(p => p.provider);
+    const provColors = provs.map(p => providerColor(p.provider));
+    const provLight = provs.map(p => providerLight(p.provider));
+
+    const missData = provs.map(p => {
+      const denom = p.cache_miss_tokens + p.cache_hit_tokens;
+      if (denom === 0) return p.est_usd;
+      return Number((p.est_usd * p.cache_miss_tokens / denom).toFixed(6));
+    });
+    const hitData = provs.map(p => {
+      const denom = p.cache_miss_tokens + p.cache_hit_tokens;
+      if (denom === 0) return 0;
+      return Number((p.est_usd * p.cache_hit_tokens / denom).toFixed(6));
+    });
+
+    const ctxProv = document.getElementById('chart-by-provider').getContext('2d');
+    const provMissGradients = provColors.map(c => makeGradient(ctxProv, c));
+    const provHitGradients = provLight.map(c => makeGradient(ctxProv, c));
+
+    if (chartByProv) chartByProv.destroy();
+    chartByProv = new Chart(document.getElementById('chart-by-provider'), {
       type: 'bar',
-      data: { labels, datasets: [{ label: 'Est. USD', data, backgroundColor: colors, borderRadius: 4 }] },
+      data: {
+        labels: provLabels,
+        datasets: [
+          { label: 'Cache miss', data: missData, backgroundColor: provMissGradients, borderRadius: 4 },
+          { label: 'Cache hit',  data: hitData,  backgroundColor: provHitGradients, borderRadius: 0 },
+        ]
+      },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: makeCacheTooltip(),
+        },
         scales: {
-          x: { ticks: { color: '#8b949e' } },
-          y: { ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
+          x: { stacked: true, ticks: { color: '#8b949e' } },
+          y: { stacked: true, ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
         }
       }
     });
   } catch(e) { /* chart stays empty */ }
 }
 
-// Sessions table
+// --- Sessions ---
 async function loadSessions() {
   try {
-    const sessions = await api('/api/sessions');
+    const range = getSavedRange();
+    const since = timeRangeToSince(range);
+    const sessions = await api('/api/sessions?since=' + encodeURIComponent(since));
     document.getElementById('sessions-loading').style.display = 'none';
     const body = document.getElementById('sessions-body');
     body.innerHTML = '';
-    for (const s of sessions) {
+
+    // For time ranges longer than a week, aggregate sessions into averages
+    const isLongRange = ['30d'].includes(range);
+
+    if (isLongRange && sessions.length > 0) {
+      // Compute averages across all sessions
+      const count = sessions.length;
+      const avgReqs = Math.round(sessions.reduce((s,x) => s + x.request_count, 0) / count);
+      const avgIn = Math.round(sessions.reduce((s,x) => s + x.tokens_in, 0) / count);
+      const avgOut = Math.round(sessions.reduce((s,x) => s + x.tokens_out, 0) / count);
+      const avgUSD = Number((sessions.reduce((s,x) => s + x.est_usd, 0) / count).toFixed(6));
+
       const tr = document.createElement('tr');
       tr.className = 'session-row';
-      tr.onclick = () => loadSessionDetail(s.session_id);
       tr.innerHTML =
-        '<td><code>'+s.session_id.substring(0,16)+'...</code></td>'+
-        '<td class="num">'+fmtNum(s.request_count)+'</td>'+
-        '<td class="num">'+fmtNum(s.tokens_in)+'</td>'+
-        '<td class="num">'+fmtNum(s.tokens_out)+'</td>'+
-        '<td class="usd">$'+fmtUSD(s.est_usd)+'</td>'+
-        '<td>'+fmtDate(s.last_seen)+'</td>';
+        '<td><em style="color:var(--text-muted)">Average of ' + count + ' sessions</em></td>'+
+        '<td class="num">'+fmtNum(avgReqs)+'</td>'+
+        '<td class="num">'+fmtNum(avgIn)+'</td>'+
+        '<td class="num">'+fmtNum(avgOut)+'</td>'+
+        '<td class="usd">$'+fmtUSD(avgUSD)+'</td>'+
+        '<td>—</td>';
       body.appendChild(tr);
+    } else {
+      for (const s of sessions) {
+        const tr = document.createElement('tr');
+        tr.className = 'session-row';
+        tr.onclick = () => loadSessionDetail(s.session_id);
+        tr.innerHTML =
+          '<td><code>'+s.session_id.substring(0,16)+'...</code></td>'+
+          '<td class="num">'+fmtNum(s.request_count)+'</td>'+
+          '<td class="num">'+fmtNum(s.tokens_in)+'</td>'+
+          '<td class="num">'+fmtNum(s.tokens_out)+'</td>'+
+          '<td class="usd">$'+fmtUSD(s.est_usd)+'</td>'+
+          '<td>'+fmtDate(s.last_seen)+'</td>';
+        body.appendChild(tr);
+      }
     }
     document.getElementById('sessions-table').style.display = sessions.length ? 'table' : 'none';
   } catch(e) {
@@ -356,7 +624,7 @@ async function loadSessions() {
   }
 }
 
-// Session detail
+// --- Session detail ---
 async function loadSessionDetail(sessionId) {
   const card = document.getElementById('detail-card');
   card.style.display = 'block';
@@ -396,7 +664,28 @@ async function loadSessionDetail(sessionId) {
   }
 }
 
-loadHealth(); loadMTD(); loadByDay(); loadByModel(); loadByProvider(); loadSessions();
+// --- Reload all time-sensitive data when range changes ---
+function reloadGraphs() {
+  loadByDay();
+  loadByModel();
+  loadByProvider();
+  loadSessions();
+}
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('time-range');
+  sel.value = getSavedRange();
+  sel.addEventListener('change', () => {
+    saveRange(sel.value);
+    reloadGraphs();
+  });
+
+  loadHealth();
+  loadMTD();
+  reloadGraphs();
+  loadStats();
+});
 </script>
 </body>
 </html>

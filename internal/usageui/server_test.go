@@ -225,3 +225,72 @@ func TestAPISessionDetail(t *testing.T) {
 		t.Fatalf("expected by_model breakdown, got %d", len(ds.ByModel))
 	}
 }
+
+func TestAPIByDaySince(t *testing.T) {
+	srv := newTestServer(t)
+	w := doJSON(t, srv, "/api/by-day?since=2025-01-01T00:00:00Z")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var days []usage.DailySummary
+	if err := json.Unmarshal(w.Body.Bytes(), &days); err != nil {
+		t.Fatal(err)
+	}
+	// All seeded events are after 2025, so should produce at least 1 day.
+	if len(days) < 1 {
+		t.Fatalf("expected at least 1 day with since filter, got %d", len(days))
+	}
+}
+
+func TestAPIByModelSince(t *testing.T) {
+	srv := newTestServer(t)
+	w := doJSON(t, srv, "/api/by-model?since=2025-01-01T00:00:00Z")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var models []usage.ModelBreakdown
+	if err := json.Unmarshal(w.Body.Bytes(), &models); err != nil {
+		t.Fatal(err)
+	}
+	if len(models) < 1 {
+		t.Fatalf("expected at least 1 model, got %d", len(models))
+	}
+}
+
+func TestAPIByProviderSince(t *testing.T) {
+	srv := newTestServer(t)
+	w := doJSON(t, srv, "/api/by-provider?since=2025-01-01T00:00:00Z")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var provs []usage.ProviderBreakdown
+	if err := json.Unmarshal(w.Body.Bytes(), &provs); err != nil {
+		t.Fatal(err)
+	}
+	if len(provs) < 1 {
+		t.Fatalf("expected at least 1 provider, got %d", len(provs))
+	}
+}
+
+func TestAPISessionsSince(t *testing.T) {
+	srv := newTestServer(t)
+	w := doJSON(t, srv, "/api/sessions?since=2025-01-01T00:00:00Z")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var sessions []usage.SessionInfo
+	if err := json.Unmarshal(w.Body.Bytes(), &sessions); err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) < 1 {
+		t.Fatalf("expected at least 1 session, got %d", len(sessions))
+	}
+}
+
+func TestAPIBadSince(t *testing.T) {
+	srv := newTestServer(t)
+	w := doJSON(t, srv, "/api/by-day?since=not-a-date")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for bad since, got %d", w.Code)
+	}
+}
