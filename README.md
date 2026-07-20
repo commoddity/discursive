@@ -2,9 +2,12 @@
   <img src=".github/img/Discursive.png" alt="Discursive" width="600" />
 </p>
 
-<p align="center">
-  A gateway proxy that enables <a href="https://cursor.com">Cursor</a>'s full agentic workflow with alternative providers.
-</p>
+<div align="center">
+  <blockquote>
+    <em>/dĭ-skûr′sĭv/ - proceeding coherently from topic to topic; marked by analytical reasoning</em>
+  </blockquote>
+  <p>A gateway proxy that enables <a href="https://cursor.com">Cursor</a>'s full agentic workflow with alternative providers.</p>
+</div>
 
 <p align="center">
   <a href="https://platform.kimi.ai/"><img src=".github/img/moonshot-white.svg" alt="Moonshot Kimi" height="35" valign="middle" /></a>
