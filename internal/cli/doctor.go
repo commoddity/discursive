@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"discursive/internal/config"
-	"discursive/internal/doctor"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/doctor"
 )
 
 func newDoctorCmd() *cobra.Command {

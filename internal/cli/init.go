@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"discursive/internal/cli/wizard"
-	"discursive/internal/config"
-	"discursive/internal/crypto"
+	"github.com/commoddity/discursive/internal/cli/wizard"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/crypto"
 )
 
 func newInitCmd() *cobra.Command {

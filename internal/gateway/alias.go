@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 // ThinkingPolicy selects provider/model-specific thinking parameter shape.

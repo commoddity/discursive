@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {

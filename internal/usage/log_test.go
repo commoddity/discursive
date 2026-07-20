@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func TestLogEventIsDebug(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func TestRootHelp(t *testing.T) {

@@ -3,7 +3,7 @@ package gateway
 import (
 	"testing"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func TestResolveModel(t *testing.T) {

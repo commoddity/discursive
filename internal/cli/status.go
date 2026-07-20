@@ -11,9 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"discursive/internal/config"
-	"discursive/internal/crypto"
-	"discursive/internal/gateway"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/crypto"
+	"github.com/commoddity/discursive/internal/gateway"
 )
 
 func newStatusCmd() *cobra.Command {

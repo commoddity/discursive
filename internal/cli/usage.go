@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"discursive/internal/usage"
+	"github.com/commoddity/discursive/internal/usage"
 )
 
 func newUsageCmd() *cobra.Command {

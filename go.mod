@@ -1,4 +1,4 @@
-module discursive
+module github.com/commoddity/discursive
 
 go 1.26.5
 

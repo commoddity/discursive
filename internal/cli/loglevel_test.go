@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"discursive/internal/doctor"
-	"discursive/internal/usage"
+	"github.com/commoddity/discursive/internal/doctor"
+	"github.com/commoddity/discursive/internal/usage"
 )
 
 func TestLevelEmoji(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 // SanitizeConfig controls optional sanitizer behavior.

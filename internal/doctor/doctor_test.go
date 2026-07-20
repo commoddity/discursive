@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"discursive/internal/config"
-	"discursive/internal/crypto"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/crypto"
 )
 
 func TestRunAll_MoonshotKeyMissing(t *testing.T) {

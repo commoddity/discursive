@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 const eventsFileName = "events.jsonl"

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"discursive/internal/config"
-	"discursive/internal/usage"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/usage"
 )
 
 type tokenUsage struct {

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"discursive/internal/config"
-	"discursive/internal/gateway"
-	"discursive/internal/usage"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/gateway"
+	"github.com/commoddity/discursive/internal/usage"
 )
 
 // startLiveGateway creates a real gateway server (no ChatURLOverride) with keys

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"discursive/internal/config"
-	"discursive/internal/usage"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/usage"
 )
 
 // ServerConfig configures the local OpenAI-compatible gateway.

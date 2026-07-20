@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"discursive/internal/crypto"
+	"github.com/commoddity/discursive/internal/crypto"
 )
 
 const configFileName = "config.json"

@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"discursive/internal/config"
-	"discursive/internal/crypto"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/crypto"
 )
 
 // Check is one health check result.

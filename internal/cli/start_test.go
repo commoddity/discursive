@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"discursive/internal/config"
-	"discursive/internal/tunnel"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/tunnel"
 )
 
 func TestStartValidateNamedMissingToken(t *testing.T) {

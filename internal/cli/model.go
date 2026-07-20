@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"discursive/internal/config"
-	"discursive/internal/gateway"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/gateway"
 )
 
 func newSetModelCmd() *cobra.Command {

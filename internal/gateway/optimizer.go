@@ -3,7 +3,7 @@ package gateway
 import (
 	"sort"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 // OptimizeConfig carries optional cache/performance tuning.

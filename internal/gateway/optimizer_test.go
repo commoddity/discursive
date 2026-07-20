@@ -3,7 +3,7 @@ package gateway
 import (
 	"testing"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func TestOptimize_PromptCacheKeyMoonshot(t *testing.T) {

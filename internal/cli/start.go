@@ -13,9 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"discursive/internal/config"
-	"discursive/internal/gateway"
-	"discursive/internal/tunnel"
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/gateway"
+	"github.com/commoddity/discursive/internal/tunnel"
 )
 
 func newStartCmd() *cobra.Command {

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 // Pricing verified: 2026-07 (see usage.mdc / README).

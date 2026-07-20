@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"discursive/internal/cli"
+	"github.com/commoddity/discursive/internal/cli"
 )
 
 func main() {

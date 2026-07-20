@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func testConfig() SanitizeConfig {

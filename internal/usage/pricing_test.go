@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"discursive/internal/config"
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func TestEstimateUSD(t *testing.T) {
