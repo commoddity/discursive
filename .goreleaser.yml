@@ -22,7 +22,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X discursive/internal/cli.Version={{.Version}}
+      - -s -w -X github.com/commoddity/discursive/internal/cli.Version={{.Version}}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
