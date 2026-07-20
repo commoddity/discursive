@@ -36,6 +36,14 @@ func testStore(t *testing.T) *usage.Store {
 		CompletionTokens: 1000,
 		Timestamp:        time.Now().UTC(),
 	})
+	_, _ = store.Record(usage.Event{
+		SessionID:        "sess-thaura",
+		Provider:         config.ProviderThaura,
+		Model:            "thaura",
+		PromptTokens:     2000,
+		CompletionTokens: 500,
+		Timestamp:        time.Now().UTC(),
+	})
 	return store
 }
 
@@ -48,6 +56,7 @@ func newTestServer(t *testing.T) *Server {
 		PID:            12345,
 		HasMoonshotKey: true,
 		HasDeepSeekKey: true,
+		HasThauraKey:   true,
 		TunnelMode:     "quick",
 		PublicURL:      "https://example.trycloudflare.com/v1",
 		LocalPort:      4001,
@@ -192,6 +201,9 @@ func TestAPIHealth(t *testing.T) {
 	}
 	if !h.HasMoonshotKey {
 		t.Fatal("expected has_moonshot_key")
+	}
+	if !h.HasThauraKey {
+		t.Fatal("expected has_thaura_key")
 	}
 }
 

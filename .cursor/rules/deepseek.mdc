@@ -11,7 +11,7 @@ Pricing: https://api-docs.deepseek.com/quick_start/pricing
 OpenAI-compat shapes: `examples/openai-openapi/` (local reference; do not vendor)
 
 **Base URL (OpenAI format) default:** `https://api.deepseek.com` — see
-`internal/config/urls.go` (override: `DISCURSIVE_DEEPSEEK_BASE_URL`).  
+`internal/config/urls.go`.  
 (Anthropic-compat URL exists upstream; **MVP uses OpenAI chat completions only**.)
 
 ## Supported models (MVP)

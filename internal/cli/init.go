@@ -19,6 +19,7 @@ func newInitCmd() *cobra.Command {
 	var (
 		moonshotFlag  string
 		deepseekFlag  string
+		thauraFlag    string
 		tunnelFlag    string
 		publicURLFlag string
 	)
@@ -34,6 +35,7 @@ Run this once, or let 'discursive start' trigger it automatically.`,
 			return runSetup(cmd, initFlags{
 				moonshot:  moonshotFlag,
 				deepseek:  deepseekFlag,
+				thaura:    thauraFlag,
 				tunnel:    tunnelFlag,
 				publicURL: publicURLFlag,
 			}, setupOpts{forceAll: true})
@@ -41,6 +43,7 @@ Run this once, or let 'discursive start' trigger it automatically.`,
 	}
 	cmd.Flags().StringVar(&moonshotFlag, "moonshot-key", "", "Moonshot/Kimi API key (omit to prompt)")
 	cmd.Flags().StringVar(&deepseekFlag, "deepseek-key", "", "DeepSeek API key (omit to prompt)")
+	cmd.Flags().StringVar(&thauraFlag, "thaura-key", "", "Thaura AI API key (optional, omit to skip)")
 	cmd.Flags().StringVar(&tunnelFlag, "tunnel-token", "", "Cloudflare tunnel token (omit to prompt)")
 	cmd.Flags().StringVar(&publicURLFlag, "public-url", "", "public HTTPS base URL ending in /v1 (omit to prompt)")
 	return cmd
@@ -49,6 +52,7 @@ Run this once, or let 'discursive start' trigger it automatically.`,
 type initFlags struct {
 	moonshot  string
 	deepseek  string
+	thaura    string
 	tunnel    string
 	publicURL string
 }
@@ -87,6 +91,7 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 			"public_url", s.PublicBaseURL,
 			"has_moonshot_key", s.HasMoonshotKey(),
 			"has_deepseek_key", s.HasDeepSeekKey(),
+			"has_thaura_key", s.HasThauraKey(),
 			"has_tunnel_token", s.HasTunnelToken(),
 		)
 		return nil
@@ -147,6 +152,13 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 		}
 	}
 
+	// Thaura is optional — only save if a flag was explicitly set.
+	if flags.thaura != "" {
+		if err := s.SetThauraKey(dataRoot, flags.thaura); err != nil {
+			return err
+		}
+	}
+
 	if needTunnel {
 		step++
 		tunnelTok, err := w.AskSecret(step, total, "☁️", "Cloudflare tunnel token",
@@ -192,6 +204,7 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 		"public_url", s.PublicBaseURL,
 		"has_moonshot_key", s.HasMoonshotKey(),
 		"has_deepseek_key", s.HasDeepSeekKey(),
+		"has_thaura_key", s.HasThauraKey(),
 		"has_tunnel_token", s.HasTunnelToken(),
 		"gateway_key", s.GatewayKey,
 		"gateway_key_masked", crypto.MaskSecret(s.GatewayKey),

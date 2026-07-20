@@ -7,6 +7,7 @@ A local OpenAI-compatible gateway that lets [Cursor](https://cursor.com) use alt
 Supported providers:
 - [Moonshot Kimi](https://platform.kimi.ai/)
 - [DeepSeek](https://api-docs.deepseek.com/)
+- [Thaura AI](https://thaura.ai/)
 
 Written in Go.
 
@@ -19,6 +20,7 @@ Written in Go.
 - [🪐 Providers](#-providers)
   - [🌙 Moonshot (Kimi)](#-moonshot-kimi)
   - [🐋 DeepSeek](#-deepseek)
+  - [🐪 Thaura](#-thaura)
 - [🛠 Tech Stack](#-tech-stack)
 - [📁 File Structure](#-file-structure)
 - [📊 Usage Dashboard](#-usage-dashboard)
@@ -58,6 +60,7 @@ On first run, the gateway auto-invokes an interactive wizard that prompts for:
 
 - **Moonshot/Kimi API key** — get one at [platform.kimi.ai](https://platform.kimi.ai/)
 - **DeepSeek API key** — get one at [platform.deepseek.com](https://platform.deepseek.com/)
+- **Thaura AI API key** (optional) — get one at [thaura.ai](https://thaura.ai/api-platform)
 - **Cloudflare tunnel token** — see [Setting up Cloudflare](#-setting-up-cloudflare) below
 - **Public HTTPS URL** — the hostname you configured in the tunnel setup with `/v1` appended
 
@@ -96,6 +99,7 @@ Change the model alias in Cursor's model picker — no restart needed:
 | `gpt-4o-mini` | Moonshot | `kimi-k2.6`         | Image-capable; thinking off by default |
 | `o1`          | DeepSeek | `deepseek-v4-pro`   | Harder execution                       |
 | `o3-mini`     | DeepSeek | `deepseek-v4-flash` | Cheap execution                        |
+| `gpt-5-nano`  | Thaura   | `thaura`            | Ethical AI; optional provider          |
 
 ### 5. Switch back to Cursor's models <!-- omit in toc -->
 
@@ -132,10 +136,10 @@ a public HTTPS URL.
 [Moonshot](https://platform.kimi.ai/) provides frontier models with long-context
 windows and native reasoning capabilities.
 
-| API model ID | Role                                            |
-| ------------ | ----------------------------------------------- |
-| `kimi-k3`    | Flagship; 1M-token context, always thinks       |
-| `kimi-k2.6`  | Image-capable coding model; both thinking modes |
+| API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                            |
+| ------------ | ---------------- | ------------ | ------------- | ----------------------------------------------- |
+| `kimi-k3`    | $0.30          | $3.00       | $15.00      | Flagship; 1M-token context, always thinks       |
+| `kimi-k2.6`  | $0.16          | $0.95       | $4.00        | Image-capable coding model; both thinking modes |
 
 - Pricing: https://platform.kimi.ai/docs/pricing/chat
 - API docs: https://platform.kimi.ai/docs/
@@ -151,15 +155,64 @@ windows and native reasoning capabilities.
 [DeepSeek](https://api-docs.deepseek.com/) provides cost-efficient reasoning
 models at a fraction of the cost per token.
 
-| API model ID        | Role                                 |
-| ------------------- | ------------------------------------ |
-| `deepseek-v4-pro`   | Harder reasoning / agentic execution |
-| `deepseek-v4-flash` | Cheap, high-volume execution         |
+| API model ID        | Cache hit / MTok | Cache miss / MTok | Output / MTok | Role                                 |
+| ------------------- | ---------------- | ----------------- | ------------- | ------------------------------------ |
+| `deepseek-v4-pro`   | $0.003625      | $0.435          | $0.87        | Harder reasoning / agentic execution |
+| `deepseek-v4-flash` | $0.0028        | $0.14           | $0.28        | Cheap, high-volume execution         |
 
 - Pricing: https://api-docs.deepseek.com/quick_start/pricing
 - API docs: https://api-docs.deepseek.com/
 
 ---
+
+<div align="center">
+  <img src=".github/img/thaura.png" alt="Thaura" width="600" />
+</div>
+
+### 🐪 Thaura
+
+[Thaura](https://thaura.ai/) is an AI platform that combines technical
+excellence with ethical principles, designed to support Palestinian liberation
+and mission-aligned technology development.
+
+| API model ID | Input / MTok | Output / MTok | Role                                    |
+| ------------ | ------------ | ------------- | --------------------------------------- |
+| `thaura`     | $0.50        | $2.00         | OpenAI-compatible chat, vision, and tool use |
+
+- Pricing: https://thaura.ai/api-platform
+- API docs: https://thaura.ai/api-platform
+
+> **🇵🇸 Incubated by Tech for Palestine**
+>
+> <details>
+> <summary>Click to expand</summary>
+> <br>
+>
+> [Tech for Palestine](https://techforpalestine.org/) (T4P) is a coalition of founders, engineers, product marketers, investors, and other professionals working in support of Palestinian liberation.
+>
+> **What is Tech for Palestine?**
+>
+> Tech for Palestine is first and foremost an incubator for advocacy projects. They rally volunteers from across the tech world — founders, engineers, marketers, investors, and more — all committed to Palestinian liberation.
+>
+> The T4P Incubator helps pro-Palestine advocates build, grow, and scale their work towards a Free Palestine. They support projects — whether collections of individuals, registered non-profits, or even companies — whose mission helps Palestine, especially advocacy groups building technical products or in the tech space.
+>
+> The Incubator is free and provides:
+> - 👥 **Volunteers** - Access to skilled professionals
+> - 📢 **Marketing Support** - Help spreading your message
+> - 🎓 **Mentorship** - Guidance from experienced professionals
+> - 🔗 **Connections** - Links to the broader Palestinian advocacy ecosystem
+>
+> **Get Involved:**
+> - Volunteer your skills
+> - Join their Discord
+> - Start a project of your own
+> - Be a mentor
+> - Hire Palestinians
+>
+> Learn more at [techforpalestine.org](https://techforpalestine.org/)
+>
+> </details>
+
 
 ## 🛠 Tech Stack
 
@@ -168,7 +221,7 @@ models at a fraction of the cost per token.
 | Language      | Go 1.26.5+                                                                                                                 |
 | CLI framework | [Cobra](https://cobra.dev/)                                                                                                |
 | Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) Quick Tunnel or named tunnel |
-| Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek)                                                                   |
+| Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura)                                                                        |
 
 ---
 
@@ -223,7 +276,7 @@ All output is JSON on stdout. Pipe through `jq` for readability.
 | `discursive log-level [debug\|info\|warn\|error]`     | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence.                                                                                                   |
 | `discursive doctor`                                   | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                             |
 | `discursive usage`                                    | Token + cost estimates per session/model.                                                                                                                                                                          |
-| `discursive set`                                      | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key.      |
+| `discursive set`                                      | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key.      |
 | `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                                                                                                                   |
 | `discursive version`                                  | Print version.                                                                                                                                                                                                     |
 
@@ -274,8 +327,6 @@ Verify: type `discursive ` then Tab — you should see subcommands.
 | ------------------------------ | --------------------------------------------------------- | ---------------------------- |
 | `DISCURSIVE_LOG_LEVEL`         | Log verbosity: `debug`, `info`, `warn`, `error`           | `info`                       |
 | `DISCURSIVE_USAGE_IDLE`        | Idle window before emitting a usage summary (Go duration) | `30s`                        |
-| `DISCURSIVE_MOONSHOT_BASE_URL` | Override Moonshot API root                                | `https://api.moonshot.ai/v1` |
-| `DISCURSIVE_DEEPSEEK_BASE_URL` | Override DeepSeek API root                                | `https://api.deepseek.com`   |
 
 ---
 
@@ -296,7 +347,7 @@ https://github.com/commoddity/discursive/releases.
 
 ## 🔒 Security
 
-- Upstream Moonshot and DeepSeek keys are **encrypted at rest** and never sent
+- Upstream Moonshot, DeepSeek, and Thaura keys are **encrypted at rest** and never sent
   to Cursor, never appear in logs
 - Cursor receives only the generated gateway key (`sk-...`)
 - Gateway key is **masked by default** in `status` / `rotate-gateway-key`;

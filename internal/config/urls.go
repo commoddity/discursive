@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -15,16 +14,8 @@ const (
 	ProviderMoonshot Provider = "moonshot"
 	// ProviderDeepSeek identifies the DeepSeek API host.
 	ProviderDeepSeek Provider = "deepseek"
-)
-
-// Environment variable overrides for upstream OpenAI-compatible base URLs.
-// Defaults below are correct for production; overrides are for staging / debugging only.
-const (
-	// EnvMoonshotBaseURL overrides DefaultMoonshotBaseURL when non-empty.
-	EnvMoonshotBaseURL = "DISCURSIVE_MOONSHOT_BASE_URL"
-
-	// EnvDeepSeekBaseURL overrides DefaultDeepSeekBaseURL when non-empty.
-	EnvDeepSeekBaseURL = "DISCURSIVE_DEEPSEEK_BASE_URL"
+	// ProviderThaura identifies the Thaura AI API host.
+	ProviderThaura Provider = "thaura"
 )
 
 // Hardcoded upstream OpenAI-compatible API roots (no trailing slash).
@@ -56,19 +47,18 @@ const (
 const (
 	DefaultMoonshotBaseURL = "https://api.moonshot.ai/v1"
 	DefaultDeepSeekBaseURL = "https://api.deepseek.com"
+	DefaultThauraBaseURL   = "https://backend.thaura.ai/v1"
 )
 
-// getenv is os.Getenv; tests may swap it.
-var getenv = os.Getenv
-
 // UpstreamBaseURL returns the OpenAI-compatible API root for provider.
-// Empty env override → hardcoded default. Trims trailing slashes.
 func UpstreamBaseURL(provider Provider) (string, error) {
 	switch provider {
 	case ProviderMoonshot:
-		return pickURL(getenv(EnvMoonshotBaseURL), DefaultMoonshotBaseURL), nil
+		return DefaultMoonshotBaseURL, nil
 	case ProviderDeepSeek:
-		return pickURL(getenv(EnvDeepSeekBaseURL), DefaultDeepSeekBaseURL), nil
+		return DefaultDeepSeekBaseURL, nil
+	case ProviderThaura:
+		return DefaultThauraBaseURL, nil
 	default:
 		return "", fmt.Errorf("unknown provider %q", provider)
 	}
@@ -90,14 +80,6 @@ func ModelsURL(provider Provider) (string, error) {
 		return "", err
 	}
 	return joinURLPath(base, "models"), nil
-}
-
-func pickURL(override, fallback string) string {
-	u := strings.TrimSpace(override)
-	if u == "" {
-		u = fallback
-	}
-	return strings.TrimRight(u, "/")
 }
 
 func joinURLPath(base string, parts ...string) string {

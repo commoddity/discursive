@@ -41,6 +41,7 @@ Mandatory protocol for EVERY task:
 | ---- | --- |
 | Moonshot/Kimi API (models, thinking, tools, errors) | `.cursor/rules/kimi.mdc` (+ `gateway.mdc` if proxying) |
 | DeepSeek API (v4-flash / v4-pro, thinking, tools, errors) | `.cursor/rules/deepseek.mdc` (+ `gateway.mdc` if proxying) |
+| Thaura AI API (models, pricing, sanitizer policy) | `.cursor/rules/thaura.mdc` (+ `gateway.mdc` if proxying) |
 | Local gateway, sanitizer, OpenAI-compat surface, metrics | `.cursor/rules/gateway.mdc` |
 | Cursor settings DB / model alias reference | `.cursor/rules/cursor-settings.mdc` | |
 | cloudflared tunnel / public URL / process supervision | `.cursor/rules/tunnel.mdc` |
@@ -50,7 +51,7 @@ Mandatory protocol for EVERY task:
 | Cobra CLI commands, flags, `RunE`, help/completion | `.cursor/rules/cobra.mdc` |
 | CI workflows / GitHub Actions / release tagging / GoReleaser | `.cursor/rules/release.mdc` |
 | Test craft / cross-platform paths / t.Setenv / table-driven tests | `.cursor/rules/testing.mdc` |
-| Gateway + Cursor behavior together | `gateway.mdc` **and** `cursor-settings.mdc` (+ `kimi.mdc` / `deepseek.mdc` for upstream) |
+| Gateway + Cursor behavior together | `gateway.mdc` **and** `cursor-settings.mdc` (+ `kimi.mdc` / `deepseek.mdc` / `thaura.mdc` for upstream) |
 | Anything else or unsure | this file + ask |
 
 When a task spans multiple areas, read every applicable rule file before starting.
@@ -65,8 +66,9 @@ When a task spans multiple areas, read every applicable rule file before startin
   exposes a public HTTPS tunnel (Cursor cloud cannot hit localhost). Cursor is
   configured manually with the gateway API key (never upstream provider keys)
 - **Providers**: Moonshot (`kimi-k3`, `kimi-k2.6`) and
-  DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`). Switching is **setting the
-  Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
+ DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`) and
+ Thaura (`thaura`). Switching is **setting the
+ Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
 - **Runtime**: Go **1.26.5+**; host process — **not** Docker-primary, **not** Wails/Vue/Tauri
 - **CLI**: [Cobra](https://cobra.dev/) (`internal/cli/`); **no Viper** — config in `internal/config`
 - **Reference**: `examples/use-kimi-on-cursor/` (study/port; do not vendor Rust/TS);
@@ -98,7 +100,9 @@ examples/use-kimi-on-cursor/  # behavioral reference
 - Kimi/Moonshot details: `.cursor/rules/kimi.mdc`. If incomplete, fetch
   https://platform.kimi.ai/docs/ (start at llms.txt).
 - DeepSeek details: `.cursor/rules/deepseek.mdc`. If incomplete, fetch
-  https://api-docs.deepseek.com/.
+ https://api-docs.deepseek.com/.
+- Thaura AI details: `.cursor/rules/thaura.mdc`. If incomplete, fetch
+ https://thaura.ai/api-platform.
 - Never name Claude Code (or inspiration origin) in product source, comments,
   user-facing copy, or commit messages for product code. Planning/rules may say
   at most “inspired by Claude Code.”
@@ -135,6 +139,7 @@ MVP (T01–T10) is complete. The build is:
 7. ✅ Tunnel (Quick Tunnel default; BYO URL mode)
 8. ✅ CLI doctor + usage report
 9. ✅ E2E / live checks
+10. Thaura AI provider integration (this layer)
 
 Future work follows the same discipline: ship in dependency order, verify each
 layer before starting the next.
@@ -213,6 +218,14 @@ NEVER do these without explicit user approval:
 - Point Cursor Override Base URL at `127.0.0.1` / private IPs as a “fix”
 - Make Docker the default runtime
 - Run `docker`, `npm`, or `pnpm` unless the user explicitly requests
+
+### `Pre-commit hook formatting not staged`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Pre-commit hook runs `make verify` (or `go fmt`) but formatting changes appear as unstaged modifications after the commit, leaving the working tree dirty | Lefthook (and git hooks in general) do not automatically re-stage files modified by hook commands — the commit captures the pre-format version and the formatted version is left unstaged | Append `&& git add $(git diff --name-only --diff-filter=M)` to the hook command so any file modified by the formatter is re-staged before the commit completes |
+
+<!-- last-verified: 2026-07 -->
 
 ### Package Managers
 
@@ -322,6 +335,7 @@ to the user. Never split without approval.
 | ---- | --- |
 | Kimi/Moonshot request/response quirks | `kimi.mdc` |
 | DeepSeek request/response quirks | `deepseek.mdc` |
+| Thaura AI request/response quirks | `thaura.mdc` |
 | Sanitizer / tool schema / stream / model alias policy | `gateway.mdc` |
 | Cursor settings reference / model alias map | `cursor-settings.mdc` | |
 | Tunnel flapping / cloudflared missing / ephemeral URL | `tunnel.mdc` |

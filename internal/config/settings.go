@@ -21,6 +21,7 @@ type AppSettings struct {
 	TunnelTokenEncrypted *string `json:"tunnelTokenEncrypted,omitempty"`
 	MoonshotKeyEncrypted *string `json:"moonshotKeyEncrypted,omitempty"`
 	DeepSeekKeyEncrypted *string `json:"deepseekKeyEncrypted,omitempty"`
+	ThauraKeyEncrypted   *string `json:"thauraKeyEncrypted,omitempty"`
 	GatewayKey           string  `json:"gatewayKey"`
 }
 
@@ -173,6 +174,33 @@ func (s AppSettings) HasMoonshotKey() bool {
 // HasDeepSeekKey reports whether an encrypted DeepSeek key is present.
 func (s AppSettings) HasDeepSeekKey() bool {
 	return s.DeepSeekKeyEncrypted != nil && *s.DeepSeekKeyEncrypted != ""
+}
+
+// SetThauraKey encrypts and stores the Thaura AI API key.
+func (s *AppSettings) SetThauraKey(dataRoot, plaintext string) error {
+	enc, err := crypto.Protect(dataRoot, plaintext)
+	if err != nil {
+		return err
+	}
+	s.ThauraKeyEncrypted = &enc
+	return nil
+}
+
+// GetThauraKey decrypts the stored Thaura key, or nil if unset.
+func (s *AppSettings) GetThauraKey(dataRoot string) (*string, error) {
+	if s.ThauraKeyEncrypted == nil || *s.ThauraKeyEncrypted == "" {
+		return nil, nil
+	}
+	plain, err := crypto.Unprotect(dataRoot, *s.ThauraKeyEncrypted)
+	if err != nil {
+		return nil, err
+	}
+	return &plain, nil
+}
+
+// HasThauraKey reports whether an encrypted Thaura key is present.
+func (s AppSettings) HasThauraKey() bool {
+	return s.ThauraKeyEncrypted != nil && *s.ThauraKeyEncrypted != ""
 }
 
 // SetTunnelToken encrypts and stores the Cloudflare tunnel token.

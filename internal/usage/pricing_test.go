@@ -100,6 +100,27 @@ func TestEstimateUSD(t *testing.T) {
 			tokens:   UsageTokens{PromptTokens: 100},
 			wantErr:  true,
 		},
+		{
+			name:     "thaura_input_only",
+			provider: config.ProviderThaura,
+			model:    "thaura",
+			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 0},
+			want:     0.50,
+		},
+		{
+			name:     "thaura_mixed",
+			provider: config.ProviderThaura,
+			model:    "thaura",
+			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
+			want:     0.50 + 2.00,
+		},
+		{
+			name:     "unknown_thaura_model",
+			provider: config.ProviderThaura,
+			model:    "thaura-unknown",
+			tokens:   UsageTokens{PromptTokens: 100},
+			wantErr:  true,
+		},
 	}
 
 	for _, tt := range tests {

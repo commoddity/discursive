@@ -35,6 +35,16 @@ Source: https://api-docs.deepseek.com/quick_start/pricing
 DeepSeek usage responses expose `prompt_cache_hit_tokens` /
 `prompt_cache_miss_tokens` — prefer those fields for estimates when present.
 
+### Thaura AI (USD per 1M tokens)
+
+Source: https://thaura.ai/api-platform
+
+| Model | Input / MTok | Output / MTok |
+| ---- | --- | --- |
+| `thaura` | $0.50 | $2.00 |
+
+No cached-token pricing documented as of 2026-07. Full prompt billed at input rate.
+
 ## Cursor comparison (reference only — not gateway billing)
 
 | Provider | Model | Input | Cache read/hit | Output |

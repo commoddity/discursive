@@ -12,12 +12,15 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 		name         string
 		moonshot     string
 		deepseek     string
+		thaura       string
 		wantMoonshot bool
 		wantDeepseek bool
+		wantThaura   bool
 	}{
 		{name: "both_keys", moonshot: "sk-moon-aaa", deepseek: "sk-deep-bbb", wantMoonshot: true, wantDeepseek: true},
 		{name: "moonshot_only", moonshot: "sk-moon-only", wantMoonshot: true},
 		{name: "deepseek_only", deepseek: "sk-deep-only", wantDeepseek: true},
+		{name: "thaura_only", thaura: "sk-thaur-aaa", wantThaura: true},
 		{name: "neither"},
 	}
 	for _, tt := range tests {
@@ -42,6 +45,11 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if tt.thaura != "" {
+				if err := s.SetThauraKey(dataRoot, tt.thaura); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := Save(dataRoot, s); err != nil {
 				t.Fatal(err)
 			}
@@ -59,6 +67,9 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 			if loaded.HasDeepSeekKey() != tt.wantDeepseek {
 				t.Fatalf("has deepseek=%v want %v", loaded.HasDeepSeekKey(), tt.wantDeepseek)
 			}
+			if loaded.HasThauraKey() != tt.wantThaura {
+				t.Fatalf("has thaura=%v want %v", loaded.HasThauraKey(), tt.wantThaura)
+			}
 
 			gotM, err := loaded.GetMoonshotKey(dataRoot)
 			if err != nil {
@@ -68,8 +79,13 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			gotT, err := loaded.GetThauraKey(dataRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
 			assertOptional(t, gotM, tt.moonshot, tt.wantMoonshot)
 			assertOptional(t, gotD, tt.deepseek, tt.wantDeepseek)
+			assertOptional(t, gotT, tt.thaura, tt.wantThaura)
 
 			if tt.moonshot != "" && loaded.MoonshotKeyEncrypted != nil {
 				if *loaded.MoonshotKeyEncrypted == base64.StdEncoding.EncodeToString([]byte(tt.moonshot)) {
@@ -79,6 +95,11 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 			if tt.deepseek != "" && loaded.DeepSeekKeyEncrypted != nil {
 				if *loaded.DeepSeekKeyEncrypted == base64.StdEncoding.EncodeToString([]byte(tt.deepseek)) {
 					t.Fatal("deepseek ciphertext is plaintext base64")
+				}
+			}
+			if tt.thaura != "" && loaded.ThauraKeyEncrypted != nil {
+				if *loaded.ThauraKeyEncrypted == base64.StdEncoding.EncodeToString([]byte(tt.thaura)) {
+					t.Fatal("thaura ciphertext is plaintext base64")
 				}
 			}
 

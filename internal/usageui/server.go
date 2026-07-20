@@ -21,6 +21,7 @@ type HealthInfo struct {
 	UptimeSeconds  int64  `json:"uptime_seconds"`
 	HasMoonshotKey bool   `json:"has_moonshot_key"`
 	HasDeepSeekKey bool   `json:"has_deepseek_key"`
+	HasThauraKey   bool   `json:"has_thaura_key"`
 	TunnelMode     string `json:"tunnel_mode"`
 	PublicURL      string `json:"public_url"`
 	LocalPort      int    `json:"local_port"`

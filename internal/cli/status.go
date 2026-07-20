@@ -66,6 +66,7 @@ is alive, uptime (if running), and log file path.
 				"provider":         provider,
 				"has_moonshot_key": settings.HasMoonshotKey(),
 				"has_deepseek_key": settings.HasDeepSeekKey(),
+				"has_thaura_key":   settings.HasThauraKey(),
 				"tunnel_mode":      config.NormalizeTunnelMode(settings.TunnelMode),
 				"public_url":       settings.PublicBaseURL,
 				"local_port":       settings.LocalPort,

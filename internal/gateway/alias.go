@@ -14,6 +14,7 @@ const (
 	PolicyK3 ThinkingPolicy = iota
 	PolicyK2
 	PolicyDeepSeek
+	PolicyThaura
 )
 
 // Route is the resolved alias → provider + real model + thinking policy.
@@ -38,6 +39,7 @@ func ListAdvertisedModels() []AdvertisedModel {
 		{ID: "gpt-4o-mini", Provider: config.ProviderMoonshot},
 		{ID: "o1", Provider: config.ProviderDeepSeek},
 		{ID: "o3-mini", Provider: config.ProviderDeepSeek},
+		{ID: "gpt-5-nano", Provider: config.ProviderThaura},
 	}
 }
 
@@ -59,6 +61,10 @@ func ResolveModel(requested string) (Route, error) {
 		return Route{config.ProviderMoonshot, "kimi-k2.6", PolicyK2}, nil
 	case "deepseek-v4-pro", "deepseek-v4-flash":
 		return Route{config.ProviderDeepSeek, requested, PolicyDeepSeek}, nil
+	case "gpt-5-nano":
+		return Route{config.ProviderThaura, "thaura", PolicyThaura}, nil
+	case "thaura":
+		return Route{config.ProviderThaura, "thaura", PolicyThaura}, nil
 	default:
 		return Route{}, fmt.Errorf("unknown model alias %q", requested)
 	}
