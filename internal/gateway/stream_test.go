@@ -401,6 +401,96 @@ func TestWriteSynthesizedSSE(t *testing.T) {
 	}
 }
 
+func TestParseUsageObject_KimiCachedTokens(t *testing.T) {
+	// Kimi returns a single "cached_tokens" field (top-level or nested).
+	tests := []struct {
+		name           string
+		usage          map[string]any
+		wantPrompt     uint64
+		wantCompletion uint64
+		wantCacheHit   uint64
+		wantCacheMiss  uint64
+	}{
+		{
+			name:           "kimi cold request (zero cached_tokens)",
+			usage:          map[string]any{"prompt_tokens": 1000, "completion_tokens": 500, "cached_tokens": 0},
+			wantPrompt:     1000,
+			wantCompletion: 500,
+			wantCacheHit:   0,
+			wantCacheMiss:  0,
+		},
+		{
+			name:           "kimi cache hit (top-level cached_tokens)",
+			usage:          map[string]any{"prompt_tokens": 1000, "completion_tokens": 500, "cached_tokens": 800},
+			wantPrompt:     1000,
+			wantCompletion: 500,
+			wantCacheHit:   800,
+			wantCacheMiss:  200, // 1000 - 800
+		},
+		{
+			name: "kimi cache hit (nested prompt_tokens_details.cached_tokens)",
+			usage: map[string]any{
+				"prompt_tokens":     1000,
+				"completion_tokens": 500,
+				"prompt_tokens_details": map[string]any{
+					"cached_tokens": 800,
+				},
+			},
+			wantPrompt:     1000,
+			wantCompletion: 500,
+			wantCacheHit:   800,
+			wantCacheMiss:  200,
+		},
+		{
+			name:           "kimi full cache hit (all tokens cached)",
+			usage:          map[string]any{"prompt_tokens": 1000, "completion_tokens": 500, "cached_tokens": 1000},
+			wantPrompt:     1000,
+			wantCompletion: 500,
+			wantCacheHit:   1000,
+			wantCacheMiss:  0, // all cached, none uncached
+		},
+		{
+			name:           "kimi no cached_tokens field at all",
+			usage:          map[string]any{"prompt_tokens": 500, "completion_tokens": 100},
+			wantPrompt:     500,
+			wantCompletion: 100,
+			wantCacheHit:   0,
+			wantCacheMiss:  0,
+		},
+		{
+			name: "kimi partial cache with prompt_tokens_details",
+			usage: map[string]any{
+				"prompt_tokens":     1000,
+				"completion_tokens": 500,
+				"prompt_tokens_details": map[string]any{
+					"cached_tokens": 300,
+				},
+			},
+			wantPrompt:     1000,
+			wantCompletion: 500,
+			wantCacheHit:   300,
+			wantCacheMiss:  700,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseUsageObject(tt.usage)
+			if got.PromptTokens != tt.wantPrompt {
+				t.Fatalf("PromptTokens = %d, want %d", got.PromptTokens, tt.wantPrompt)
+			}
+			if got.CompletionTokens != tt.wantCompletion {
+				t.Fatalf("CompletionTokens = %d, want %d", got.CompletionTokens, tt.wantCompletion)
+			}
+			if got.CacheHitTokens != tt.wantCacheHit {
+				t.Fatalf("CacheHitTokens = %d, want %d", got.CacheHitTokens, tt.wantCacheHit)
+			}
+			if got.CacheMissTokens != tt.wantCacheMiss {
+				t.Fatalf("CacheMissTokens = %d, want %d", got.CacheMissTokens, tt.wantCacheMiss)
+			}
+		})
+	}
+}
+
 func TestUint64Field(t *testing.T) {
 	m := map[string]any{
 		"int":    int64(42),

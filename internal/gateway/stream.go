@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -68,6 +69,14 @@ func uint64Field(m map[string]any, key string) uint64 {
 }
 
 func (s *Server) recordUsage(provider config.Provider, model, requestID string, lat time.Duration, u tokenUsage) {
+	if u.CacheHitTokens == 0 && u.CacheMissTokens == 0 && u.PromptTokens > 1024 {
+		slog.Debug("usage: no cache tokens reported by upstream",
+			"request_id", requestID,
+			"provider", string(provider),
+			"model", model,
+			"prompt_tokens", u.PromptTokens,
+		)
+	}
 	ev := usage.Event{
 		SessionID:        s.sessionID,
 		Provider:         provider,

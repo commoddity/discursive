@@ -10,6 +10,13 @@ import (
 type OptimizeConfig struct {
 	// PromptCacheKey hints the upstream cache partition.
 	// Injected as prompt_cache_key for Moonshot providers only.
+	//
+	// For Kimi/Moonshot, this field is a routing hint for cluster affinity
+	// (same-cluster warm KV cache), NOT a cache control parameter. Kimi's
+	// context caching is fully automatic and content-prefix-hash-based.
+	// The key is retained because Kimi's own kimi-cli uses it and because
+	// Moonshot's load balancer uses it to keep related requests on the same
+	// cluster, increasing cache-hit probability.
 	PromptCacheKey string
 }
 
