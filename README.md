@@ -2,21 +2,26 @@
   <img src=".github/img/Discursive.png" alt="Discursive" width="600" />
 </p>
 
-A local OpenAI-compatible gateway that lets [Cursor](https://cursor.com) use
-[Moonshot Kimi](https://platform.kimi.ai/) and [DeepSeek](https://api-docs.deepseek.com/)
-on macOS and Linux — with full agentic and tool calling support.
+A local OpenAI-compatible gateway that lets [Cursor](https://cursor.com) use alternative providers with full agentic and tool calling support.
 
---- 
+Supported providers:
+- [Moonshot Kimi](https://platform.kimi.ai/)
+- [DeepSeek](https://api-docs.deepseek.com/)
+
+Written in Go.
+
+---
 
 ### Table of Contents <!-- omit in toc -->
 
 - [📦 Quickstart](#-quickstart)
 - [☁️ Setting up Cloudflare](#️-setting-up-cloudflare)
 - [🪐 Providers](#-providers)
+  - [🌙 Moonshot (Kimi)](#-moonshot-kimi)
   - [🐋 DeepSeek](#-deepseek)
-  - [🌙 Moonshot](#-moonshot)
 - [🛠 Tech Stack](#-tech-stack)
 - [📁 File Structure](#-file-structure)
+- [📊 Usage Dashboard](#-usage-dashboard)
 - [🖥 CLI Commands](#-cli-commands)
 - [⌨️ Shell Completion](#️-shell-completion)
 - [🌍 Environment Variables](#-environment-variables)
@@ -72,11 +77,11 @@ Gateway keys are masked by default. Pass `--show-key` to print the full
 
 Open **Cursor Settings → Models** and enter:
 
-| Setting                  | Value                                                  |
-| ------------------------ | ------------------------------------------------------ |
-| OpenAI API Key           | `gateway_key` from `discursive status --show-key`      |
-| Override OpenAI Base URL | `public_url` from `discursive status` (ends in `/v1`)  |
-| Model                    | Pick an alias from the table below (e.g. `gpt-5-high`) |
+| Setting                  | Value                                                 |
+| ------------------------ | ----------------------------------------------------- |
+| OpenAI API Key           | `gateway_key` from `discursive status --show-key`     |
+| Override OpenAI Base URL | `public_url` from `discursive status` (ends in `/v1`) |
+| Model                    | Pick an alias from the table below (e.g. `gpt-4o`)    |
 
 Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 `Connection verified` above the Base URL field.
@@ -87,10 +92,10 @@ Change the model alias in Cursor's model picker — no restart needed:
 
 | Cursor alias  | Provider | Real model          | Use                                    |
 | ------------- | -------- | ------------------- | -------------------------------------- |
-| `gpt-5-high`  | Moonshot | `kimi-k3`           | Planning / flagship                    |
-| `gpt-5-codex` | Moonshot | `kimi-k2.6`         | Image-capable; thinking off by default |
-| `gpt-4o`      | DeepSeek | `deepseek-v4-pro`   | Harder execution                       |
-| `gpt-4o-mini` | DeepSeek | `deepseek-v4-flash` | Cheap execution                        |
+| `gpt-4o`      | Moonshot | `kimi-k3`           | Planning / flagship                    |
+| `gpt-4o-mini` | Moonshot | `kimi-k2.6`         | Image-capable; thinking off by default |
+| `o1`          | DeepSeek | `deepseek-v4-pro`   | Harder execution                       |
+| `o3-mini`     | DeepSeek | `deepseek-v4-flash` | Cheap execution                        |
 
 ### 5. Switch back to Cursor's models <!-- omit in toc -->
 
@@ -116,6 +121,46 @@ a public HTTPS URL.
 
 ---
 
+## 🪐 Providers
+
+<div align="center">
+  <img src=".github/img/moonshot-white.svg" alt="Moonshot" width="600">
+</div>
+
+### 🌙 Moonshot (Kimi)
+
+[Moonshot](https://platform.kimi.ai/) provides frontier models with long-context
+windows and native reasoning capabilities.
+
+| API model ID | Role                                            |
+| ------------ | ----------------------------------------------- |
+| `kimi-k3`    | Flagship; 1M-token context, always thinks       |
+| `kimi-k2.6`  | Image-capable coding model; both thinking modes |
+
+- Pricing: https://platform.kimi.ai/docs/pricing/chat
+- API docs: https://platform.kimi.ai/docs/
+
+---
+
+<div align="center">
+  <img src=".github/img/deepseek.svg" alt="DeepSeek" width="600">
+</div>
+
+### 🐋 DeepSeek
+
+[DeepSeek](https://api-docs.deepseek.com/) provides cost-efficient reasoning
+models at a fraction of the cost per token.
+
+| API model ID        | Role                                 |
+| ------------------- | ------------------------------------ |
+| `deepseek-v4-pro`   | Harder reasoning / agentic execution |
+| `deepseek-v4-flash` | Cheap, high-volume execution         |
+
+- Pricing: https://api-docs.deepseek.com/quick_start/pricing
+- API docs: https://api-docs.deepseek.com/
+
+---
+
 ## 🛠 Tech Stack
 
 | Component     | Technology                                                                                                                 |
@@ -124,38 +169,6 @@ a public HTTPS URL.
 | CLI framework | [Cobra](https://cobra.dev/)                                                                                                |
 | Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) Quick Tunnel or named tunnel |
 | Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek)                                                                   |
-
----
-
-## 🔄 CI / Release
-
-| Trigger                  | Job                          | What runs                                            |
-| ------------------------ | ---------------------------- | ---------------------------------------------------- |
-| Push to `main` / PR      | Verify (lint + test + build) | `golangci-lint` + `go test ./...` + `go build ./...` |
-| Tag `v*` (e.g. `v0.1.0`) | Release (GoReleaser)         | Cross-compile + publish binaries to GitHub Releases  |
-
-The verify job must pass before release runs. Releases also require
-`secrets.GH_PAT` with write access to the repository.
-
-Binaries are built via [GoReleaser](https://goreleaser.com/) and published at
-https://github.com/commoddity/discursive/releases.
-
----
-
-## 🧠 Supported Models & Mappings
-
-Switching providers is choosing the Cursor alias. The gateway maps it and
-picks the right upstream key + base URL. 
-
-| Cursor alias  | Provider | Real model          | Notes                                    |
-| ------------- | -------- | ------------------- | ---------------------------------------- |
-| `gpt-5-high`  | Moonshot | `kimi-k3`           | Flagship planning model; supports vision |
-| `gpt-5-codex` | Moonshot | `kimi-k2.6`         | Image-capable; thinking off by default   |
-| `gpt-4o`      | DeepSeek | `deepseek-v4-pro`   | Harder execution                         |
-| `gpt-4o-mini` | DeepSeek | `deepseek-v4-flash` | Cheap, fast execution                    |
-
-Provider choice is the alias — Cursor always talks to Discursive, never to
-Moonshot/DeepSeek directly.
 
 ---
 
@@ -172,10 +185,28 @@ internal/
   tunnel/                 # cloudflared supervisor
   doctor/                 # Health checks
   usage/                  # Pricing tables, token/cost store, slog helpers
+  usageui/               # Embedded usage dashboard (HTTP, Chart.js)
 .cursor/rules/            # Agent conventions
 .claude/skills/           # Invocable workflows
 planning/          # MVP task sequence (T01–T10)
 ```
+
+---
+
+## 📊 Usage Dashboard
+
+The gateway includes an always-on usage dashboard at `http://127.0.0.1:4002`
+that shows real-time API spend and system health:
+
+- **Month to Date** — total requests, tokens in/out, cache hits, estimated USD cost
+- **Spend by Day** — bar chart of daily estimated cost (last 30 days)
+- **Spend by Model / Provider** — breakdown charts with color-coding for Moonshot vs DeepSeek
+- **Sessions** — clickable session list with per-model detail drill-downs
+- **System Health** — gateway PID, uptime, tunnel mode & public URL, API key status
+
+The dashboard uses Chart.js (vendored, no external CDN) and is served entirely
+from the Go binary via `embed.FS`. No separate process, port, or configuration
+needed — it starts automatically with `discursive start`.
 
 ---
 
@@ -245,6 +276,21 @@ Verify: type `discursive ` then Tab — you should see subcommands.
 | `DISCURSIVE_USAGE_IDLE`        | Idle window before emitting a usage summary (Go duration) | `30s`                        |
 | `DISCURSIVE_MOONSHOT_BASE_URL` | Override Moonshot API root                                | `https://api.moonshot.ai/v1` |
 | `DISCURSIVE_DEEPSEEK_BASE_URL` | Override DeepSeek API root                                | `https://api.deepseek.com`   |
+
+---
+
+## 🔄 CI / Release
+
+| Trigger                  | Job                          | What runs                                            |
+| ------------------------ | ---------------------------- | ---------------------------------------------------- |
+| Push to `main` / PR      | Verify (lint + test + build) | `golangci-lint` + `go test ./...` + `go build ./...` |
+| Tag `v*` (e.g. `v0.1.0`) | Release (GoReleaser)         | Cross-compile + publish binaries to GitHub Releases  |
+
+The verify job must pass before release runs. Releases also require
+`secrets.GH_PAT` with write access to the repository.
+
+Binaries are built via [GoReleaser](https://goreleaser.com/) and published at
+https://github.com/commoddity/discursive/releases.
 
 ---
 
