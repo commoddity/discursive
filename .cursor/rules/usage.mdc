@@ -60,6 +60,33 @@ rows for live cost math.
 - Log level: `DISCURSIVE_LOG_LEVEL=debug|info|warn|error` (default `info`).
 - Never log secrets.
 
+## Usage UI (dashboard)
+
+The usage dashboard runs **always-on** with the gateway process at
+`http://127.0.0.1:4002`. No flag needed. No standalone command.
+
+| Decision | Choice |
+| ---- | ---- |
+| Package | `internal/usageui` — embedded HTTP server + static assets |
+| Address | `127.0.0.1:4002` (loopback only, never via tunnel) |
+| Persistence | SQLite at `{dataRoot}/usage/usage.db` (shared with gateway store) |
+| UI stack | Go `embed.FS` + HTML/CSS/vanilla JS — **no** React/Vue/npm |
+| Charts | Chart.js 4.4.7 — vendored under `internal/usageui/static/` (offline) |
+| API | `/api/summary`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions` |
+| Lifecycle | Started automatically with gateway; stopped with gateway |
+
+### `Usage UI not accessible`
+
+| Symptom | Cause | Fix |
+| ---- | ---- | ---- |
+| `http://127.0.0.1:4002` connection refused | Gateway not running or port conflict | Start gateway: `discursive start`; check gateway log for `usage_ui_url` |
+
+### `Chart won't load`
+
+| Symptom | Cause | Fix |
+| ---- | ---- | ---- |
+| Blank chart area or JS console error | Chart.js not served (offline-first — no CDN) | Chart.js is vendored in `static/chart.umd.min.js` and served at `/static/chart.umd.min.js` — verify `embed.FS` includes the file |
+
 ### `Cost estimate uses wrong price row`
 
 | Symptom | Cause | Fix |

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discursive Usage</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --card: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --accent2: #3fb950;
+  --moonshot: #f78166;
+  --deepseek: #79c0ff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+h1 { font-size: 1.5rem; margin-bottom: 24px; color: var(--text); }
+h2 { font-size: 1.1rem; color: var(--text-muted); margin-bottom: 12px; font-weight: 500; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
+.stat { text-align: center; }
+.stat .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.stat .value { font-size: 1.6rem; font-weight: 600; margin-top: 4px; }
+.stat .sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
+.chart-box { height: 260px; position: relative; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+th { color: var(--text-muted); font-weight: 500; }
+td { color: var(--text); }
+tr:hover td { background: rgba(255,255,255,0.02); }
+.model-row { cursor: pointer; }
+.model-row:hover td { background: rgba(88,166,255,0.05); }
+.session-row { cursor: pointer; }
+.session-row:hover td { background: rgba(88,166,255,0.05); }
+.loading { color: var(--text-muted); padding: 40px; text-align: center; }
+.error { color: #f85149; padding: 16px; }
+.moonshot { color: var(--moonshot); }
+.deepseek { color: var(--deepseek); }
+.usd { font-variant-numeric: tabular-nums; text-align: right !important; }
+.num { font-variant-numeric: tabular-nums; text-align: right !important; }
+</style>
+</head>
+<body>
+<h1>Discursive Usage Dashboard</h1>
+
+<div class="card" id="mtd-card">
+  <h2>Month to Date</h2>
+  <div class="loading" id="mtd-loading">Loading...</div>
+  <div class="summary" id="mtd-summary" style="display:none"></div>
+  <div class="error" id="mtd-error" style="display:none"></div>
+</div>
+
+<div class="card">
+  <h2>Spend by Day</h2>
+  <div class="chart-box"><canvas id="chart-by-day"></canvas></div>
+</div>
+
+<div class="card">
+  <div class="charts">
+    <div><h2>Spend by Model</h2><div class="chart-box"><canvas id="chart-by-model"></canvas></div></div>
+    <div><h2>Spend by Provider</h2><div class="chart-box"><canvas id="chart-by-provider"></canvas></div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Sessions</h2>
+  <div class="loading" id="sessions-loading">Loading...</div>
+  <table style="display:none" id="sessions-table">
+    <thead><tr><th>Session ID</th><th>Requests</th><th>Tokens In</th><th>Tokens Out</th><th>Est. USD</th><th>Last Seen</th></tr></thead>
+    <tbody id="sessions-body"></tbody>
+  </table>
+  <div class="error" id="sessions-error" style="display:none"></div>
+</div>
+
+<div class="card" id="detail-card" style="display:none">
+  <h2 id="detail-title">Session Detail</h2>
+  <div class="loading" id="detail-loading">Loading...</div>
+  <div class="summary" id="detail-summary" style="display:none"></div>
+  <table style="display:none" id="detail-table" class="mt-3">
+    <thead><tr><th>Model</th><th>Provider</th><th>Requests</th><th>Tokens In</th><th>Tokens Out</th><th>Est. USD</th></tr></thead>
+    <tbody id="detail-body"></tbody>
+  </table>
+  <div class="error" id="detail-error" style="display:none"></div>
+</div>
+
+<script src="/static/chart.umd.min.js"></script>
+<script>
+const fmtNum = (n) => n.toLocaleString();
+const fmtUSD = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const fmtDate = (s) => s ? s.replace('T',' ').substring(0,16) : '';
+
+let curChart = null, modelChart = null, provChart = null;
+
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+  return r.json();
+}
+
+// MTD summary
+async function loadMTD() {
+  try {
+    const s = await api('/api/summary');
+    document.getElementById('mtd-loading').style.display = 'none';
+    const div = document.getElementById('mtd-summary');
+    div.style.display = 'grid';
+    div.innerHTML =
+      '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(s.request_count)+'</div></div>'+
+      '<div class="stat"><div class="label">Tokens In</div><div class="value">'+(s.tokens_in >= 1e6 ? (s.tokens_in/1e6).toFixed(2)+'M' : fmtNum(s.tokens_in))+'</div></div>'+
+      '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+(s.tokens_out >= 1e6 ? (s.tokens_out/1e6).toFixed(2)+'M' : fmtNum(s.tokens_out))+'</div></div>'+
+      '<div class="stat"><div class="label">Cache Hits</div><div class="value">'+(s.cache_hit_tokens >= 1e6 ? (s.cache_hit_tokens/1e6).toFixed(2)+'M' : fmtNum(s.cache_hit_tokens))+'</div></div>'+
+      '<div class="stat"><div class="label">Est. USD</div><div class="value">$'+fmtUSD(s.est_usd)+'</div></div>';
+  } catch(e) {
+    document.getElementById('mtd-loading').style.display = 'none';
+    document.getElementById('mtd-error').style.display = 'block';
+    document.getElementById('mtd-error').textContent = 'Error: ' + e.message;
+  }
+}
+
+// By day chart
+async function loadByDay() {
+  try {
+    const days = await api('/api/by-day');
+    const labels = days.map(d => d.date).reverse();
+    const data = days.map(d => d.est_usd).reverse();
+    curChart = new Chart(document.getElementById('chart-by-day'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Est. USD', data, backgroundColor: '#58a6ff', borderRadius: 4 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e', maxTicksLimit: 14 } },
+          y: { ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
+        }
+      }
+    });
+  } catch(e) { /* chart stays empty */ }
+}
+
+// By model chart
+async function loadByModel() {
+  try {
+    const models = await api('/api/by-model');
+    const labels = models.map(m => m.provider+' / '+m.model);
+    const data = models.map(m => m.est_usd);
+    const colors = models.map(m => m.provider === 'moonshot' ? '#f78166' : '#79c0ff');
+    modelChart = new Chart(document.getElementById('chart-by-model'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Est. USD', data, backgroundColor: colors, borderRadius: 4 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e' } },
+          y: { ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
+        }
+      }
+    });
+  } catch(e) { /* chart stays empty */ }
+}
+
+// By provider chart
+async function loadByProvider() {
+  try {
+    const provs = await api('/api/by-provider');
+    const labels = provs.map(p => p.provider);
+    const data = provs.map(p => p.est_usd);
+    const colors = provs.map(p => p.provider === 'moonshot' ? '#f78166' : '#79c0ff');
+    provChart = new Chart(document.getElementById('chart-by-provider'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Est. USD', data, backgroundColor: colors, borderRadius: 4 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e' } },
+          y: { ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
+        }
+      }
+    });
+  } catch(e) { /* chart stays empty */ }
+}
+
+// Sessions table
+async function loadSessions() {
+  try {
+    const sessions = await api('/api/sessions');
+    document.getElementById('sessions-loading').style.display = 'none';
+    const body = document.getElementById('sessions-body');
+    body.innerHTML = '';
+    for (const s of sessions) {
+      const tr = document.createElement('tr');
+      tr.className = 'session-row';
+      tr.onclick = () => loadSessionDetail(s.session_id);
+      tr.innerHTML =
+        '<td><code>'+s.session_id.substring(0,16)+'...</code></td>'+
+        '<td class="num">'+fmtNum(s.request_count)+'</td>'+
+        '<td class="num">'+fmtNum(s.tokens_in)+'</td>'+
+        '<td class="num">'+fmtNum(s.tokens_out)+'</td>'+
+        '<td class="usd">$'+fmtUSD(s.est_usd)+'</td>'+
+        '<td>'+fmtDate(s.last_seen)+'</td>';
+      body.appendChild(tr);
+    }
+    document.getElementById('sessions-table').style.display = sessions.length ? 'table' : 'none';
+  } catch(e) {
+    document.getElementById('sessions-loading').style.display = 'none';
+    document.getElementById('sessions-error').style.display = 'block';
+    document.getElementById('sessions-error').textContent = 'Error: ' + e.message;
+  }
+}
+
+// Session detail
+async function loadSessionDetail(sessionId) {
+  const card = document.getElementById('detail-card');
+  card.style.display = 'block';
+  document.getElementById('detail-title').textContent = 'Session: ' + sessionId;
+  document.getElementById('detail-loading').style.display = 'block';
+  document.getElementById('detail-summary').style.display = 'none';
+  document.getElementById('detail-table').style.display = 'none';
+  document.getElementById('detail-error').style.display = 'none';
+  try {
+    const s = await api('/api/sessions?session_id=' + encodeURIComponent(sessionId));
+    document.getElementById('detail-loading').style.display = 'none';
+    const div = document.getElementById('detail-summary');
+    div.style.display = 'grid';
+    div.innerHTML =
+      '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(s.request_count)+'</div></div>'+
+      '<div class="stat"><div class="label">Tokens In</div><div class="value">'+fmtNum(s.tokens_in)+'</div></div>'+
+      '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+fmtNum(s.tokens_out)+'</div></div>'+
+      '<div class="stat"><div class="label">Est. USD</div><div class="value">$'+fmtUSD(s.est_usd)+'</div></div>';
+    const body = document.getElementById('detail-body');
+    body.innerHTML = '';
+    for (const m of (s.by_model||[])) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>'+m.model+'</td><td class="'+(m.provider==='moonshot'?'moonshot':'deepseek')+'">'+m.provider+'</td>'+
+        '<td class="num">'+fmtNum(m.request_count)+'</td>'+
+        '<td class="num">'+fmtNum(m.tokens_in)+'</td>'+
+        '<td class="num">'+fmtNum(m.tokens_out)+'</td>'+
+        '<td class="usd">$'+fmtUSD(m.est_usd)+'</td>';
+      body.appendChild(tr);
+    }
+    document.getElementById('detail-table').style.display = s.by_model ? 'table' : 'none';
+    card.scrollIntoView({ behavior: 'smooth' });
+  } catch(e) {
+    document.getElementById('detail-loading').style.display = 'none';
+    document.getElementById('detail-error').style.display = 'block';
+    document.getElementById('detail-error').textContent = 'Error: ' + e.message;
+  }
+}
+
+loadMTD(); loadByDay(); loadByModel(); loadByProvider(); loadSessions();
+</script>
+</body>
+</html>

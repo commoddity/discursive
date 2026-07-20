@@ -16,6 +16,7 @@ import (
 	"github.com/commoddity/discursive/internal/config"
 	"github.com/commoddity/discursive/internal/gateway"
 	"github.com/commoddity/discursive/internal/tunnel"
+	"github.com/commoddity/discursive/internal/usageui"
 )
 
 func newStartCmd() *cobra.Command {
@@ -141,7 +142,15 @@ func serveGateway(dataRoot string, settings config.AppSettings) error {
 		"has_deepseek_key", settings.HasDeepSeekKey(),
 		"gateway_key", settings.GatewayKey,
 		"session_id", srv.SessionID(),
+		"usage_ui_url", "http://127.0.0.1:4002",
 	)
+
+	// Start the usage UI (always-on, loopback only).
+	uiSrv := usageui.NewServer("127.0.0.1:4002", srv.Store())
+	if err := uiSrv.Start(); err != nil {
+		slog.Warn("usage_ui_start_failed", "err", err)
+	}
+	defer func() { _ = uiSrv.Shutdown() }()
 
 	// Write PID file for stop command.
 	pidPath := filepath.Join(dataRoot, "gateway.pid")

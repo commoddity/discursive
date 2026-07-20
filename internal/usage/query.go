@@ -193,13 +193,13 @@ type ProviderBreakdown struct {
 
 // SessionInfo holds summary for a single session.
 type SessionInfo struct {
-	SessionID     string  `json:"session_id"`
-	RequestCount  uint64  `json:"request_count"`
-	TokensIn      uint64  `json:"tokens_in"`
-	TokensOut     uint64  `json:"tokens_out"`
-	EstUSD        float64 `json:"est_usd"`
-	FirstSeen     string  `json:"first_seen"`
-	LastSeen      string  `json:"last_seen"`
+	SessionID    string  `json:"session_id"`
+	RequestCount uint64  `json:"request_count"`
+	TokensIn     uint64  `json:"tokens_in"`
+	TokensOut    uint64  `json:"tokens_out"`
+	EstUSD       float64 `json:"est_usd"`
+	FirstSeen    string  `json:"first_seen"`
+	LastSeen     string  `json:"last_seen"`
 }
 
 // QueryMonthToDate returns a DailySummary for the current month (UTC).

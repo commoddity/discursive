@@ -93,6 +93,11 @@ func (s *Server) SessionID() string {
 	return s.sessionID
 }
 
+// Store returns the usage store for external consumers (usage UI).
+func (s *Server) Store() *usage.Store {
+	return s.store
+}
+
 // ListenAndServe binds 127.0.0.1 and serves until ctx is cancelled.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.cfg.ListenAddr)
