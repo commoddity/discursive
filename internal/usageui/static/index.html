@@ -477,7 +477,7 @@ async function loadHealth() {
         '<div class="health-label">☁️ Tunnel</div>' +
         '<div class="health-val" style="display:flex;align-items:center;gap:8px;word-break:normal;">' +
           '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">' + (h.public_url || '—') + '</span>' +
-          (h.public_url ? '<button class="health-btn copy-btn" style="min-width:82px" onclick="copyToClipboard(event, \'' + h.public_url + '\')">Copy URL</button>' : '') +
+          (h.public_url ? '<button class="health-btn copy-btn" style="min-width:82px;white-space:nowrap" onclick="copyToClipboard(event, \'' + h.public_url + '\')">Copy URL</button>' : '') +
         '</div>' +
       '</div>' +
       '<div class="health-col">' +
@@ -492,8 +492,8 @@ async function loadHealth() {
         '<div class="health-label">🔐 Gateway Key</div>' +
         '<div class="health-val" style="display:flex;align-items:center;gap:8px;word-break:normal;">' +
           '<span id="gw-key-text" class="gw-key-text gw-key-blur">' + raw + '</span>' +
-            '<button class="health-btn" onclick="toggleGatewayKey()" id="gw-key-toggle" style="min-width:82px">Show Key</button>' +
-            '<button class="health-btn copy-btn" onclick="copyGatewayKey()" style="min-width:82px">Copy Key</button>' +
+            '<button class="health-btn" onclick="toggleGatewayKey()" id="gw-key-toggle" style="min-width:82px;white-space:nowrap">Show Key</button>' +
+            '<button class="health-btn copy-btn" onclick="copyGatewayKey()" style="min-width:82px;white-space:nowrap">Copy Key</button>' +
         '</div>' +
       '</div>' +
       '<div class="health-col">' +
