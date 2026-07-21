@@ -35,8 +35,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Ar
 h2 { font-size: 1.1rem; color: var(--text-muted); font-weight: 500; }
 .time-select { font-size: 0.8rem; padding: 4px 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
 .time-select:focus { outline: none; border-color: var(--accent); }
+.dropdown-label { font-size: 0.78rem; color: var(--text-muted); margin-right: 4px; }
+.dropdown-group { display: flex; align-items: center; gap: 8px; }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
+.period-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.period-summary .stat { text-align: center; }
+.period-summary .label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.period-summary .value { font-size: 1.05rem; font-weight: 600; margin-top: 2px; }
 .stat { text-align: center; }
 .stat .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .stat .value { font-size: 1.6rem; font-weight: 600; margin-top: 4px; }
@@ -79,9 +85,24 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .stats-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.78rem; color: var(--text-muted); }
 .retention-info { position: relative; display: inline-flex; align-items: center; cursor: help; }
 .retention-info .icon { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; }
-.retention-info .tooltip { display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.5; }
-.retention-info .tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--border); }
+.retention-info .tooltip { display: none; position: absolute; top: 50%; left: calc(100% + 8px); transform: translateY(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.5; }
+.retention-info .tooltip::after { content: ''; position: absolute; top: 50%; right: 100%; transform: translateY(-50%); border: 5px solid transparent; border-right-color: var(--border); }
 .retention-info:hover .tooltip { display: block; }
+.sessions-info { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; cursor: help; flex-shrink: 0; position: relative; }
+.sessions-info::after { content: attr(data-tip); display: none; position: absolute; top: 50%; right: calc(100% + 8px); transform: translateY(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.5; }
+.sessions-info:hover::after { display: block; }
+.pricing-tip { display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.6; font-weight: normal; }
+.pricing-tip > div { pointer-events: none; }
+.provider-indicator a:hover .pricing-tip { display: block; }
+.fx-info { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; cursor: help; margin-right: 2px; flex-shrink: 0; position: relative; }
+.fx-info::after { content: attr(data-tip); display: none; position: absolute; top: 50%; left: calc(100% + 8px); transform: translateY(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.5; }
+.fx-info:hover::after { display: block; }
+#custom-tooltip { display: none; position: fixed; z-index: 100; background: #1a1f2b; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 0.78rem; color: var(--text); pointer-events: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.5); line-height: 1.6; }
+#custom-tooltip .tt-title { font-weight: 600; font-size: 0.82rem; margin-bottom: 4px; color: var(--text); }
+#custom-tooltip .tt-logo-row { margin-bottom: 6px; }
+#custom-tooltip .tt-logo-row img { width: 160px !important; height: auto !important; }
+#custom-tooltip .tt-row { padding-left: 0; }
+#custom-tooltip .tt-total { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -98,7 +119,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 </div>
 
 <div class="card" id="mtd-card">
-  <h2>📅 Month to Date</h2>
+  <h2 style="margin-bottom:12px">📅 Month to Date</h2>
   <div class="loading" id="mtd-loading">Loading...</div>
   <div class="summary" id="mtd-summary" style="display:none"></div>
   <div class="error" id="mtd-error" style="display:none"></div>
@@ -107,7 +128,17 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 <div class="card">
   <div class="card-header">
     <h2>📊 Spend by Period</h2>
-    <select class="time-select" id="time-range">
+    <div class="dropdown-group">
+      <span class="fx-info" data-tip="Exchange rates refresh every 24h from api.frankfurter.app">?</span>
+      <span class="dropdown-label">💴 Currency</span>
+      <select class="time-select" id="currency">
+      <option value="usd">$ USD</option>
+      <option value="eur">€ EUR</option>
+      <option value="cny">¥ CNY</option>
+    </select>
+      <span style="color:var(--border)">|</span>
+      <span class="dropdown-label">⌛ Period</span>
+      <select class="time-select" id="time-range">
       <option value="1h">1 hour</option>
       <option value="3h">3 hours</option>
       <option value="12h">12 hours</option>
@@ -115,7 +146,9 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <option value="7d" selected>1 week</option>
       <option value="30d">1 month</option>
     </select>
+    </div>
   </div>
+  <div class="period-summary" id="period-summary" style="display:none"></div>
   <div class="chart-legend" id="by-period-legend" style="display:none">
     <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:var(--accent)"></div> Cache miss</div>
     <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:var(--accent); opacity:0.35"></div> Cache hit</div>
@@ -143,31 +176,106 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 </div>
 
 <div class="card">
-  <h2>🧩 Sessions</h2>
+  <div class="card-header">
+    <h2>🧩 Sessions</h2>
+    <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-muted)">
+      <span id="sessions-stats"></span>
+      <span class="sessions-info" data-tip="Individual sessions shown for periods up to 1 week. Longer periods show session averages. List truncated to 100 most recent sessions.">?</span>
+    </div>
+  </div>
   <div class="loading" id="sessions-loading">Loading...</div>
   <table style="display:none" id="sessions-table">
-    <thead><tr><th>Session ID</th><th>Requests</th><th>Tokens In</th><th>Tokens Out</th><th>Est. USD</th><th>Last Seen</th></tr></thead>
+    <thead><tr><th>Session ID</th><th>Requests</th><th>Tokens In</th><th>Tokens Out</th><th class="money-label">Est. USD</th><th>Last Seen</th></tr></thead>
     <tbody id="sessions-body"></tbody>
   </table>
   <div class="error" id="sessions-error" style="display:none"></div>
 </div>
 
-<div class="card" id="detail-card" style="display:none">
-  <h2 id="detail-title">Session Detail</h2>
-  <div class="loading" id="detail-loading">Loading...</div>
-  <div class="summary" id="detail-summary" style="display:none"></div>
-  <table style="display:none" id="detail-table" class="mt-3">
-    <thead><tr><th>Model</th><th>Provider</th><th>Requests</th><th>Tokens In</th><th>Tokens Out</th><th>Est. USD</th></tr></thead>
-    <tbody id="detail-body"></tbody>
-  </table>
-  <div class="error" id="detail-error" style="display:none"></div>
-</div>
-
 <script src="/static/chart.umd.min.js"></script>
 <script>
 const fmtNum = (n) => n.toLocaleString();
-const fmtUSD = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-const fmtDate = (s) => s ? s.replace('T',' ').substring(0,16) : '';
+const fmtUSD = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// --- Currency ---
+let eurRate = null; // null = loading, 0 = failed
+let cnyRate = null;
+
+async function fetchExchangeRate() {
+  // Check cached rate in localStorage (24h TTL)
+  const cached = localStorage.getItem('discursive_fx_rates');
+  if (cached) {
+    const entry = JSON.parse(cached);
+    if (Date.now() - entry.ts < 24 * 3600 * 1000) {
+      eurRate = entry.eur;
+      cnyRate = entry.cny;
+      return;
+    }
+  }
+  try {
+    const r = await fetch('/api/exchange-rate');
+    if (!r.ok) { eurRate = 0; cnyRate = 0; return; }
+    const j = await r.json();
+    eurRate = j.rates.EUR;
+    cnyRate = j.rates.CNY;
+    localStorage.setItem('discursive_fx_rates', JSON.stringify({ eur: eurRate, cny: cnyRate, ts: Date.now() }));
+  } catch {
+    eurRate = 0;
+    cnyRate = 0;
+  }
+}
+
+function getCurrency() {
+  return localStorage.getItem('discursive_currency') || 'usd';
+}
+function saveCurrency(val) {
+  localStorage.setItem('discursive_currency', val);
+}
+
+function fmtMoney(n) {
+  const val = Number(n);
+  const cur = getCurrency();
+  if (cur === 'eur' && eurRate > 0) {
+    return (val * eurRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+  }
+  if (cur === 'cny' && cnyRate > 0) {
+    return (val * cnyRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ¥';
+  }
+  return '$' + val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function moneySymbol() {
+  const cur = getCurrency();
+  if (cur === 'eur' && eurRate > 0) return '€';
+  if (cur === 'cny' && cnyRate > 0) return '¥';
+  return '$';
+}
+
+function moneyLabel() {
+  const cur = getCurrency();
+  if (cur === 'eur' && eurRate > 0) return 'Est. EUR';
+  if (cur === 'cny' && cnyRate > 0) return 'Est. CNY';
+  return 'Est. USD';
+}
+
+function updateMoneyLabels() {
+  document.querySelectorAll('.money-label').forEach(el => {
+    el.textContent = moneyLabel();
+  });
+}
+
+const fmtDate = (s) => {
+  if (!s) return '';
+  const d = new Date(s + (s.endsWith('Z') ? '' : 'Z'));
+  if (isNaN(d.getTime())) return s.replace('T',' ').substring(0,16);
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+};
+
+const fmtDateShort = (s) => {
+  if (!s) return '';
+  const d = new Date(s + (s.endsWith('Z') ? '' : 'Z'));
+  if (isNaN(d.getTime())) return s.replace('T',' ').substring(0,16);
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
 const fmtUptime = (s) => {
   if (!s || s < 0) return '—';
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
@@ -188,30 +296,85 @@ function makeGradient(ctx, color) {
   return g;
 }
 
+// Provider logo URL map
+const LOGO_URLS = {
+  moonshot: '/static/moonshot.svg',
+  deepseek: '/static/deepseek.svg',
+  thaura: '/static/thaura.png',
+};
+
 // Shared tooltip: shows cache hit & miss for the whole stacked bar with %.
-function makeCacheTooltip() {
+// getProvider(i) returns the provider key for the i-th bar, or null for no logo.
+// showModelName: if true, show the model name label text as title; if false, only logo.
+function makeCacheTooltip(getProvider, showModelName) {
   return {
     mode: 'index',
     intersect: false,
-    callbacks: {
-      title: ctx => ctx[0].label,
-      label: ctx => {
-        // Only emit once per index (first dataset item).
-        if (ctx.datasetIndex !== 0) return '';
-        const i = ctx.dataIndex;
-        const ds = ctx.chart.data.datasets;
-        const missVal = ds[0].data[i];
-        const hitVal  = ds[1].data[i];
-        const total = +hitVal + +missVal;
-        const hitPct = total > 0 ? (+hitVal / total * 100).toFixed(0) : 0;
-        const missPct = total > 0 ? (+missVal / total * 100).toFixed(0) : 0;
-        return [
-          'Cache miss: $' + fmtUSD(+missVal) + ' / ' + missPct + '%',
-          'Cache hit:  $' + fmtUSD(+hitVal) + ' / ' + hitPct + '%',
-        ];
-      },
+    enabled: false,
+    external: function(context) {
+      const { chart, tooltip } = context;
+      if (tooltip.opacity === 0) {
+        const el = document.getElementById('custom-tooltip');
+        if (el) el.style.display = 'none';
+        return;
+      }
+
+      const i = tooltip.dataPoints[0].dataIndex;
+      const ds = chart.data.datasets;
+      const missVal = ds[0].data[i];
+      const hitVal  = ds[1].data[i];
+      const total = +hitVal + +missVal;
+      const hitPct = total > 0 ? (+hitVal / total * 100).toFixed(0) : 0;
+      const missPct = total > 0 ? (+missVal / total * 100).toFixed(0) : 0;
+
+      const label = tooltip.dataPoints[0].label;
+
+      // Build tooltip HTML
+      let html = '';
+
+      // Provider logo row
+      if (getProvider && !showModelName) {
+        // By-provider: only show logo
+        const p = getProvider(i);
+        const logoSrc = LOGO_URLS[p] || '';
+        html += '<div class="tt-logo-row"><div style="width:160px;height:66px"><img src="' + logoSrc + '" style="width:160px;height:66px;object-fit:contain" alt="' + (p || '') + '"></div></div>';
+      } else if (getProvider && showModelName) {
+        // By-model: show model name + logo below
+        const p = getProvider(i);
+        const logoSrc = LOGO_URLS[p] || '';
+        const pName = p ? p.charAt(0).toUpperCase() + p.slice(1) : '';
+        html += '<div class="tt-title">' + escapeHtml(label) + '</div>';
+        html += '<div class="tt-logo-row"><div style="width:160px;height:66px"><img src="' + logoSrc + '" style="width:160px;height:66px;object-fit:contain" alt="' + (p || '') + '"></div></div>';
+      } else {
+        // Spend by period: just the label
+        html += '<div class="tt-title">' + escapeHtml(label) + '</div>';
+      }
+
+      html += '<div class="tt-row">Cache miss: ' + fmtMoney(+missVal) + ' / ' + missPct + '%</div>';
+      html += '<div class="tt-row">Cache hit:  ' + fmtMoney(+hitVal) + ' / ' + hitPct + '%</div>';
+      html += '<div class="tt-row tt-total">Total:      ' + fmtMoney(total) + '</div>';
+
+      // Position and show
+      let el = document.getElementById('custom-tooltip');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'custom-tooltip';
+        document.body.appendChild(el);
+      }
+      const rect = chart.canvas.getBoundingClientRect();
+      el.innerHTML = html;
+      el.style.display = 'block';
+      el.style.position = 'fixed';
+      el.style.left = (rect.left + tooltip.caretX + 10) + 'px';
+      el.style.top = (rect.top + tooltip.caretY - 10) + 'px';
     },
   };
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
 }
 
 // Provider pricing URLs
@@ -220,6 +383,46 @@ const PRICING_URLS = {
   deepseek: 'https://api-docs.deepseek.com/quick_start/pricing',
   thaura: 'https://thaura.ai/pricing'
 };
+
+// Pricing per 1M tokens in USD (source: usage.mdc rules)
+// { model: { cache_hit: price, input: price, output: price } }
+// Thaura has no cache tier.
+const PRICING = {
+  moonshot: {
+    'kimi-k3':   { cache_hit: 0.30, input: 3.00, output: 15.00 },
+    'kimi-k2.6': { cache_hit: 0.16, input: 0.95, output: 4.00 },
+  },
+  deepseek: {
+    'deepseek-v4-flash': { cache_hit: 0.0028, input: 0.14, output: 0.28 },
+    'deepseek-v4-pro':   { cache_hit: 0.003625, input: 0.435, output: 0.87 },
+  },
+  thaura: {
+    'thaura': { input: 0.50, output: 2.00 },
+  }
+};
+
+function pricingTooltip(provider) {
+  const models = PRICING[provider];
+  if (!models) return '';
+  let lines = [];
+  for (const [model, p] of Object.entries(models)) {
+    let row = '<strong>' + escapeHtml(model) + '</strong><br>';
+    if (p.cache_hit !== undefined) row += 'Cache hit: ' + fmtMoneyUSD(p.cache_hit) + '/MTok<br>';
+    row += 'Input: ' + fmtMoneyUSD(p.input) + '/MTok<br>';
+    row += 'Output: ' + fmtMoneyUSD(p.output) + '/MTok';
+    lines.push(row);
+  }
+  let html = lines.join('<br><br>');
+  html += '<br><br><em style="font-size:0.65rem;color:var(--text-muted);">Pricing may be outdated — click for site</em>';
+  return html;
+}
+
+// fmtMoneyUSD always uses USD (tooltip always shows original USD prices)
+function fmtMoneyUSD(n) {
+  const val = Number(n);
+  if (val < 0.01) return '$' + val.toFixed(4);
+  return '$' + val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 let chartByDay = null, chartByModel = null, chartByProv = null;
 
@@ -274,7 +477,7 @@ async function loadHealth() {
         '<div class="health-label">☁️ Tunnel</div>' +
         '<div class="health-val" style="display:flex;align-items:center;gap:8px;word-break:normal;">' +
           '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">' + (h.public_url || '—') + '</span>' +
-          (h.public_url ? '<button class="health-btn copy-btn" onclick="copyToClipboard(event, \'' + h.public_url + '\')">Copy URL</button>' : '') +
+          (h.public_url ? '<button class="health-btn copy-btn" style="min-width:82px" onclick="copyToClipboard(event, \'' + h.public_url + '\')">Copy URL</button>' : '') +
         '</div>' +
       '</div>' +
       '<div class="health-col">' +
@@ -289,8 +492,8 @@ async function loadHealth() {
         '<div class="health-label">🔐 Gateway Key</div>' +
         '<div class="health-val" style="display:flex;align-items:center;gap:8px;word-break:normal;">' +
           '<span id="gw-key-text" class="gw-key-text gw-key-blur">' + raw + '</span>' +
-            '<button class="health-btn" onclick="toggleGatewayKey()" id="gw-key-toggle">Show Key</button>' +
-            '<button class="health-btn copy-btn" onclick="copyGatewayKey()">Copy Key</button>' +
+            '<button class="health-btn" onclick="toggleGatewayKey()" id="gw-key-toggle" style="min-width:82px">Show Key</button>' +
+            '<button class="health-btn copy-btn" onclick="copyGatewayKey()" style="min-width:82px">Copy Key</button>' +
         '</div>' +
       '</div>' +
       '<div class="health-col">' +
@@ -308,10 +511,11 @@ async function loadHealth() {
       { id: 'thaura',   name: 'Thaura',    logo: '/static/thaura.png',   ok: h.has_thaura_key },
     ];
     providers.innerHTML = provData.map(p =>
-      '<div class="provider-indicator' + (p.ok ? ' enabled' : '') + '" title="' + p.name + ': ' + (p.ok ? 'Configured' : 'Not configured') + '">' +
+      '<div class="provider-indicator' + (p.ok ? ' enabled' : '') + '">' +
         '<div class="dot ' + (p.ok ? 'dot-ok' : 'dot-err') + '"></div>' +
-        '<a href="' + (PRICING_URLS[p.id] || '#') + '" target="_blank" rel="noopener" title="' + p.name + ' pricing" style="display:flex;align-items:center;">' +
+        '<a href="' + (PRICING_URLS[p.id] || '#') + '" target="_blank" rel="noopener" title="' + p.name + ' pricing" style="display:flex;align-items:center;position:relative;">' +
           '<img src="' + p.logo + '" alt="' + p.name + '" />' +
+          '<span class="pricing-tip"><div>' + pricingTooltip(p.id) + '</div></span>' +
         '</a>' +
       '</div>'
     ).join('');
@@ -342,10 +546,15 @@ function toggleGatewayKey() {
 }
 function copyToClipboard(ev, text) {
   if (!text) return;
+  const btn = ev.target;
+  const orig = btn.textContent;
   navigator.clipboard.writeText(text).then(() => {
-    const btn = ev.target;
     btn.classList.add('copied-flash');
-    setTimeout(() => btn.classList.remove('copied-flash'), 1200);
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => {
+      btn.classList.remove('copied-flash');
+      btn.textContent = orig;
+    }, 1500);
   }).catch(() => {});
 }
 function copyGatewayKey() {
@@ -366,7 +575,7 @@ async function loadMTD() {
       '<div class="stat"><div class="label">Tokens In</div><div class="value">'+(s.tokens_in >= 1e6 ? (s.tokens_in/1e6).toFixed(2)+'M' : fmtNum(s.tokens_in))+'</div></div>'+
       '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+(s.tokens_out >= 1e6 ? (s.tokens_out/1e6).toFixed(2)+'M' : fmtNum(s.tokens_out))+'</div></div>'+
       '<div class="stat"><div class="label">Cache Hits</div><div class="value">'+(s.cache_hit_tokens >= 1e6 ? (s.cache_hit_tokens/1e6).toFixed(2)+'M' : fmtNum(s.cache_hit_tokens))+'</div></div>'+
-      '<div class="stat"><div class="label">Est. USD</div><div class="value">$'+fmtUSD(s.est_usd)+'</div></div>';
+      '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="value">' + fmtMoney(s.est_usd) + '</div></div>';
   } catch(e) {
     document.getElementById('mtd-loading').style.display = 'none';
     document.getElementById('mtd-error').style.display = 'block';
@@ -375,7 +584,7 @@ async function loadMTD() {
 }
 
 function timeRangeToBucket(val) {
-  const map = { '1h': '10m', '3h': '10m', '12h': '30m', '24h': '2h', '7d': '12h', '30d': '1d' };
+  const map = { '1h': '10m', '3h': '20m', '12h': '1h', '24h': '2h', '7d': '24h', '30d': '1d' };
   return map[val] || '1d';
 }
 
@@ -386,7 +595,27 @@ async function loadByDay() {
     const since = timeRangeToSince(range);
     const bucket = timeRangeToBucket(range);
     const days = await api('/api/by-day?since=' + encodeURIComponent(since) + '&bucket=' + bucket);
-    const labels = days.map(d => d.date);
+
+    // Populate period summary stats
+    const psum = document.getElementById('period-summary');
+    if (days.length === 0) {
+      psum.style.display = 'none';
+    } else {
+      const reqs = days.reduce((a, d) => a + d.request_count, 0);
+      const tIn  = days.reduce((a, d) => a + d.tokens_in, 0);
+      const tOut = days.reduce((a, d) => a + d.tokens_out, 0);
+      const tHit = days.reduce((a, d) => a + d.cache_hit_tokens, 0);
+      const tCost = days.reduce((a, d) => a + d.est_usd, 0);
+      psum.style.display = 'grid';
+      psum.innerHTML =
+        '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(reqs)+'</div></div>'+
+        '<div class="stat"><div class="label">Tokens In</div><div class="value">'+(tIn >= 1e6 ? (tIn/1e6).toFixed(2)+'M' : fmtNum(tIn))+'</div></div>'+
+        '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+(tOut >= 1e6 ? (tOut/1e6).toFixed(2)+'M' : fmtNum(tOut))+'</div></div>'+
+        '<div class="stat"><div class="label">Cache Hits</div><div class="value">'+(tHit >= 1e6 ? (tHit/1e6).toFixed(2)+'M' : fmtNum(tHit))+'</div></div>'+
+        '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="value">' + fmtMoney(tCost) + '</div></div>';
+    }
+
+    const labels = days.map(d => fmtDateShort(d.date));
     const cashMiss = days.map(d => Number((d.est_usd * (d.cache_miss_tokens + d.cache_hit_tokens) === 0 ? d.est_usd : d.est_usd * d.cache_miss_tokens / Math.max(1, d.cache_miss_tokens + d.cache_hit_tokens))));
 
     // Approximate cache-hit vs cache-miss cost split using token ratio
@@ -430,7 +659,7 @@ async function loadByDay() {
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: makeCacheTooltip(),
+          tooltip: makeCacheTooltip(null),
         },
         scales: {
           x: {
@@ -439,7 +668,7 @@ async function loadByDay() {
           },
           y: {
             stacked: true,
-            ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) }
+            ticks: { color: '#8b949e', callback: v => fmtMoney(v) }
           }
         }
       }
@@ -509,11 +738,11 @@ async function loadByModel() {
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: makeCacheTooltip(),
+          tooltip: makeCacheTooltip(i => models[i].provider, true),
         },
         scales: {
           x: { stacked: true, ticks: { color: '#8b949e' } },
-          y: { stacked: true, ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
+          y: { stacked: true, ticks: { color: '#8b949e', callback: v => fmtMoney(v) } }
         }
       }
     });
@@ -559,11 +788,11 @@ async function loadByProvider() {
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: makeCacheTooltip(),
+          tooltip: makeCacheTooltip(i => provs[i].provider),
         },
         scales: {
           x: { stacked: true, ticks: { color: '#8b949e' } },
-          y: { stacked: true, ticks: { color: '#8b949e', callback: v => '$'+fmtUSD(v) } }
+          y: { stacked: true, ticks: { color: '#8b949e', callback: v => fmtMoney(v) } }
         }
       }
     });
@@ -577,6 +806,10 @@ async function loadSessions() {
     const since = timeRangeToSince(range);
     const sessions = await api('/api/sessions?since=' + encodeURIComponent(since));
     document.getElementById('sessions-loading').style.display = 'none';
+
+    // Stats row
+    document.getElementById('sessions-stats').textContent = sessions.length + ' session' + (sessions.length !== 1 ? 's' : '');
+
     const body = document.getElementById('sessions-body');
     body.innerHTML = '';
 
@@ -598,20 +831,22 @@ async function loadSessions() {
         '<td class="num">'+fmtNum(avgReqs)+'</td>'+
         '<td class="num">'+fmtNum(avgIn)+'</td>'+
         '<td class="num">'+fmtNum(avgOut)+'</td>'+
-        '<td class="usd">$'+fmtUSD(avgUSD)+'</td>'+
+        '<td class="usd">' + fmtMoney(avgUSD) + '</td>'+
         '<td>—</td>';
       body.appendChild(tr);
     } else {
-      for (const s of sessions) {
+      const shown = sessions.slice(0, 100);
+      for (const s of shown) {
         const tr = document.createElement('tr');
         tr.className = 'session-row';
-        tr.onclick = () => loadSessionDetail(s.session_id);
+        tr.style.cursor = 'pointer';
+        tr.onclick = () => showSessionModal(s.session_id);
         tr.innerHTML =
           '<td><code>'+s.session_id.substring(0,16)+'...</code></td>'+
           '<td class="num">'+fmtNum(s.request_count)+'</td>'+
           '<td class="num">'+fmtNum(s.tokens_in)+'</td>'+
           '<td class="num">'+fmtNum(s.tokens_out)+'</td>'+
-          '<td class="usd">$'+fmtUSD(s.est_usd)+'</td>'+
+          '<td class="usd">' + fmtMoney(s.est_usd) + '</td>'+
           '<td>'+fmtDate(s.last_seen)+'</td>';
         body.appendChild(tr);
       }
@@ -624,43 +859,64 @@ async function loadSessions() {
   }
 }
 
-// --- Session detail ---
-async function loadSessionDetail(sessionId) {
-  const card = document.getElementById('detail-card');
-  card.style.display = 'block';
-  document.getElementById('detail-title').textContent = 'Session: ' + sessionId;
-  document.getElementById('detail-loading').style.display = 'block';
-  document.getElementById('detail-summary').style.display = 'none';
-  document.getElementById('detail-table').style.display = 'none';
-  document.getElementById('detail-error').style.display = 'none';
+// --- Session detail modal ---
+async function showSessionModal(sessionId) {
+  // Remove any existing modal
+  const old = document.getElementById('session-modal-overlay');
+  if (old) old.remove();
+
+  // Create overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'session-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:center;justify-content:center;';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;';
+  box.innerHTML = '<h2 style="margin-bottom:16px">Session Detail</h2><div style="color:var(--text-muted)">Loading...</div>';
+  overlay.appendChild(box);
+
+  // Close on overlay click
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  // Close on Escape
+  const escHandler = (e) => { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
+  overlay.addEventListener('remove', () => document.removeEventListener('keydown', escHandler), { once: true });
+
+  document.body.appendChild(overlay);
+
   try {
     const s = await api('/api/sessions?session_id=' + encodeURIComponent(sessionId));
-    document.getElementById('detail-loading').style.display = 'none';
-    const div = document.getElementById('detail-summary');
-    div.style.display = 'grid';
-    div.innerHTML =
-      '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(s.request_count)+'</div></div>'+
-      '<div class="stat"><div class="label">Tokens In</div><div class="value">'+fmtNum(s.tokens_in)+'</div></div>'+
-      '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+fmtNum(s.tokens_out)+'</div></div>'+
-      '<div class="stat"><div class="label">Est. USD</div><div class="value">$'+fmtUSD(s.est_usd)+'</div></div>';
-    const body = document.getElementById('detail-body');
-    body.innerHTML = '';
+    box.innerHTML =
+      '<h2 style="margin-bottom:4px">Session</h2>' +
+      '<code style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:16px;word-break:break-all">' + escapeHtml(sessionId) + '</code>' +
+      '<div class="summary" style="margin-bottom:16px">' +
+        '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(s.request_count)+'</div></div>' +
+        '<div class="stat"><div class="label">Tokens In</div><div class="value">'+fmtNum(s.tokens_in)+'</div></div>' +
+        '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+fmtNum(s.tokens_out)+'</div></div>' +
+        '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="value">' + fmtMoney(s.est_usd) + '</div></div>' +
+      '</div>' +
+      '<table id="modal-detail-table">' +
+        '<thead><tr><th>Model</th><th>Provider</th><th>Requests</th><th>Tokens In</th><th>Tokens Out</th><th class="money-label">' + moneyLabel() + '</th></tr></thead>' +
+        '<tbody id="modal-detail-body"></tbody>' +
+      '</table>' +
+      '<button id="modal-close-btn" style="margin-top:16px;padding:6px 16px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer">Close</button>';
+
+    box.querySelector('#modal-close-btn').addEventListener('click', () => overlay.remove());
+
+    const body = box.querySelector('#modal-detail-body');
     for (const m of (s.by_model||[])) {
       const tr = document.createElement('tr');
       tr.innerHTML =
-        '<td>'+m.model+'</td><td class="'+providerClass(m.provider)+'">'+m.provider+'</td>'+
+        '<td>'+escapeHtml(m.model)+'</td><td class="'+providerClass(m.provider)+'">'+escapeHtml(m.provider)+'</td>'+
         '<td class="num">'+fmtNum(m.request_count)+'</td>'+
         '<td class="num">'+fmtNum(m.tokens_in)+'</td>'+
         '<td class="num">'+fmtNum(m.tokens_out)+'</td>'+
-        '<td class="usd">$'+fmtUSD(m.est_usd)+'</td>';
+        '<td class="usd">' + fmtMoney(m.est_usd) + '</td>';
       body.appendChild(tr);
     }
-    document.getElementById('detail-table').style.display = s.by_model ? 'table' : 'none';
-    card.scrollIntoView({ behavior: 'smooth' });
   } catch(e) {
-    document.getElementById('detail-loading').style.display = 'none';
-    document.getElementById('detail-error').style.display = 'block';
-    document.getElementById('detail-error').textContent = 'Error: ' + e.message;
+    box.innerHTML = '<h2 style="margin-bottom:16px">Session Detail</h2><div style="color:#f85149">Error: ' + escapeHtml(e.message) + '</div><button id="modal-close-btn" style="margin-top:16px;padding:6px 16px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer">Close</button>';
+    box.querySelector('#modal-close-btn').addEventListener('click', () => overlay.remove());
   }
 }
 
@@ -673,7 +929,7 @@ function reloadGraphs() {
 }
 
 // --- Init ---
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const sel = document.getElementById('time-range');
   sel.value = getSavedRange();
   sel.addEventListener('change', () => {
@@ -681,6 +937,20 @@ document.addEventListener('DOMContentLoaded', () => {
     reloadGraphs();
   });
 
+  // Preload exchange rates before first render so currency switcher is instant
+  await fetchExchangeRate();
+
+  const curSel = document.getElementById('currency');
+  curSel.value = getCurrency();
+  curSel.addEventListener('change', () => {
+    saveCurrency(curSel.value);
+    updateMoneyLabels();
+    reloadGraphs();
+    loadMTD();
+    loadSessions();
+  });
+
+  updateMoneyLabels();
   loadHealth();
   loadMTD();
   reloadGraphs();

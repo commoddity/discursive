@@ -1,10 +1,40 @@
 ---
-description: Embedded pricing table, per-session usage, cost estimates (slog)
-globs: "**/usage/**/*.go"
+description: Usage UI (dashboard, pricing, charts, currency, tooltips) + embedded pricing rules
+globs: "**/usage/**/*.go","**/usageui/**/*","**/usageui/static/**"
 alwaysApply: false
 ---
 
-# Usage & Pricing Rules
+# Usage UI & Pricing Rules
+
+## Pricing policy
+
+**Source-of-truth mandate** — When updating pricing anywhere (Go `pricing.go`,
+JS `PRICING` object, `usage.mdc`, tests), the model MUST:
+
+1. **Check the live provider pricing page** before writing code.
+2. If the live page shows a **different price** from what exists in code:
+   update **everywhere**: Go map, JS object, tests, and this file.
+3. If the live page **matches** the code, note "verified — no change" and proceed.
+
+Exception: **Thaura AI** hardcodes its price (`$0.50/$2.00` per 1M tokens).
+Thaura's marketing page (`thaura.ai/pricing`) shows consumer plans, not API
+rates. The API platform page at `https://thaura.ai/api-platform` documents
+per-token rates but the page structure may change. Thaura pricing is the
+fallback case — check the API platform page if available, otherwise keep the
+last known value and note the date.
+
+| Provider | Pricing page URL |
+| ---- | --- |
+| DeepSeek | https://api-docs.deepseek.com/quick_start/pricing |
+| Moonshot / Kimi (K3) | https://platform.kimi.ai/docs/pricing/chat-k3.md |
+| Moonshot / Kimi (K2.6) | https://platform.kimi.ai/docs/pricing/chat-k26.md |
+| Thaura AI | https://thaura.ai/api-platform |
+
+**Locations that must stay in sync** when prices change:
+1. `internal/usage/pricing.go` — Go maps (`moonshotPricing`, `deepseekPricing`, `thauraPricing`)
+2. `internal/usageui/static/index.html` — JS `PRICING` object
+3. `internal/usage/pricing_test.go` — test expected values
+4. `.cursor/rules/usage.mdc` — this file (update `last-verified` date)
 
 ## Billing that the product estimates
 
@@ -13,24 +43,17 @@ alias→provider→model resolution). Never price on Cursor comparison rows.
 
 Date-stamp tables in code comments; refresh when platforms change.
 
-### Moonshot / Kimi (USD per 1M tokens)
-
-Source: https://platform.kimi.ai/docs/pricing/chat
-
-| Model | Cache hit / MTok | Input / MTok | Output / MTok |
-| ---- | --- | --- | --- |
-| `kimi-k3` | $0.30 | $3.00 | $15.00 |
-| `kimi-k2.6` | $0.16 | $0.95 | $4.00 |
-
 ### DeepSeek (USD per 1M tokens)
 
-Source: https://api-docs.deepseek.com/quick_start/pricing  
-(Independent summary cross-check: https://chat-deep.ai/pricing/ — always prefer official.)
+Source: https://api-docs.deepseek.com/quick_start/pricing
+Always verify against the live page before updating.
 
-| Model | Cache hit / MTok | Cache miss (input) / MTok | Output / MTok |
-| ---- | --- | --- | --- |
-| `deepseek-v4-flash` | $0.0028 | $0.14 | $0.28 |
-| `deepseek-v4-pro` | $0.003625 | $0.435 | $0.87 |
+### Moonshot / Kimi (USD per 1M tokens)
+
+Sources:
+- K3: https://platform.kimi.ai/docs/pricing/chat-k3.md
+- K2.6: https://platform.kimi.ai/docs/pricing/chat-k26.md
+Always verify against the live page before updating.
 
 DeepSeek usage responses expose `prompt_cache_hit_tokens` /
 `prompt_cache_miss_tokens` — prefer those fields for estimates when present.
@@ -38,27 +61,44 @@ DeepSeek usage responses expose `prompt_cache_hit_tokens` /
 ### Thaura AI (USD per 1M tokens)
 
 Source: https://thaura.ai/api-platform
+Input $0.50 / MTok, Output $2.00 / MTok. No cached-token pricing documented.
+Thaura is the exception — price is hardcoded; check the API platform page if
+available, otherwise keep the last known value.
 
-| Model | Input / MTok | Output / MTok |
-| ---- | --- | --- |
-| `thaura` | $0.50 | $2.00 |
+## Usage UI (dashboard)
 
-No cached-token pricing documented as of 2026-07. Full prompt billed at input rate.
+The usage dashboard runs **always-on** with the gateway process at
+`http://127.0.0.1:4002`. No flag needed. No standalone command.
 
-## Cursor comparison (reference only — not gateway billing)
+| Decision    | Choice                                                                              |
+| ----------- | ----------------------------------------------------------------------------------- |
+| Package     | `internal/usageui` — embedded HTTP server + static assets                           |
+| Address     | `127.0.0.1:4002` (loopback only, never via tunnel)                                  |
+| Persistence | SQLite at `{dataRoot}/usage/usage.db` (shared with gateway store)                   |
+| UI stack    | Go `embed.FS` + HTML/CSS/vanilla JS — **no** React/Vue/npm                          |
+| Charts      | Chart.js 4.4.7 — vendored under `internal/usageui/static/` (offline)                |
+| API         | `/api/summary`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions` |
+| Lifecycle   | Started automatically with gateway; stopped with gateway                            |
 
-| Provider | Model | Input | Cache read/hit | Output |
-| ---- | --- | --- | --- | --- |
-| Cursor | Composer 2.5 | $0.50 | $0.20 | $2.50 |
-| Cursor | Composer 2.5 (Fast) | $3.00 | $0.50 | $15.00 |
-| Cursor | Grok 4.5 | $2.00 | $0.50 | $6.00 |
-| Cursor | Grok 4.5 (Fast) | $4.00 | $1.00 | $18.00 |
+### Currency support
 
-Peer reading (approx.): K3 ↔ Grok 4.5 family; K2.7 Code ↔ Composer 2.5 family;
-DeepSeek V4 is typically far cheaper per token than either. Do not use Cursor
-rows for live cost math.
+The UI supports USD, EUR, and CNY via a dropdown. Selection is persisted in
+`localStorage` (`discursive_currency`). Exchange rates are fetched from
+`api.frankfurter.app` via a Go backend proxy (`/api/exchange-rate`) and cached
+in `localStorage` (`discursive_fx_rates`) with a 24-hour TTL.
 
-## Session accounting
+New currencies: add to both the `<select>` HTML and `fetchExchangeRate` (update
+the `?to=` parameter).
+
+### Chart.js external tooltips
+
+The "Spend by Model" and "Spend by Provider" charts use Chart.js `external`
+tooltip rendering for HTML control (provider logos, formatting). The tooltip
+markup is injected as `#custom-tooltip` and styled with CSS. When modifying
+tooltip CSS, be aware that Chart.js may set inline styles on the tooltip
+element; use `!important` to override when necessary.
+
+### Session accounting
 
 - **Event** = one upstream API call (one completion). Logged at **DEBUG** as `msg=usage`.
 - **Agent-task window** = consecutive events until idle (`DefaultIdleTimeout` = **30s**,
@@ -70,49 +110,93 @@ rows for live cost math.
 - Log level: `DISCURSIVE_LOG_LEVEL=debug|info|warn|error` (default `info`).
 - Never log secrets.
 
-## Usage UI (dashboard)
+## Cursor comparison (reference only — not gateway billing)
 
-The usage dashboard runs **always-on** with the gateway process at
-`http://127.0.0.1:4002`. No flag needed. No standalone command.
+| Provider | Model               | Input | Cache read/hit | Output |
+| -------- | ------------------- | ----- | -------------- | ------ |
+| Cursor   | Composer 2.5        | $0.50 | $0.20          | $2.50  |
+| Cursor   | Composer 2.5 (Fast) | $3.00 | $0.50          | $15.00 |
+| Cursor   | Grok 4.5            | $2.00 | $0.50          | $6.00  |
+| Cursor   | Grok 4.5 (Fast)     | $4.00 | $1.00          | $18.00 |
 
-| Decision | Choice |
-| ---- | ---- |
-| Package | `internal/usageui` — embedded HTTP server + static assets |
-| Address | `127.0.0.1:4002` (loopback only, never via tunnel) |
-| Persistence | SQLite at `{dataRoot}/usage/usage.db` (shared with gateway store) |
-| UI stack | Go `embed.FS` + HTML/CSS/vanilla JS — **no** React/Vue/npm |
-| Charts | Chart.js 4.4.7 — vendored under `internal/usageui/static/` (offline) |
-| API | `/api/summary`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions` |
-| Lifecycle | Started automatically with gateway; stopped with gateway |
+Peer reading (approx.): K3 ↔ Grok 4.5 family; K2.7 Code ↔ Composer 2.5 family;
+DeepSeek V4 is typically far cheaper per token than either. Do not use Cursor
+rows for live cost math.
+
+---
+
+## Symptoms & fixes
 
 ### `Usage UI not accessible`
 
-| Symptom | Cause | Fix |
-| ---- | ---- | ---- |
+| Symptom                                    | Cause                                | Fix                                                                     |
+| ------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------------- |
 | `http://127.0.0.1:4002` connection refused | Gateway not running or port conflict | Start gateway: `discursive start`; check gateway log for `usage_ui_url` |
 
 ### `Chart won't load`
 
-| Symptom | Cause | Fix |
-| ---- | ---- | ---- |
+| Symptom                              | Cause                                        | Fix                                                                                                                              |
+| ------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Blank chart area or JS console error | Chart.js not served (offline-first — no CDN) | Chart.js is vendored in `static/chart.umd.min.js` and served at `/static/chart.umd.min.js` — verify `embed.FS` includes the file |
 
 ### `Cost estimate uses wrong price row`
 
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
-| Usage $ doesn’t match provider invoice shape | Priced pre-mapping alias, wrong provider table, or Cursor comparison row | Resolve alias→**provider+real model**; pick Moonshot vs DeepSeek table; never Cursor rows |
+| Symptom                                      | Cause                                                                    | Fix                                                                                       |
+| -------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Usage $ doesn't match provider invoice shape | Priced pre-mapping alias, wrong provider table, or Cursor comparison row | Resolve alias→**provider+real model**; pick Moonshot vs DeepSeek table; never Cursor rows |
 
 ### `INFO flooded with every API call`
 
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| Symptom                             | Cause                   | Fix                                                         |
+| ----------------------------------- | ----------------------- | ----------------------------------------------------------- |
 | One log line per completion at INFO | Per-call logged at Info | Use `LogEvent` at Debug; `usage_summary` at Info after idle |
 
 ### `Zero cache-hit tokens despite large prompt — code or upstream?`
 
+| Symptom                                                                                                          | Cause                                                                                       | Fix                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cache_hit_tokens=0` + `cache_miss_tokens=0` with large `prompt_tokens` makes the operator suspect a parsing bug | Upstream genuinely returned no cache data (cold request, prefix change, or provider switch) | Add a diagnostic `slog.Debug` at the single choke point (`recordUsage`) that fires when `CacheHitTokens==0 && CacheMissTokens==0 && PromptTokens>1024`. This signals "upstream reported no cache" vs silent "might be broken." The log confirms the data path is working correctly; 0 cache hits on request 1 of a new session is expected, not a bug. |
+
+### `CSS !important silently overrides inline styles`
+
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| `cache_hit_tokens=0` + `cache_miss_tokens=0` with large `prompt_tokens` makes the operator suspect a parsing bug | Upstream genuinely returned no cache data (cold request, prefix change, or provider switch) | Add a diagnostic `slog.Debug` at the single choke point (`recordUsage`) that fires when `CacheHitTokens==0 && CacheMissTokens==0 && PromptTokens>1024`. This signals "upstream reported no cache" vs silent "might be broken." The log confirms the data path is working correctly; 0 cache hits on request 1 of a new session is expected, not a bug. |
+| Inline `style="width:160px"` on an `<img>` element has no visible effect — the image stays at its old size despite repeated edits | A CSS rule with `!important` (e.g. `.tt-logo-row img { width: 60px !important; }`) has higher specificity than inline styles. The browser silently applies the `!important` rule with zero console warnings. | Search CSS for `!important` rules matching the element / class / selector chain, then either remove the `!important` or update the CSS value to match desired outcome. Never assume inline styles take precedence when `!important` is in play anywhere in the cascade. |
+
+### `Browser native tooltip shows raw HTML instead of rendered content`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| A `title` or `data-tip` attribute containing HTML (`<br>`, `<img>`, etc.) renders as literal text in the browser's native tooltip | Browser native tooltips (triggered by `title` attribute or similar) display attribute values as plain text — they cannot render HTML. | Do not put HTML in `title`/`data-tip` attributes. For rich tooltips (images, line-breaks, bold text), dynamically inject a positioned `<span>` or `<div>` element on hover and remove it on mouse leave. |
+
+### `Frontend fetch to external API blocked by CORS`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| `fetch()` to an external API (e.g. `api.frankfurter.app`) from the Usage UI page fails with a CORS error in the browser console | The Usage UI page is served from `127.0.0.1:4002` by the Go embedding `net/http` server. External APIs typically do not include `Access-Control-Allow-Origin: http://127.0.0.1:4002` in their CORS headers, so the browser blocks the cross-origin request. | Add a Go backend proxy handler (e.g. `/api/exchange-rate`) that does the external HTTP call server-side and returns the data to the frontend. The proxy call is server-to-server, which is not subject to browser CORS. |
+
+### `JS innerHTML replacement wipes static children`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| A `<select>` dropdown appears empty after JS runs, even though `<option>` tags are present in the static HTML | JavaScript code that sets `element.innerHTML = <new string>` replaces the entire content of the element. Any static `<option>` children written in the HTML are lost — they are not part of the JS-built string. | Consistently build all children in JS (not a mix of static HTML + JS innerHTML). Alternatively, use `insertAdjacentHTML` or DOM API methods that append without replacing siblings. |
+
+### `Money symbol function undefined at page load`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Console error `moneySymbol is not defined` during page initialization | A function is referenced in an inline JS expression (e.g. inside `innerHTML` assignment) before it is defined in the script source. JavaScript hoists function declarations but only within the same script block; `innerHTML` assignments from earlier DOM updates execute before later `<script>` tags. | Define shared utility functions (currency formatting, etc.) at the top of the `<script>` block, before any code that renders HTML using those functions. Alternatively, use template literals that evaluate at call time rather than at HTML-construction time. |
+
+### `Period dropdown empty after HTML reorder`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| After swapping the order of two `<select>` dropdowns in the HTML, the period dropdown shows no options | The `<option>` tags for the period `<select>` were accidentally deleted or moved during the edit. The `<select>` element exists but has no children. | When reordering HTML elements, verify that each `<select>` retains its `<option>` children in the final position. Use git diff to confirm no `<option>` loss. |
+
+### `Chart.js tooltip sizing overridden by CSS`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Chart.js configuration sets `bodyFont.size` or similar tooltip styling, but the rendered tooltip does not respect it | Chart.js renders tooltips using Canvas or inline-styled HTML, but CSS rules targeting `.chartjs-tooltip` or the custom tooltip container may override Chart.js' internal styles. | For `external` tooltip rendering (where Chart.js calls your callback), you control the DOM entirely — set styles directly on your custom tooltip element. For built-in tooltips, use Chart.js tooltip callbacks to modify styling; avoid CSS rules that broadly target `.chartjs-tooltip *`. |
 
 <!-- last-verified: 2026-07 -->

@@ -6,6 +6,7 @@ package usageui
 import (
 	"embed"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -84,6 +85,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/by-provider", s.handleByProvider)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("/api/stats", s.handleStats)
+	mux.HandleFunc("/api/exchange-rate", s.handleExchangeRate)
 
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -147,7 +149,7 @@ func (s *Server) handleByDay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, days)
+	writeJSON(w, padBuckets(since, time.Now().UTC(), bucketMins, days))
 }
 
 func (s *Server) handleByModel(w http.ResponseWriter, r *http.Request) {
@@ -244,20 +246,78 @@ func parseSinceParam(r *http.Request) (time.Time, error) {
 }
 
 // parseBucketParam extracts an optional bucket duration from the query string.
-// Accepted values: "10m", "30m", "2h", "12h", "1d". Returns minutes.
+// Accepted values: "10m", "20m", "1h", "2h", "24h", "1d". Returns minutes.
 func parseBucketParam(r *http.Request) int {
 	switch r.URL.Query().Get("bucket") {
 	case "10m":
 		return 10
-	case "30m":
-		return 30
+	case "20m":
+		return 20
+	case "1h":
+		return 60
 	case "2h":
 		return 120
-	case "12h":
-		return 720
+	case "24h":
+		return 1440
 	case "1d":
 		return 0 // group by date(), not minute-bucket
 	default:
 		return 0
 	}
+}
+
+// padBuckets fills in missing bucket slots with zero-value DailySummary entries
+// so the client always sees a full grid of N empty bars for the selected timescale.
+func padBuckets(since, until time.Time, bucketMins int, actual []usage.DailySummary) []usage.DailySummary {
+	if bucketMins <= 0 {
+		// Daily bucketing.
+		start := time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, time.UTC)
+		end := time.Date(until.Year(), until.Month(), until.Day(), 0, 0, 0, 0, time.UTC)
+		existing := make(map[string]usage.DailySummary, len(actual))
+		for _, d := range actual {
+			existing[d.Date] = d
+		}
+		var out []usage.DailySummary
+		for t := start; !t.After(end); t = t.AddDate(0, 0, 1) {
+			key := t.Format("2006-01-02")
+			if ds, ok := existing[key]; ok {
+				out = append(out, ds)
+			} else {
+				out = append(out, usage.DailySummary{Date: key})
+			}
+		}
+		return out
+	}
+	// Sub-day bucketing (N-minute slots).
+	bucketDur := time.Duration(bucketMins) * time.Minute
+	// floor since and until to the bucket boundary.
+	floorSince := since.Truncate(bucketDur)
+	floorUntil := until.Truncate(bucketDur)
+	existing := make(map[string]usage.DailySummary, len(actual))
+	for _, d := range actual {
+		existing[d.Date] = d
+	}
+	var out []usage.DailySummary
+	for t := floorSince; !t.After(floorUntil); t = t.Add(bucketDur) {
+		key := t.Format("2006-01-02T15:04:05")[:16] + ":00" // "2006-01-02T15:04:00"
+		if ds, ok := existing[key]; ok {
+			out = append(out, ds)
+		} else {
+			out = append(out, usage.DailySummary{Date: key})
+		}
+	}
+	return out
+}
+
+// handleExchangeRate proxies the frankfurter.app EUR/USD + CNY/USD rates to avoid CORS issues.
+func (s *Server) handleExchangeRate(w http.ResponseWriter, r *http.Request) {
+	resp, err := http.Get("https://api.frankfurter.app/latest?from=USD&to=EUR,CNY")
+	if err != nil {
+		http.Error(w, "exchange rate unavailable", http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
