@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 
@@ -15,6 +16,17 @@ var (
 	Version      = "0.0.0-dev"
 	portableFlag bool
 )
+
+func init() {
+	if Version != "0.0.0-dev" {
+		return // ldflags already injected a real version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			Version = info.Main.Version
+		}
+	}
+}
 
 func NewRoot() *cobra.Command {
 	var showKey bool
