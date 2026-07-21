@@ -146,11 +146,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <span style="color:var(--border)">|</span>
       <span class="dropdown-label">⌛ Period</span>
       <select class="time-select" id="time-range">
+      <option value="today" selected>Today</option>
+      <option value="mtd">Month to Date</option>
       <option value="1h">1 hour</option>
       <option value="3h">3 hours</option>
       <option value="12h">12 hours</option>
       <option value="24h">24 hours</option>
-      <option value="7d" selected>1 week</option>
+      <option value="7d">1 week</option>
       <option value="30d">1 month</option>
     </select>
     </div>
@@ -460,14 +462,27 @@ let _firstLoad = true; // charts animate on first load only
 // --- localStorage for time range ---
 const LS_KEY = 'discursive_usageui_time_range';
 function getSavedRange() {
-  return localStorage.getItem(LS_KEY) || '7d';
+  return localStorage.getItem(LS_KEY) || 'today';
 }
 function saveRange(val) {
   localStorage.setItem(LS_KEY, val);
 }
 
 // Time range resolution
-function timeRangeToSince(val) {
+// Returns { since: ISO-string, buckets: number (0=fixed count), bucketMins: string (''=daily) }
+function timeRangeParams(val) {
+  if (val === 'today') {
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const hoursSinceMidnight = Math.max(1, Math.ceil((now - midnight) / 3600000));
+    return { since: midnight.toISOString(), buckets: hoursSinceMidnight, bucketMins: '1h' };
+  }
+  if (val === 'mtd') {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const daysSinceStart = Math.max(1, Math.ceil((now - startOfMonth) / 86400000));
+    return { since: startOfMonth.toISOString(), buckets: daysSinceStart, bucketMins: '1d' };
+  }
   const now = new Date();
   const map = {
     '1h': 60*60*1000,
@@ -478,12 +493,17 @@ function timeRangeToSince(val) {
     '30d': 30*24*60*60*1000
   };
   const ms = map[val] || 7*24*60*60*1000;
-  return new Date(now.getTime() - ms).toISOString();
+  return { since: new Date(now.getTime() - ms).toISOString(), buckets: 0, bucketMins: timeRangeToBucketMins(val) };
+}
+
+function timeRangeToSince(val) {
+  return timeRangeParams(val).since;
 }
 
 // Common fetch wrapper
 async function api(path) {
-  const r = await fetch(path);
+  const sep = path.includes('?') ? '&' : '?';
+  const r = await fetch(path + sep + '_=' + Date.now());
   if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
   return r.json();
 }
@@ -619,6 +639,10 @@ async function loadMTD() {
 }
 
 function timeRangeToBucket(val) {
+  return timeRangeParams(val).bucketMins;
+}
+
+function timeRangeToBucketMins(val) {
   const map = { '1h': '10m', '3h': '20m', '12h': '1h', '24h': '2h', '7d': '24h', '30d': '1d' };
   return map[val] || '1d';
 }
@@ -853,7 +877,7 @@ async function loadSessions() {
     body.innerHTML = '';
 
     // For time ranges longer than a week, aggregate sessions into averages
-    const isLongRange = ['30d'].includes(range);
+    const isLongRange = ['30d', 'mtd'].includes(range);
 
     if (isLongRange && sessions.length > 0) {
       // Compute averages across all sessions
