@@ -97,6 +97,11 @@ Open **Cursor Settings → Models** and enter:
 Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 `Connection verified` above the Base URL field.
 
+> **💡 Tip:** You can also copy the Gateway Key and Tunnel URL directly from
+> the [Usage Dashboard at http://localhost:4002](http://localhost:4002) —
+> hover over the `?` icons next to ☁️ Tunnel and 🔐 Gateway Key for field-specific
+> setup instructions.
+
 ### 4. Switch providers <!-- omit in toc -->
 
 Change the model alias in Cursor's model picker — no restart needed:

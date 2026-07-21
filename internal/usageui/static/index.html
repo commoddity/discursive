@@ -64,7 +64,8 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .health-col:nth-child(n+4) { border-bottom: none; }
 .health-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
 .health-val { font-size: 0.85rem; color: var(--text); word-break: break-all; }
-.health-btn { font-size: 0.72rem; padding: 3px 12px; border-radius: 5px; border: 1px solid var(--border); background: rgba(48,54,61,0.6); color: var(--text-muted); cursor: pointer; white-space: nowrap; font-weight: 500; letter-spacing: 0.2px; transition: all 0.15s; }
+.health-sub { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+.health-btn { font-size: 0.72rem; padding: 3px 12px; border-radius: 5px; border: 1px solid var(--border); background: rgba(48,54,61,0.6); color: var(--text-muted); cursor: pointer; white-space: nowrap; font-weight: 500; letter-spacing: 0.2px; transition: all 0.15s; min-height: 28px; line-height: 1.4; }
 .health-btn:hover { background: rgba(88,166,255,0.12); border-color: rgba(88,166,255,0.3); color: var(--accent); }
 .health-btn:active { background: rgba(88,166,255,0.18); }
 .health-btn.copy-btn { color: var(--accent2); border-color: rgba(63,185,80,0.25); background: rgba(63,185,80,0.08); }
@@ -80,7 +81,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .moonshot { color: var(--moonshot); }
 .deepseek { color: var(--deepseek); }
 .thaura { color: var(--thaura); }
-.usd { font-variant-numeric: tabular-nums; text-align: right !important; }
+.usd { font-variant-numeric: tabular-nums; text-align: right !important; min-width: 90px; }
 .num { font-variant-numeric: tabular-nums; text-align: right !important; }
 .stats-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.78rem; color: var(--text-muted); }
 .retention-info { position: relative; display: inline-flex; align-items: center; cursor: help; }
@@ -97,6 +98,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .fx-info { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; cursor: help; margin-right: 2px; flex-shrink: 0; position: relative; }
 .fx-info::after { content: attr(data-tip); display: none; position: absolute; top: 50%; left: calc(100% + 8px); transform: translateY(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.5; }
 .fx-info:hover::after { display: block; }
+
+.health-info { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; cursor: help; flex-shrink: 0; position: relative; margin-left: 4px; vertical-align: text-bottom; }
+.health-info::after { content: attr(data-tip); display: none; position: absolute; top: 50%; left: calc(100% + 8px); transform: translateY(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: normal; z-index: 10; line-height: 1.5; max-width: 320px; text-align: left; text-transform: none; letter-spacing: normal; }
+.health-info:hover::after { display: block; }
+.health-link { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.45rem; color: var(--text-muted); line-height: 1; cursor: pointer; flex-shrink: 0; text-decoration: none; margin-left: 4px; vertical-align: text-bottom; transition: all 0.15s; }
+.health-link:hover { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
 #custom-tooltip { display: none; position: fixed; z-index: 100; background: #1a1f2b; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 0.78rem; color: var(--text); pointer-events: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.5); line-height: 1.6; }
 #custom-tooltip .tt-title { font-weight: 600; font-size: 0.82rem; margin-bottom: 4px; color: var(--text); }
 #custom-tooltip .tt-logo-row { margin-bottom: 6px; }
@@ -195,6 +202,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 <script>
 const fmtNum = (n) => n.toLocaleString();
 const fmtUSD = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtLocale = () => {
+  const cur = getCurrency();
+  if (cur === 'eur') return 'de-DE';
+  if (cur === 'cny') return 'zh-CN';
+  return 'en-US';
+};
 
 // --- Currency ---
 let eurRate = null; // null = loading, 0 = failed
@@ -252,14 +265,16 @@ function moneySymbol() {
 
 function moneyLabel() {
   const cur = getCurrency();
-  if (cur === 'eur' && eurRate > 0) return 'Est. EUR';
-  if (cur === 'cny' && cnyRate > 0) return 'Est. CNY';
-  return 'Est. USD';
+  let text;
+  if (cur === 'eur' && eurRate > 0) text = 'Est. EUR';
+  else if (cur === 'cny' && cnyRate > 0) text = 'Est. CNY';
+  else text = 'Est. USD';
+  return text + ' <span class="health-info" style="margin-left:4px" data-tip="Pricing is based on best estimates. Rates may have changed — check the provider\'s site for up-to-date pricing.">?</span>';
 }
 
 function updateMoneyLabels() {
   document.querySelectorAll('.money-label').forEach(el => {
-    el.textContent = moneyLabel();
+    el.innerHTML = moneyLabel();
   });
 }
 
@@ -267,19 +282,34 @@ const fmtDate = (s) => {
   if (!s) return '';
   const d = new Date(s + (s.endsWith('Z') ? '' : 'Z'));
   if (isNaN(d.getTime())) return s.replace('T',' ').substring(0,16);
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+  return d.toLocaleString(fmtLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
 };
 
 const fmtDateShort = (s) => {
   if (!s) return '';
   const d = new Date(s + (s.endsWith('Z') ? '' : 'Z'));
   if (isNaN(d.getTime())) return s.replace('T',' ').substring(0,16);
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(fmtLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 const fmtUptime = (s) => {
   if (!s || s < 0) return '—';
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+  const mo = Math.floor(s / 2592000), wk = Math.floor((s % 2592000) / 604800);
+  const d = Math.floor((s % 604800) / 86400), h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60), ss = Math.floor(s % 60);
+  const pad = n => String(n).padStart(2, '0');
+  const parts = [];
+  if (mo > 0) parts.push(mo + 'mo');
+  if (wk > 0) parts.push(wk + 'w');
+  if (d > 0) parts.push(d + 'd');
+  if (h > 0) parts.push(h + 'h');
+  parts.push(pad(m) + ':' + pad(ss));
+  return parts.join(' ');
+};
+const fmtStartedAt = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  return d.toLocaleString(fmtLocale(), { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
 };
 const PROVIDER_COLORS = { moonshot: '#7c3aed', deepseek: '#2563eb', thaura: '#059669' };
 const PROVIDER_LIGHT = { moonshot: '#a78bfa', deepseek: '#60a5fa', thaura: '#34d399' };
@@ -425,6 +455,7 @@ function fmtMoneyUSD(n) {
 }
 
 let chartByDay = null, chartByModel = null, chartByProv = null;
+let _firstLoad = true; // charts animate on first load only
 
 // --- localStorage for time range ---
 const LS_KEY = 'discursive_usageui_time_range';
@@ -474,10 +505,10 @@ async function loadHealth() {
         '<div class="health-val">PID ' + h.pid + '</div>' +
       '</div>' +
       '<div class="health-col health-col-wide">' +
-        '<div class="health-label">☁️ Tunnel</div>' +
+        '<div class="health-label">☁️ Tunnel <span class="health-info" data-tip="Paste the Tunnel URL into Cursor: Settings → Models → Override OpenAI Base URL. Must end in /v1.">?</span><a class="health-link" href="https://github.com/commoddity/discursive#-quickstart" target="_blank" title="See Quickstart guide">🔗</a></div>' +
         '<div class="health-val" style="display:flex;align-items:center;gap:8px;word-break:normal;">' +
           '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">' + (h.public_url || '—') + '</span>' +
-          (h.public_url ? '<button class="health-btn copy-btn" style="min-width:82px;white-space:nowrap" onclick="copyToClipboard(event, \'' + h.public_url + '\')">Copy URL</button>' : '') +
+          (h.public_url ? '<button class="health-btn copy-btn" style="min-width:100px;white-space:nowrap" onclick="copyToClipboard(event, \'' + h.public_url + '\')">Copy URL</button>' : '') +
         '</div>' +
       '</div>' +
       '<div class="health-col">' +
@@ -489,19 +520,23 @@ async function loadHealth() {
         '<div class="health-val">' + String(h.local_port) + '</div>' +
       '</div>' +
       '<div class="health-col health-col-wide">' +
-        '<div class="health-label">🔐 Gateway Key</div>' +
+        '<div class="health-label">🔐 Gateway Key <span class="health-info" data-tip="Copy the Gateway Key into Cursor: Settings → Models → OpenAI API Key.">?</span><a class="health-link" href="https://github.com/commoddity/discursive#-quickstart" target="_blank" title="See Quickstart guide">🔗</a></div>' +
         '<div class="health-val" style="display:flex;align-items:center;gap:8px;word-break:normal;">' +
           '<span id="gw-key-text" class="gw-key-text gw-key-blur">' + raw + '</span>' +
             '<button class="health-btn" onclick="toggleGatewayKey()" id="gw-key-toggle" style="min-width:82px;white-space:nowrap">Show Key</button>' +
-            '<button class="health-btn copy-btn" onclick="copyGatewayKey()" style="min-width:82px;white-space:nowrap">Copy Key</button>' +
+            '<button class="health-btn copy-btn" onclick="copyGatewayKey()" style="min-width:100px;white-space:nowrap">Copy Key</button>' +
         '</div>' +
       '</div>' +
       '<div class="health-col">' +
         '<div class="health-label">⏱️ Uptime</div>' +
-        '<div class="health-val">' + up + '</div>' +
+        '<div class="health-val" id="uptime-display">' + up + '</div>' +
+        '<div class="health-sub">Started ' + fmtStartedAt(h.started_at) + '</div>' +
       '</div>';
 
     grid.dataset.gatewayKey = raw;
+
+    // Sync the live uptime clock from server-reported value
+    syncUptime(h.uptime_seconds);
 
     // Provider indicator dots in header (with pricing links)
     const providers = document.getElementById('provider-indicators');
@@ -656,6 +691,7 @@ async function loadByDay() {
         ]
       },
       options: {
+        animation: _firstLoad ? undefined : false,
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
@@ -668,7 +704,8 @@ async function loadByDay() {
           },
           y: {
             stacked: true,
-            ticks: { color: '#8b949e', callback: v => fmtMoney(v) }
+            ticks: { color: '#8b949e', callback: v => fmtMoney(v), padding: 4 },
+            afterFit(axis) { axis.width = Math.max(axis.width, 78); }
           }
         }
       }
@@ -735,6 +772,7 @@ async function loadByModel() {
         ]
       },
       options: {
+        animation: _firstLoad ? undefined : false,
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
@@ -742,7 +780,7 @@ async function loadByModel() {
         },
         scales: {
           x: { stacked: true, ticks: { color: '#8b949e' } },
-          y: { stacked: true, ticks: { color: '#8b949e', callback: v => fmtMoney(v) } }
+          y: { stacked: true, ticks: { color: '#8b949e', callback: v => fmtMoney(v), padding: 4 }, afterFit(axis) { axis.width = Math.max(axis.width, 78); } }
         }
       }
     });
@@ -785,6 +823,7 @@ async function loadByProvider() {
         ]
       },
       options: {
+        animation: _firstLoad ? undefined : false,
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
@@ -792,7 +831,7 @@ async function loadByProvider() {
         },
         scales: {
           x: { stacked: true, ticks: { color: '#8b949e' } },
-          y: { stacked: true, ticks: { color: '#8b949e', callback: v => fmtMoney(v) } }
+          y: { stacked: true, ticks: { color: '#8b949e', callback: v => fmtMoney(v), padding: 4 }, afterFit(axis) { axis.width = Math.max(axis.width, 78); } }
         }
       }
     });
@@ -928,6 +967,50 @@ function reloadGraphs() {
   loadSessions();
 }
 
+// --- Auto-refresh polling (paused when tab is hidden) ---
+let _pollTimer = null;
+let _uptimeBase = 0;       // server-reported uptime at last sync
+let _uptimeLastSync = 0;   // Date.now() when we last synced
+let _uptimeInterval = null; // 1-second ticker
+
+function updateUptimeDisplay() {
+  const elapsed = Math.floor((Date.now() - _uptimeLastSync) / 1000);
+  const total = _uptimeBase + elapsed;
+  const el = document.getElementById('uptime-display');
+  if (el) el.textContent = fmtUptime(total);
+}
+
+function syncUptime(seconds) {
+  _uptimeBase = seconds;
+  _uptimeLastSync = Date.now();
+  updateUptimeDisplay();
+}
+
+function startUptimeTicker() {
+  if (_uptimeInterval) clearInterval(_uptimeInterval);
+  _uptimeInterval = setInterval(updateUptimeDisplay, 1000);
+}
+
+function stopUptimeTicker() {
+  if (_uptimeInterval) { clearInterval(_uptimeInterval); _uptimeInterval = null; }
+}
+function startPolling() {
+  stopPolling();
+  _pollTimer = setInterval(refreshAll, 15000);
+}
+function stopPolling() {
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+}
+function refreshAll() {
+  loadHealth();
+  loadMTD();
+  reloadGraphs();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { stopPolling(); stopUptimeTicker(); }
+  else { refreshAll(); startPolling(); startUptimeTicker(); }
+});
+
 // --- Init ---
 document.addEventListener('DOMContentLoaded', async () => {
   const sel = document.getElementById('time-range');
@@ -945,6 +1028,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   curSel.addEventListener('change', () => {
     saveCurrency(curSel.value);
     updateMoneyLabels();
+    loadHealth();   // re-render started-at in new locale
     reloadGraphs();
     loadMTD();
     loadSessions();
@@ -955,6 +1039,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadMTD();
   reloadGraphs();
   loadStats();
+  _firstLoad = false; // subsequent chart updates skip animation
+
+  // Start 15-second auto-refresh (paused when tab is hidden)
+  startPolling();
+  startUptimeTicker();
 });
 </script>
 </body>

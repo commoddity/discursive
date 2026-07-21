@@ -22,6 +22,7 @@ type HealthInfo struct {
 	Version        string `json:"version"`
 	PID            int    `json:"pid"`
 	UptimeSeconds  int64  `json:"uptime_seconds"`
+	StartedAt      string `json:"started_at"`
 	HasMoonshotKey bool   `json:"has_moonshot_key"`
 	HasDeepSeekKey bool   `json:"has_deepseek_key"`
 	HasThauraKey   bool   `json:"has_thaura_key"`
@@ -115,6 +116,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	h := s.health
 	if !s.startTime.IsZero() {
 		h.UptimeSeconds = int64(time.Since(s.startTime).Seconds())
+		h.StartedAt = s.startTime.UTC().Format(time.RFC3339)
 	}
 	writeJSON(w, h)
 }
