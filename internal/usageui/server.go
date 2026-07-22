@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/commoddity/discursive/internal/usage"
@@ -82,6 +83,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/summary", s.handleSummary)
 	mux.HandleFunc("/api/by-day", s.handleByDay)
+	mux.HandleFunc("/api/by-day-model", s.handleByDayModel)
 	mux.HandleFunc("/api/by-model", s.handleByModel)
 	mux.HandleFunc("/api/by-provider", s.handleByProvider)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
@@ -152,6 +154,119 @@ func (s *Server) handleByDay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, padBuckets(since, time.Now().UTC(), bucketMins, days))
+}
+
+func (s *Server) handleByDayModel(w http.ResponseWriter, r *http.Request) {
+	since, err := parseSinceParam(r)
+	if err != nil {
+		http.Error(w, "invalid since parameter", http.StatusBadRequest)
+		return
+	}
+	if since.IsZero() {
+		http.Error(w, "since parameter required", http.StatusBadRequest)
+		return
+	}
+	until, err := parseUntilParam(r)
+	if err != nil {
+		http.Error(w, "invalid until parameter", http.StatusBadRequest)
+		return
+	}
+	if until.IsZero() {
+		until = time.Now().UTC()
+	}
+	bucketMins := parseBucketParam(r)
+	rows, err := s.store.QueryByDayModelSince(since, bucketMins)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Pad with empty slots so the frontend always gets contiguous bucket slots.
+	// We produce an index of existing (bucket, model) pairs and then fill gaps.
+	type modelRow struct {
+		Provider string
+		Model    string
+	}
+	bucketDur := time.Duration(bucketMins) * time.Minute
+	if bucketMins <= 0 {
+		bucketDur = 24 * time.Hour
+	}
+	floorSince := since.Truncate(bucketDur)
+	floorUntil := until.Truncate(bucketDur)
+
+	// Collect distinct models and index existing data.
+	modelSet := make(map[string]modelRow) // "provider::model" -> row
+	type bucketEntry struct {
+		Cost      float64
+		ReqCount  uint64
+		TokensIn  uint64
+		TokensOut uint64
+		CacheHit  uint64
+		CacheMiss uint64
+	}
+	existing := make(map[string]map[string]bucketEntry) // bucket -> "provider::model" -> entry
+	for _, r := range rows {
+		key := r.Provider + "::" + r.Model
+		modelSet[key] = modelRow{Provider: r.Provider, Model: r.Model}
+		if existing[r.Bucket] == nil {
+			existing[r.Bucket] = make(map[string]bucketEntry)
+		}
+		existing[r.Bucket][key] = bucketEntry{
+			Cost:      r.EstUSD,
+			ReqCount:  r.RequestCount,
+			TokensIn:  r.TokensIn,
+			TokensOut: r.TokensOut,
+			CacheHit:  r.CacheHitTokens,
+			CacheMiss: r.CacheMissTokens,
+		}
+	}
+
+	// Build sorted model keys for consistent ordering.
+	var modelKeys []string
+	for k := range modelSet {
+		modelKeys = append(modelKeys, k)
+	}
+	sort.Strings(modelKeys)
+
+	// Produce the flattened output: for each bucket slot, emit zero values for every model.
+	type FlatRow struct {
+		Bucket          string  `json:"bucket"`
+		Provider        string  `json:"provider"`
+		Model           string  `json:"model"`
+		EstUSD          float64 `json:"est_usd"`
+		RequestCount    uint64  `json:"request_count"`
+		TokensIn        uint64  `json:"tokens_in"`
+		TokensOut       uint64  `json:"tokens_out"`
+		CacheHitTokens  uint64  `json:"cache_hit_tokens"`
+		CacheMissTokens uint64  `json:"cache_miss_tokens"`
+	}
+	var flat []FlatRow
+	for t := floorSince; !t.After(floorUntil); t = t.Add(bucketDur) {
+		bucketKey := ""
+		if bucketMins > 0 {
+			bucketKey = t.Format("2006-01-02T15:04:00")
+		} else {
+			bucketKey = t.Format("2006-01-02")
+		}
+		for _, mk := range modelKeys {
+			mr := modelSet[mk]
+			be := bucketEntry{}
+			if m, ok := existing[bucketKey]; ok {
+				be = m[mk]
+			}
+			flat = append(flat, FlatRow{
+				Bucket:          bucketKey,
+				Provider:        mr.Provider,
+				Model:           mr.Model,
+				EstUSD:          be.Cost,
+				RequestCount:    be.ReqCount,
+				TokensIn:        be.TokensIn,
+				TokensOut:       be.TokensOut,
+				CacheHitTokens:  be.CacheHit,
+				CacheMissTokens: be.CacheMiss,
+			})
+		}
+	}
+	writeJSON(w, flat)
 }
 
 func (s *Server) handleByModel(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +352,18 @@ func writeJSON(w http.ResponseWriter, v any) {
 // parseSinceParam extracts an optional ISO-8601 since timestamp from query params.
 func parseSinceParam(r *http.Request) (time.Time, error) {
 	s := r.URL.Query().Get("since")
+	if s == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t, nil
+}
+
+func parseUntilParam(r *http.Request) (time.Time, error) {
+	s := r.URL.Query().Get("until")
 	if s == "" {
 		return time.Time{}, nil
 	}

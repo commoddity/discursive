@@ -83,6 +83,8 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .thaura { color: var(--thaura); }
 .usd { font-variant-numeric: tabular-nums; text-align: right !important; min-width: 90px; }
 .num { font-variant-numeric: tabular-nums; text-align: right !important; }
+.cmp-up { color: var(--accent2); font-weight: 600; font-size: 0.85rem; }
+.cmp-down { color: var(--danger); font-weight: 600; font-size: 0.85rem; }
 .stats-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.78rem; color: var(--text-muted); }
 .retention-info { position: relative; display: inline-flex; align-items: center; cursor: help; }
 .retention-info .icon { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; }
@@ -147,7 +149,11 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <span class="dropdown-label">⌛ Period</span>
       <select class="time-select" id="time-range">
       <option value="today" selected>Today</option>
-      <option value="mtd">Month to Date</option>
+      <option value="yesterday">Yesterday</option>
+      <option value="this-week">This Week</option>
+      <option value="last-week">Last Week</option>
+      <option value="this-month">This Month</option>
+      <option value="last-month">Last Month</option>
       <option value="1h">1 hour</option>
       <option value="3h">3 hours</option>
       <option value="12h">12 hours</option>
@@ -319,6 +325,19 @@ function providerColor(p) { return PROVIDER_COLORS[p] || '#8b949e'; }
 function providerLight(p) { return PROVIDER_LIGHT[p] || '#c9d1d9'; }
 function providerClass(p) { return PROVIDER_COLORS[p] ? p : 'deepseek'; }
 
+// Per-model distinct colors for Spend by Period chart: { "provider::model": "#hex" }
+const MODEL_COLORS = {
+  'deepseek::deepseek-v4-pro':   '#2563eb', // deep blue
+  'deepseek::deepseek-v4-flash': '#06b6d4', // cyan
+  'moonshot::kimi-k3':           '#7c3aed', // deep purple
+  'moonshot::kimi-k2.6':         '#e879f9', // hot pink / magenta
+  'thaura::thaura':              '#059669', // emerald green
+};
+function modelColor(provider, modelName) {
+  const key = provider + '::' + modelName;
+  return MODEL_COLORS[key] || providerColor(provider);
+}
+
 // Vertical gradient from color at top to light variant at bottom
 function makeGradient(ctx, color) {
   const g = ctx.createLinearGradient(0, 0, 0, 260);
@@ -456,6 +475,21 @@ function fmtMoneyUSD(n) {
   return '$' + val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Format date tick labels in user's locale
+function fmtTick(val) {
+  // Hour-precision: "2026-07-22T08:00:00"
+  if (val.length === 19 && val.charAt(10) === 'T') {
+    const d = new Date(val + 'Z');
+    if (!isNaN(d)) return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  // Date-only: "2026-07-22"
+  if (val.length === 10 && val.charAt(4) === '-') {
+    const d = new Date(val + 'T00:00:00Z');
+    if (!isNaN(d)) return d.toLocaleString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return val;
+}
+
 let chartByDay = null, chartByModel = null, chartByProv = null;
 let _firstLoad = true; // charts animate on first load only
 
@@ -469,19 +503,58 @@ function saveRange(val) {
 }
 
 // Time range resolution
-// Returns { since: ISO-string, buckets: number (0=fixed count), bucketMins: string (''=daily) }
+// Returns { since: ISO-string, until: ISO-string|null, buckets: number, bucketMins: string }
+// All dates are UTC midnight to avoid timezone offset causing bucket boundary misalignment.
+
+function utcMidnight(y, m, d) {
+  // m is 0-based month
+  return new Date(Date.UTC(y, m, d)).toISOString();
+}
+
 function timeRangeParams(val) {
   if (val === 'today') {
     const now = new Date();
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const hoursSinceMidnight = Math.max(1, Math.ceil((now - midnight) / 3600000));
-    return { since: midnight.toISOString(), buckets: hoursSinceMidnight, bucketMins: '1h' };
+    return { since: midnight.toISOString(), until: null, buckets: hoursSinceMidnight, bucketMins: '1h' };
   }
-  if (val === 'mtd') {
+  if (val === 'yesterday') {
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const daysSinceStart = Math.max(1, Math.ceil((now - startOfMonth) / 86400000));
-    return { since: startOfMonth.toISOString(), buckets: daysSinceStart, bucketMins: '1d' };
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterdayMidnight = new Date(todayMidnight.getTime() - 86400000);
+    return { since: yesterdayMidnight.toISOString(), until: todayMidnight.toISOString(), buckets: 24, bucketMins: '1h' };
+  }
+  if (val === 'this-week') {
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay(); // 0=Sun
+    const utcToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const mondayOffset = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+    const monday = new Date(utcToday.getTime() + mondayOffset * 86400000);
+    const sunday = new Date(monday.getTime() + 6 * 86400000);
+    return { since: monday.toISOString(), until: sunday.toISOString(), buckets: 7, bucketMins: '1d' };
+  }
+  if (val === 'last-week') {
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay();
+    const utcToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const mondayOffset = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+    const thisMonday = new Date(utcToday.getTime() + mondayOffset * 86400000);
+    const lastMonday = new Date(thisMonday.getTime() - 7 * 86400000);
+    const lastSunday = new Date(lastMonday.getTime() + 6 * 86400000);
+    return { since: lastMonday.toISOString(), until: lastSunday.toISOString(), buckets: 7, bucketMins: '1d' };
+  }
+  if (val === 'this-month') {
+    const now = new Date();
+    const since = utcMidnight(now.getUTCFullYear(), now.getUTCMonth(), 1);
+    // until = last day of month (Date.UTC with day 0 gives last day of previous month)
+    const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+    return { since: since, until: lastDay.toISOString(), buckets: 0, bucketMins: '1d' };
+  }
+  if (val === 'last-month') {
+    const now = new Date();
+    const since = utcMidnight(now.getUTCFullYear(), now.getUTCMonth() - 1, 1);
+    const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+    return { since: since, until: lastDay.toISOString(), buckets: 0, bucketMins: '1d' };
   }
   const now = new Date();
   const map = {
@@ -493,7 +566,7 @@ function timeRangeParams(val) {
     '30d': 30*24*60*60*1000
   };
   const ms = map[val] || 7*24*60*60*1000;
-  return { since: new Date(now.getTime() - ms).toISOString(), buckets: 0, bucketMins: timeRangeToBucketMins(val) };
+  return { since: new Date(now.getTime() - ms).toISOString(), until: null, buckets: 0, bucketMins: timeRangeToBucketMins(val) };
 }
 
 function timeRangeToSince(val) {
@@ -647,84 +720,142 @@ function timeRangeToBucketMins(val) {
   return map[val] || '1d';
 }
 
-// --- Spend by Period (was By Day) ---
+// Return the reference period to compare against, or null.
+function getComparisonRange(range) {
+  const map = { 'yesterday': 'today', 'last-week': 'this-week', 'last-month': 'this-month' };
+  return map[range] || null;
+}
+
+// --- Spend by Period — stacked by model ---
 async function loadByDay() {
   try {
     const range = getSavedRange();
-    const since = timeRangeToSince(range);
+    const params = timeRangeParams(range);
+    const since = params.since;
     const bucket = timeRangeToBucket(range);
-    const days = await api('/api/by-day?since=' + encodeURIComponent(since) + '&bucket=' + bucket);
+    let url = '/api/by-day-model?since=' + encodeURIComponent(since) + '&bucket=' + bucket;
+    if (params.until) {
+      url += '&until=' + encodeURIComponent(params.until);
+    }
+    const rows = await api(url);
 
-    // Populate period summary stats
+    // For comparison periods, also fetch the reference period total
+    const compRange = getComparisonRange(range);
+    let refCost = null;
+    if (compRange) {
+      const refParams = timeRangeParams(compRange);
+      let refUrl = '/api/by-day-model?since=' + encodeURIComponent(refParams.since) + '&bucket=' + timeRangeToBucket(compRange);
+      if (refParams.until) {
+        refUrl += '&until=' + encodeURIComponent(refParams.until);
+      }
+      try {
+        const refRows = await api(refUrl);
+        refCost = refRows.reduce((s, r) => s + (r.est_usd || 0), 0);
+      } catch(e) { /* ref cost stays null */ }
+    }
+
+    // Populate period summary stats (aggregate across all rows)
     const psum = document.getElementById('period-summary');
-    if (days.length === 0) {
+    if (rows.length === 0) {
       psum.style.display = 'none';
     } else {
-      const reqs = days.reduce((a, d) => a + d.request_count, 0);
-      const tIn  = days.reduce((a, d) => a + d.tokens_in, 0);
-      const tOut = days.reduce((a, d) => a + d.tokens_out, 0);
-      const tHit = days.reduce((a, d) => a + d.cache_hit_tokens, 0);
-      const tCost = days.reduce((a, d) => a + d.est_usd, 0);
+      let reqs = 0, tIn = 0, tOut = 0, tHit = 0, tCost = 0;
+      for (const r of rows) {
+        reqs += r.request_count || 0;
+        tIn  += r.tokens_in || 0;
+        tOut += r.tokens_out || 0;
+        tHit += r.cache_hit_tokens || 0;
+        tCost += r.est_usd || 0;
+      }
+
+      // Relative change badge for comparison periods
+      let changeHtml = '';
+      if (refCost !== null && refCost !== 0) {
+        const pct = ((tCost - refCost) / refCost * 100).toFixed(1);
+        const isLower = tCost < refCost;
+        const cls = isLower ? 'cmp-down' : 'cmp-up';
+        const sign = tCost >= refCost ? '+' : '';
+        changeHtml = ' <span class="' + cls + '">' + sign + pct + '%</span>';
+      }
+
       psum.style.display = 'grid';
       psum.innerHTML =
         '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(reqs)+'</div></div>'+
         '<div class="stat"><div class="label">Tokens In</div><div class="value">'+(tIn >= 1e6 ? (tIn/1e6).toFixed(2)+'M' : fmtNum(tIn))+'</div></div>'+
         '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+(tOut >= 1e6 ? (tOut/1e6).toFixed(2)+'M' : fmtNum(tOut))+'</div></div>'+
         '<div class="stat"><div class="label">Cache Hits</div><div class="value">'+(tHit >= 1e6 ? (tHit/1e6).toFixed(2)+'M' : fmtNum(tHit))+'</div></div>'+
-        '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="value">' + fmtMoney(tCost) + '</div></div>';
+        '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="value">' + fmtMoney(tCost) + changeHtml + '</div></div>';
     }
 
-    const labels = days.map(d => fmtDateShort(d.date));
-    const cashMiss = days.map(d => Number((d.est_usd * (d.cache_miss_tokens + d.cache_hit_tokens) === 0 ? d.est_usd : d.est_usd * d.cache_miss_tokens / Math.max(1, d.cache_miss_tokens + d.cache_hit_tokens))));
+    // Build bucket→models map: { bucket: [{provider, model, cost}, ...] }
+    const bucketMap = {};
+    const modelKeys = []; // store order: "provider::model"
+    const modelOrder = {}; // index in modelKeys
+    const modelProvider = {}; // "provider::model" -> provider
+    const modelName = {}; // "provider::model" -> model
 
-    // Approximate cache-hit vs cache-miss cost split using token ratio
-    const totalCash = days.map(d => d.est_usd);
-    const cashHit = days.map(d => {
-      const total = d.cache_miss_tokens + d.cache_hit_tokens;
-      if (total === 0) return 0;
-      return d.est_usd * (d.cache_hit_tokens / total);
+    for (const r of rows) {
+      if (!bucketMap[r.bucket]) bucketMap[r.bucket] = [];
+      bucketMap[r.bucket].push({ provider: r.provider, model: r.model, cost: r.est_usd });
+
+      const key = r.provider + '::' + r.model;
+      if (!(key in modelOrder)) {
+        modelOrder[key] = modelKeys.length;
+        modelKeys.push(key);
+        modelProvider[key] = r.provider;
+        modelName[key] = r.model;
+      }
+    }
+
+    const labels = Object.keys(bucketMap).sort();
+    const labelsForTicks = labels; // capture for tick callback
+
+    // Build one dataset per model
+    const datasets = modelKeys.map(key => {
+      const prov = modelProvider[key];
+      const model = modelName[key];
+      const color = modelColor(prov, model);
+      const ctx = document.getElementById('chart-by-day').getContext('2d');
+      const gradient = makeGradient(ctx, color);
+      return {
+        label: key, // "provider::model"
+        data: labels.map(b => {
+          const items = bucketMap[b];
+          const found = items.find(i => i.provider + '::' + i.model === key);
+          return found ? found.cost : 0;
+        }),
+        backgroundColor: gradient,
+        borderRadius: 0,
+        order: modelOrder[key],
+      };
     });
 
-    // Cleaner approach: use separate cost approximations.
-    // cache_miss = prompt - cache_hit cost; cache_hit cost from cache tokens / 1M * cache rate
-    // Actually, the backend already stores per-event est_usd.
-    // For the UI we approximate: if we have cache_hit/cache_miss, the spend breakdown is proportional,
-    // but better: the data doesn't have cache cost broken out per-day.
-    // Let's just show the cashHit/cashMiss approximation.
-    const missData = days.map(d => {
-      const denom = d.cache_miss_tokens + d.cache_hit_tokens;
-      if (denom === 0) return d.est_usd;
-      // cache_miss accounts for the "regular input" portion.
-      // We approximate as: missTokens/(missTokens+hitTokens) of the est_usd
-      return Number((d.est_usd * d.cache_miss_tokens / denom).toFixed(6));
-    });
-    const hitData = days.map(d => {
-      const denom = d.cache_miss_tokens + d.cache_hit_tokens;
-      if (denom === 0) return 0;
-      return Number((d.est_usd * d.cache_hit_tokens / denom).toFixed(6));
-    });
+    // Sort datasets by order (first model key = highest spend)
+    datasets.sort((a, b) => a.order - b.order);
+
+    // Give the last (top) bar rounded top corners
+    if (datasets.length > 0) {
+      datasets[datasets.length - 1].borderRadius = 4;
+    }
+
+    // Build tooltip: show each model in bucket with provider logo + cost
+    const tooltipPlugin = makePeriodModelTooltip(bucketMap);
 
     if (chartByDay) chartByDay.destroy();
     chartByDay = new Chart(document.getElementById('chart-by-day'), {
       type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          { label: 'Cache miss', data: missData, backgroundColor: '#58a6ff', borderRadius: 4 },
-          { label: 'Cache hit',  data: hitData,  backgroundColor: 'rgba(88,166,255,0.35)', borderRadius: 0 },
-        ]
-      },
+      data: { labels, datasets },
       options: {
         animation: _firstLoad ? undefined : false,
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: makeCacheTooltip(null),
+          tooltip: tooltipPlugin,
         },
         scales: {
           x: {
             stacked: true,
-            ticks: { color: '#8b949e', maxTicksLimit: 14 }
+            ticks: { color: '#8b949e', maxTicksLimit: 14, callback: val => fmtTick(labelsForTicks[val] || val) }
           },
           y: {
             stacked: true,
@@ -734,8 +865,73 @@ async function loadByDay() {
         }
       }
     });
-    document.getElementById('by-period-legend').style.display = 'flex';
+    document.getElementById('by-period-legend').style.display = 'none';
   } catch(e) { /* chart stays empty */ }
+}
+
+// Tooltip for Spend by Period: show each model in the bucket with provider logo + cost + total
+function makePeriodModelTooltip(bucketMap) {
+  return {
+    mode: 'index',
+    intersect: false,
+    enabled: false,
+    external: function(context) {
+      const { chart, tooltip } = context;
+      if (tooltip.opacity === 0) {
+        const el = document.getElementById('custom-tooltip');
+        if (el) el.style.display = 'none';
+        return;
+      }
+
+      const i = tooltip.dataPoints[0].dataIndex;
+      const label = tooltip.dataPoints[0].label;
+      const items = (bucketMap[label] || []).filter(it => +it.cost > 0);
+
+      // Group items by provider (only those with non-zero cost)
+      const byProvider = {};
+      let total = 0;
+      for (const item of items) {
+        if (!byProvider[item.provider]) byProvider[item.provider] = [];
+        byProvider[item.provider].push(item);
+        total += +item.cost;
+      }
+
+      // Build tooltip HTML
+      let html = '';
+      html += '<div class="tt-title">' + escapeHtml(label) + '</div>';
+
+      let firstProv = true;
+      for (const [prov, provItems] of Object.entries(byProvider)) {
+        const logoSrc = LOGO_URLS[prov] || '';
+        if (!firstProv) {
+          html += '<div style="margin-top:10px"></div>';
+        }
+        firstProv = false;
+        html += '<div class="tt-logo-row" style="margin-bottom:0">' +
+          '<div style="width:80px;height:33px"><img src="' + logoSrc + '" style="width:80px;height:33px;object-fit:contain" alt="' + escapeHtml(prov) + '"></div>' +
+        '</div>';
+        for (const item of provItems) {
+          html += '<div class="tt-row" style="padding-left:0">' + escapeHtml(item.model) + ': ' + fmtMoney(item.cost) + '</div>';
+        }
+      }
+
+      html += '<div class="tt-row tt-total">Total: ' + fmtMoney(total) + '</div>';
+
+      // Position and show
+      let el = document.getElementById('custom-tooltip');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'custom-tooltip';
+        document.body.appendChild(el);
+      }
+      const rect = chart.canvas.getBoundingClientRect();
+      el.innerHTML = html;
+      el.style.display = 'block';
+      el.style.position = 'fixed';
+      el.style.left = (rect.left + tooltip.caretX + 10) + 'px';
+      el.style.top = (rect.top + tooltip.caretY - 10) + 'px';
+    },
+  };
 }
 
 // --- DB Stats ---
@@ -765,21 +961,23 @@ async function loadByModel() {
     const range = getSavedRange();
     const since = timeRangeToSince(range);
     const models = await api('/api/by-model?since=' + encodeURIComponent(since));
-    const modelLabels = models.map(m => m.provider+' / '+m.model);
-    const modelColors = models.map(m => providerColor(m.provider));
-    const modelLight = models.map(m => providerLight(m.provider));
+
+    const hasData = models.length > 0;
+    const modelLabels = hasData ? models.map(m => m.provider+' / '+m.model) : ['No data'];
+    const modelColors = hasData ? models.map(m => modelColor(m.provider, m.model)) : ['#8b949e'];
+    const modelLight = hasData ? models.map(m => providerLight(m.provider)) : ['#c9d1d9'];
 
     // Compute cache-hit vs cache-miss dollar split per model
-    const missData = models.map(m => {
+    const missData = hasData ? models.map(m => {
       const denom = m.cache_miss_tokens + m.cache_hit_tokens;
       if (denom === 0) return m.est_usd;
       return Number((m.est_usd * m.cache_miss_tokens / denom).toFixed(6));
-    });
-    const hitData = models.map(m => {
+    }) : [0];
+    const hitData = hasData ? models.map(m => {
       const denom = m.cache_miss_tokens + m.cache_hit_tokens;
       if (denom === 0) return 0;
       return Number((m.est_usd * m.cache_hit_tokens / denom).toFixed(6));
-    });
+    }) : [0];
 
     const ctxModel = document.getElementById('chart-by-model').getContext('2d');
     const missGradients = modelColors.map(c => makeGradient(ctxModel, c));
@@ -800,7 +998,7 @@ async function loadByModel() {
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: makeCacheTooltip(i => models[i].provider, true),
+          tooltip: hasData ? makeCacheTooltip(i => models[i].provider, true) : { enabled: false },
         },
         scales: {
           x: { stacked: true, ticks: { color: '#8b949e' } },
@@ -817,20 +1015,22 @@ async function loadByProvider() {
     const range = getSavedRange();
     const since = timeRangeToSince(range);
     const provs = await api('/api/by-provider?since=' + encodeURIComponent(since));
-    const provLabels = provs.map(p => p.provider);
-    const provColors = provs.map(p => providerColor(p.provider));
-    const provLight = provs.map(p => providerLight(p.provider));
 
-    const missData = provs.map(p => {
+    const hasData = provs.length > 0;
+    const provLabels = hasData ? provs.map(p => p.provider) : ['No data'];
+    const provColors = hasData ? provs.map(p => providerColor(p.provider)) : ['#8b949e'];
+    const provLight = hasData ? provs.map(p => providerLight(p.provider)) : ['#c9d1d9'];
+
+    const missData = hasData ? provs.map(p => {
       const denom = p.cache_miss_tokens + p.cache_hit_tokens;
       if (denom === 0) return p.est_usd;
       return Number((p.est_usd * p.cache_miss_tokens / denom).toFixed(6));
-    });
-    const hitData = provs.map(p => {
+    }) : [0];
+    const hitData = hasData ? provs.map(p => {
       const denom = p.cache_miss_tokens + p.cache_hit_tokens;
       if (denom === 0) return 0;
       return Number((p.est_usd * p.cache_hit_tokens / denom).toFixed(6));
-    });
+    }) : [0];
 
     const ctxProv = document.getElementById('chart-by-provider').getContext('2d');
     const provMissGradients = provColors.map(c => makeGradient(ctxProv, c));
@@ -851,7 +1051,7 @@ async function loadByProvider() {
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: makeCacheTooltip(i => provs[i].provider),
+          tooltip: hasData ? makeCacheTooltip(i => provs[i].provider) : { enabled: false },
         },
         scales: {
           x: { stacked: true, ticks: { color: '#8b949e' } },
@@ -877,7 +1077,7 @@ async function loadSessions() {
     body.innerHTML = '';
 
     // For time ranges longer than a week, aggregate sessions into averages
-    const isLongRange = ['30d', 'mtd'].includes(range);
+    const isLongRange = ['30d', 'this-month', 'last-month', 'last-week'].includes(range);
 
     if (isLongRange && sessions.length > 0) {
       // Compute averages across all sessions

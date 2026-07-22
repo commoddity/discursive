@@ -41,6 +41,19 @@ type CursorReference struct {
 	OutputPer1M float64 `json:"output_per_1m"`
 }
 
+// BucketModelBreakdown holds per-model spend within a single time bucket.
+type BucketModelBreakdown struct {
+	Bucket          string  `json:"bucket"`
+	Provider        string  `json:"provider"`
+	Model           string  `json:"model"`
+	RequestCount    uint64  `json:"request_count"`
+	TokensIn        uint64  `json:"tokens_in"`
+	TokensOut       uint64  `json:"tokens_out"`
+	CacheHitTokens  uint64  `json:"cache_hit_tokens"`
+	CacheMissTokens uint64  `json:"cache_miss_tokens"`
+	EstUSD          float64 `json:"est_usd"`
+}
+
 // QueryDailyTotals returns a DailySummary for a specific date (YYYY-MM-DD).
 func (s *Store) QueryDailyTotals(date string) (DailySummary, error) {
 	rows, err := s.db.Query(
@@ -131,6 +144,53 @@ func scanDaySummaries(rows *sql.Rows) ([]DailySummary, error) {
 		ds.EstUSD = RoundUSD(ds.EstUSD)
 		ds.CursorReference = cursorRef()
 		out = append(out, ds)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return out, nil
+}
+
+// QueryByDayModelSince returns per-model breakdown per bucket since a given time.
+// This powers the Spend by Period chart split by model instead of cache hit/miss.
+func (s *Store) QueryByDayModelSince(since time.Time, bucketMinutes int) ([]BucketModelBreakdown, error) {
+	var bucketExpr string
+	var args []any
+	if bucketMinutes > 0 {
+		bucketSecs := bucketMinutes * 60
+		bucketExpr = `strftime('%Y-%m-%dT%H:%M:00',
+		 datetime((CAST(strftime('%s', timestamp) AS INTEGER) / ?) * ?, 'unixepoch'))`
+		args = []any{bucketSecs, bucketSecs}
+	} else {
+		bucketExpr = "date(timestamp)"
+	}
+	args = append(args, since.UTC().Format(time.RFC3339))
+	q := `SELECT ` + bucketExpr + ` as bucket,
+	 provider, model,
+	 COUNT(*) as reqs,
+	 COALESCE(SUM(prompt_tokens),0),
+	 COALESCE(SUM(completion_tokens),0),
+	 COALESCE(SUM(cache_hit_tokens),0),
+	 COALESCE(SUM(cache_miss_tokens),0),
+	 COALESCE(SUM(est_usd),0)
+	 FROM events WHERE timestamp >= ?
+	 GROUP BY bucket, provider, model
+	 ORDER BY bucket ASC, SUM(est_usd) DESC`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query by day model since: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []BucketModelBreakdown
+	for rows.Next() {
+		var bm BucketModelBreakdown
+		if err := rows.Scan(&bm.Bucket, &bm.Provider, &bm.Model,
+			&bm.RequestCount, &bm.TokensIn, &bm.TokensOut,
+			&bm.CacheHitTokens, &bm.CacheMissTokens, &bm.EstUSD); err != nil {
+			return nil, fmt.Errorf("scan bucket model: %w", err)
+		}
+		bm.EstUSD = RoundUSD(bm.EstUSD)
+		out = append(out, bm)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows: %w", err)
