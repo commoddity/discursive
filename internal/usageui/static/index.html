@@ -476,17 +476,17 @@ function fmtMoneyUSD(n) {
   return '$' + val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Format date tick labels in user's locale
+// Format date tick labels in selected currency's locale
 function fmtTick(val) {
   // Hour-precision: "2026-07-22T08:00:00"
   if (val.length === 19 && val.charAt(10) === 'T') {
     const d = new Date(val + 'Z');
-    if (!isNaN(d)) return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    if (!isNaN(d)) return d.toLocaleString(fmtLocale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
   // Date-only: "2026-07-22"
   if (val.length === 10 && val.charAt(4) === '-') {
     const d = new Date(val + 'T00:00:00Z');
-    if (!isNaN(d)) return d.toLocaleString(undefined, { month: 'short', day: 'numeric' });
+    if (!isNaN(d)) return d.toLocaleString(fmtLocale(), { month: 'short', day: 'numeric' });
   }
   return val;
 }
