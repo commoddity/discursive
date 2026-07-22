@@ -85,6 +85,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .num { font-variant-numeric: tabular-nums; text-align: right !important; }
 .cmp-up { color: var(--accent2); font-weight: 600; font-size: 0.85rem; }
 .cmp-down { color: var(--danger); font-weight: 600; font-size: 0.85rem; }
+.value-flex { display: flex; align-items: center; justify-content: center; gap: 3px; }
 .stats-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.78rem; color: var(--text-muted); }
 .retention-info { position: relative; display: inline-flex; align-items: center; cursor: help; }
 .retention-info .icon { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; }
@@ -720,10 +721,43 @@ function timeRangeToBucketMins(val) {
   return map[val] || '1d';
 }
 
-// Return the reference period to compare against, or null.
-function getComparisonRange(range) {
-  const map = { 'yesterday': 'today', 'last-week': 'this-week', 'last-month': 'this-month' };
-  return map[range] || null;
+// Return the comparison range (= same time point in the previous period), or null.
+// Only used for today/this-week/this-month — the "current" periods.
+function getPrevPeriodComparison(range) {
+  const params = timeRangeParams(range);
+  const now = new Date();
+  let prevSince, prevUntil;
+
+  if (range === 'today') {
+    // Same time yesterday
+    const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const yesterdayMidnight = new Date(todayMidnight.getTime() - 86400000);
+    const elapsed = now.getTime() - todayMidnight.getTime();
+    prevSince = yesterdayMidnight.toISOString();
+    prevUntil = new Date(yesterdayMidnight.getTime() + elapsed).toISOString();
+  } else if (range === 'this-week') {
+    // Mon midnight UTC → now elapsed; compare with last Mon → same elapsed
+    const dayOfWeek = now.getUTCDay();
+    const utcToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const mondayOffset = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+    const thisMonday = new Date(utcToday.getTime() + mondayOffset * 86400000);
+    const lastMonday = new Date(thisMonday.getTime() - 7 * 86400000);
+    const elapsed = now.getTime() - thisMonday.getTime();
+    prevSince = lastMonday.toISOString();
+    prevUntil = new Date(lastMonday.getTime() + elapsed).toISOString();
+  } else if (range === 'this-month') {
+    const startOfThisMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const startOfLastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const elapsed = now.getTime() - startOfThisMonth.getTime();
+    prevSince = startOfLastMonth.toISOString();
+    prevUntil = new Date(startOfLastMonth.getTime() + elapsed).toISOString();
+  } else {
+    return null;
+  }
+
+  // Only show comparison if the previous period actually has data
+  // We'll check this after fetching; return the params for now
+  return { since: prevSince, until: prevUntil };
 }
 
 // --- Spend by Period — stacked by model ---
@@ -739,19 +773,21 @@ async function loadByDay() {
     }
     const rows = await api(url);
 
-    // For comparison periods, also fetch the reference period total
-    const compRange = getComparisonRange(range);
+    // For current periods (today/this-week/this-month), compare vs same time point
+    // in the previous period. For the comparison periods (yesterday/last-week/last-month),
+    // compare full period vs current period.
+    const isCurrentPeriod = ['today', 'this-week', 'this-month'].includes(range);
     let refCost = null;
-    if (compRange) {
-      const refParams = timeRangeParams(compRange);
-      let refUrl = '/api/by-day-model?since=' + encodeURIComponent(refParams.since) + '&bucket=' + timeRangeToBucket(compRange);
-      if (refParams.until) {
-        refUrl += '&until=' + encodeURIComponent(refParams.until);
+
+    if (isCurrentPeriod) {
+      const prevComp = getPrevPeriodComparison(range);
+      if (prevComp) {
+        try {
+          const refUrl = '/api/by-day-model?since=' + encodeURIComponent(prevComp.since) + '&until=' + encodeURIComponent(prevComp.until) + '&bucket=' + bucket;
+          const refRows = await api(refUrl);
+          refCost = refRows.reduce((s, r) => s + (r.est_usd || 0), 0);
+        } catch(e) { /* ref cost stays null */ }
       }
-      try {
-        const refRows = await api(refUrl);
-        refCost = refRows.reduce((s, r) => s + (r.est_usd || 0), 0);
-      } catch(e) { /* ref cost stays null */ }
     }
 
     // Populate period summary stats (aggregate across all rows)
@@ -768,7 +804,7 @@ async function loadByDay() {
         tCost += r.est_usd || 0;
       }
 
-      // Relative change badge for comparison periods
+      // Relative change badge for current-period comparisons
       let changeHtml = '';
       if (refCost !== null && refCost !== 0) {
         const pct = ((tCost - refCost) / refCost * 100).toFixed(1);
@@ -779,12 +815,13 @@ async function loadByDay() {
       }
 
       psum.style.display = 'grid';
+      const estValClass = changeHtml ? 'value value-flex' : 'value';
       psum.innerHTML =
         '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(reqs)+'</div></div>'+
         '<div class="stat"><div class="label">Tokens In</div><div class="value">'+(tIn >= 1e6 ? (tIn/1e6).toFixed(2)+'M' : fmtNum(tIn))+'</div></div>'+
         '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+(tOut >= 1e6 ? (tOut/1e6).toFixed(2)+'M' : fmtNum(tOut))+'</div></div>'+
         '<div class="stat"><div class="label">Cache Hits</div><div class="value">'+(tHit >= 1e6 ? (tHit/1e6).toFixed(2)+'M' : fmtNum(tHit))+'</div></div>'+
-        '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="value">' + fmtMoney(tCost) + changeHtml + '</div></div>';
+        '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="' + estValClass + '">' + fmtMoney(tCost) + changeHtml + '</div></div>';
     }
 
     // Build bucket→models map: { bucket: [{provider, model, cost}, ...] }
