@@ -8,107 +8,105 @@ alwaysApply: false
 
 ## Pricing policy
 
-**Source-of-truth mandate** — When updating pricing anywhere (Go `pricing.go`,
-JS `PRICING` object, `usage.mdc`, tests), the model MUST:
+**Source-of-truth mandate** — When updating pricing (Go `pricing.go`, JS `PRICING`, `usage.mdc`, tests):
 
-1. **Check the live provider pricing page** before writing code.
-2. If the live page shows a **different price** from what exists in code:
-   update **everywhere**: Go map, JS object, tests, and this file.
-3. If the live page **matches** the code, note "verified — no change" and proceed.
+1. Check live provider pricing page before writing code.
+2. If different from code: update everywhere (Go map, JS object, tests, this file).
+3. If matches code: note "verified — no change", proceed.
 
-Exception: **Thaura AI** hardcodes its price (`$0.50/$2.00` per 1M tokens).
-Thaura's marketing page (`thaura.ai/pricing`) shows consumer plans, not API
-rates. The API platform page at `https://thaura.ai/api-platform` documents
-per-token rates but the page structure may change. Thaura pricing is the
-fallback case — check the API platform page if available, otherwise keep the
-last known value and note the date.
+Thaura AI: hardcoded `$0.50/$2.00` per MTok. Check `thaura.ai/api-platform` if available; otherwise keep last known value.
 
 | Provider | Pricing page URL |
 | ---- | --- |
 | DeepSeek | https://api-docs.deepseek.com/quick_start/pricing |
-| Moonshot / Kimi (K3) | https://platform.kimi.ai/docs/pricing/chat-k3.md |
-| Moonshot / Kimi (K2.6) | https://platform.kimi.ai/docs/pricing/chat-k26.md |
+| Kimi K3 | https://platform.kimi.ai/docs/pricing/chat-k3.md |
+| Kimi K2.6 | https://platform.kimi.ai/docs/pricing/chat-k26.md |
 | Thaura AI | https://thaura.ai/api-platform |
 
-**Locations that must stay in sync** when prices change:
-1. `internal/usage/pricing.go` — Go maps (`moonshotPricing`, `deepseekPricing`, `thauraPricing`)
+**Locations that must stay in sync:**
+1. `internal/usage/pricing.go` — Go maps
 2. `internal/usageui/static/index.html` — JS `PRICING` object
 3. `internal/usage/pricing_test.go` — test expected values
 4. `.cursor/rules/usage.mdc` — this file (update `last-verified` date)
 
-## Billing that the product estimates
+`est_usd` uses upstream provider table for real model id (after alias→provider→model). Never price on Cursor comparison rows. Date-stamp tables in code; refresh when platforms change.
 
-`est_usd` uses the **upstream provider table for the real model id** (after
-alias→provider→model resolution). Never price on Cursor comparison rows.
+### DeepSeek (USD/MTok)
 
-Date-stamp tables in code comments; refresh when platforms change.
+Source: https://api-docs.deepseek.com/quick_start/pricing — verify live before updating.
 
-### DeepSeek (USD per 1M tokens)
+DeepSeek responses expose `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` — prefer for estimates.
 
-Source: https://api-docs.deepseek.com/quick_start/pricing
-Always verify against the live page before updating.
+### Kimi/Moonshot (USD/MTok)
 
-### Moonshot / Kimi (USD per 1M tokens)
+Sources: K3 https://platform.kimi.ai/docs/pricing/chat-k3.md, K2.6 https://platform.kimi.ai/docs/pricing/chat-k26.md — verify live.
 
-Sources:
-- K3: https://platform.kimi.ai/docs/pricing/chat-k3.md
-- K2.6: https://platform.kimi.ai/docs/pricing/chat-k26.md
-Always verify against the live page before updating.
+### Thaura AI (USD/MTok)
 
-DeepSeek usage responses expose `prompt_cache_hit_tokens` /
-`prompt_cache_miss_tokens` — prefer those fields for estimates when present.
-
-### Thaura AI (USD per 1M tokens)
-
-Source: https://thaura.ai/api-platform
-Input $0.50 / MTok, Output $2.00 / MTok. No cached-token pricing documented.
-Thaura is the exception — price is hardcoded; check the API platform page if
-available, otherwise keep the last known value.
+Input $0.50/MTok, Output $2.00/MTok. No cached-token pricing. Hardcoded; check `thaura.ai/api-platform` if available.
 
 ## Usage UI (dashboard)
 
-The usage dashboard runs **always-on** with the gateway process at
-`http://127.0.0.1:4002`. No flag needed. No standalone command.
+Runs always-on with gateway at `http://127.0.0.1:4002`. No flag, no standalone command.
 
-| Decision    | Choice                                                                              |
-| ----------- | ----------------------------------------------------------------------------------- |
-| Package     | `internal/usageui` — embedded HTTP server + static assets                           |
-| Address     | `127.0.0.1:4002` (loopback only, never via tunnel)                                  |
-| Persistence | SQLite at `{dataRoot}/usage/usage.db` (shared with gateway store)                   |
-| UI stack    | Go `embed.FS` + HTML/CSS/vanilla JS — **no** React/Vue/npm                          |
-| Charts      | Chart.js 4.4.7 — vendored under `internal/usageui/static/` (offline)                |
-| API         | `/api/summary`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions` |
-| Lifecycle   | Started automatically with gateway; stopped with gateway                            |
+| Decision | Choice |
+| --- | --- |
+| Package | `internal/usageui` — embedded HTTP server + static assets |
+| Address | `127.0.0.1:4002` (loopback only, never via tunnel) |
+| Persistence | SQLite at `{dataRoot}/usage/usage.db` (shared with gateway) |
+| UI stack | Go `embed.FS` + HTML/CSS/vanilla JS — no React/Vue/npm |
+| Charts | Chart.js 4.4.7 — vendored in `static/` (offline) |
+| API | `/api/summary`, `/api/by-day-model`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions` |
+| Lifecycle | Start/stop with gateway |
 
 ### Currency support
 
-The UI supports USD, EUR, and CNY via a dropdown. Selection is persisted in
-`localStorage` (`discursive_currency`). Exchange rates are fetched from
-`api.frankfurter.app` via a Go backend proxy (`/api/exchange-rate`) and cached
-in `localStorage` (`discursive_fx_rates`) with a 24-hour TTL.
+USD/EUR/CNY dropdown. Persisted in `localStorage` (`discursive_currency`). Rates proxied via Go backend `/api/exchange-rate` → `api.frankfurter.app`; cached in `localStorage` (`discursive_fx_rates`, 24h TTL). New currencies: add to `<select>` HTML + `fetchExchangeRate` `?to=` param.
 
-New currencies: add to both the `<select>` HTML and `fetchExchangeRate` (update
-the `?to=` parameter).
+### Period selector
+
+`#time-range` dropdown controls Spend-by-Period window + granularity. Selection persisted in `localStorage` (`discursive_usageui_time_range`).
+
+| Value | Label | Window | Buckets |
+| --- | ---- | --- | --- |
+| `today` | Today | Midnight → now | 1h each |
+| `yesterday` | Yesterday | Previous calendar day | 1h each (24) |
+| `this-week` | This Week | Mon midnight → Sun midnight (UTC) | 1d each (7, future days empty) |
+| `last-week` | Last Week | Previous Mon midnight → Sun midnight (UTC) | 1d each (7) |
+| `this-month` | This Month | 1st → last day of month | 1d each (future days empty) |
+| `last-month` | Last Month | 1st → last day of previous month | 1d each |
+| `1h`–`30d` | Fixed lookback | N hours/days back from now | Auto-bucketed |
+
+**Boundaries:** All `since`/`until` are midnight UTC via `Date.UTC()`/`utcMidnight()` — server `Truncate(bucketDur)` works in UTC. Never use local-time `toISOString()` for month/week boundaries.
+
+**`until` param:** Bounded periods pass `until` to cap server padding. Server loop is `!t.After(floorUntil)`, so `until` must equal **last** day/hour of range. Example: Mon–Sun week → `until=Sunday` (7 buckets), NOT `until=next Monday` (8).
+
+**Future days** (This Week/This Month): Server pads all buckets from `since`→`until`, zero-cost rows for unused models → empty bars.
+
+### Spend comparison badge
+
+Current periods (`today`/`this-week`/`this-month`) show +/-% badge vs same time point in previous period:
+
+- **Today** vs yesterday same time-of-day
+- **This Week** vs last week same day/time
+- **This Month** vs last month same day/time
+
+CSS: `.cmp-up` (red, spend higher), `.cmp-down` (green, spend lower). Parent `.value-flex` uses `display:flex; align-items:center` for vertical centering.
+
+Comparison `since`/`until` computed by `getPrevPeriodComparison()` → shifts primary period back by one unit, caps elapsed duration at current point. Same bucket granularity as primary query.
 
 ### Chart.js external tooltips
 
-The "Spend by Model" and "Spend by Provider" charts use Chart.js `external`
-tooltip rendering for HTML control (provider logos, formatting). The tooltip
-markup is injected as `#custom-tooltip` and styled with CSS. When modifying
-tooltip CSS, be aware that Chart.js may set inline styles on the tooltip
-element; use `!important` to override when necessary.
+Spend-by-Model and Spend-by-Provider use Chart.js `external` tooltip for HTML (provider logos). Injected as `#custom-tooltip`. Inline styles from Chart.js may conflict → use `!important` in CSS.
 
 ### Session accounting
 
-- **Event** = one upstream API call (one completion). Logged at **DEBUG** as `msg=usage`.
-- **Agent-task window** = consecutive events until idle (`DefaultIdleTimeout` = **30s**,
-  override `DISCURSIVE_USAGE_IDLE`). Logged at **INFO** as `msg=usage_summary`.
-- Mid-Agent pauses longer than 30s may split one task into multiple summaries —
-  set `DISCURSIVE_USAGE_IDLE=5m` (or similar) for a longer window.
-- Session id = gateway process run or explicit CLI session id (groups events).
-- Persist JSONL under app data (`usage/events.jsonl`); expose CLI `usage` later (T09).
-- Log level: `DISCURSIVE_LOG_LEVEL=debug|info|warn|error` (default `info`).
-- Never log secrets.
+- **Event** = one upstream API call (one completion). Logged at DEBUG as `msg=usage`.
+- **Agent-task window** = consecutive events until idle (`DefaultIdleTimeout` = 30s, override `DISCURSIVE_USAGE_IDLE`). Logged at INFO as `msg=usage_summary`.
+- Pauses >30s mid-agent may split one task → set `DISCURSIVE_USAGE_IDLE=5m` for longer window.
+- Session id = gateway process run or explicit CLI session id.
+- Persist JSONL under app data (`usage/events.jsonl`).
+- Log level: `DISCURSIVE_LOG_LEVEL=debug|info|warn|error` (default `info`). Never log secrets.
 
 ## Cursor comparison (reference only — not gateway billing)
 
@@ -153,21 +151,21 @@ rows for live cost math.
 
 ### `Zero cache-hit tokens despite large prompt — code or upstream?`
 
-| Symptom                                                                                                          | Cause                                                                                       | Fix                                                                                                                                                                                                                                                                                                                                                    |
-| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cache_hit_tokens=0` + `cache_miss_tokens=0` with large `prompt_tokens` makes the operator suspect a parsing bug | Upstream genuinely returned no cache data (cold request, prefix change, or provider switch) | Add a diagnostic `slog.Debug` at the single choke point (`recordUsage`) that fires when `CacheHitTokens==0 && CacheMissTokens==0 && PromptTokens>1024`. This signals "upstream reported no cache" vs silent "might be broken." The log confirms the data path is working correctly; 0 cache hits on request 1 of a new session is expected, not a bug. |
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| `cache_hit_tokens=0` + `cache_miss_tokens=0` with large `prompt_tokens` — looks like a parsing bug | Upstream genuinely returned no cache data (cold request, prefix change, provider switch) | Debug log at `recordUsage` when all zero: `slog.Debug` if `CacheHitTokens==0 && CacheMissTokens==0 && PromptTokens>1024`. Confirms data path works; new-session zero cache is expected. |
 
-### `CSS !important silently overrides inline styles`
+### `CSS !important overrides inline styles`
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| Inline `style="width:160px"` on an `<img>` element has no visible effect — the image stays at its old size despite repeated edits | A CSS rule with `!important` (e.g. `.tt-logo-row img { width: 60px !important; }`) has higher specificity than inline styles. The browser silently applies the `!important` rule with zero console warnings. | Search CSS for `!important` rules matching the element / class / selector chain, then either remove the `!important` or update the CSS value to match desired outcome. Never assume inline styles take precedence when `!important` is in play anywhere in the cascade. |
+| Inline `style="width:160px"` on `<img>` has no effect; element ignores repeated style edits | CSS `!important` (e.g. `.tt-logo-row img { width: 60px !important; }`) beats inline styles. Browser gives zero warnings. | Search CSS for `!important` on matching selector chain. Remove it or update value. Never assume inline wins when `!important` exists anywhere in cascade. |
 
-### `Browser native tooltip shows raw HTML instead of rendered content`
+### `Browser native tooltip shows raw HTML`
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| A `title` or `data-tip` attribute containing HTML (`<br>`, `<img>`, etc.) renders as literal text in the browser's native tooltip | Browser native tooltips (triggered by `title` attribute or similar) display attribute values as plain text — they cannot render HTML. | Do not put HTML in `title`/`data-tip` attributes. For rich tooltips (images, line-breaks, bold text), dynamically inject a positioned `<span>` or `<div>` element on hover and remove it on mouse leave. |
+| `title`/`data-tip` with HTML (`<br>`, `<img>`) renders as literal text | Native tooltips are plain-text only — cannot render HTML | Inject positioned `<span>`/`<div>` on hover; remove on mouse leave. Never put HTML in `title`.
 
 ### `Frontend fetch to external API blocked by CORS`
 
@@ -185,18 +183,36 @@ rows for live cost math.
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| Console error `moneySymbol is not defined` during page initialization | A function is referenced in an inline JS expression (e.g. inside `innerHTML` assignment) before it is defined in the script source. JavaScript hoists function declarations but only within the same script block; `innerHTML` assignments from earlier DOM updates execute before later `<script>` tags. | Define shared utility functions (currency formatting, etc.) at the top of the `<script>` block, before any code that renders HTML using those functions. Alternatively, use template literals that evaluate at call time rather than at HTML-construction time. |
+| Console: `moneySymbol is not defined` during page init | Function referenced in an `innerHTML` assignment before its `<script>` block executes. JS hoisting is per-script-block; HTML-constructed strings from earlier DOM updates run before later `<script>` tags. | Define shared utility functions (currency formatting, etc.) at the top of the `<script>` block, before any code that renders HTML using those functions. Or use template literals evaluated at call time. |
 
 ### `Period dropdown empty after HTML reorder`
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| After swapping the order of two `<select>` dropdowns in the HTML, the period dropdown shows no options | The `<option>` tags for the period `<select>` were accidentally deleted or moved during the edit. The `<select>` element exists but has no children. | When reordering HTML elements, verify that each `<select>` retains its `<option>` children in the final position. Use git diff to confirm no `<option>` loss. |
+| After swapping two `<select>` dropdowns in HTML, period dropdown shows no options | `<option>` tags for the period `<select>` were accidentally deleted or moved during the edit. | When reordering HTML elements, verify each `<select>` retains its `<option>` children. Use git diff to confirm no loss. |
 
 ### `Chart.js tooltip sizing overridden by CSS`
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| Chart.js configuration sets `bodyFont.size` or similar tooltip styling, but the rendered tooltip does not respect it | Chart.js renders tooltips using Canvas or inline-styled HTML, but CSS rules targeting `.chartjs-tooltip` or the custom tooltip container may override Chart.js' internal styles. | For `external` tooltip rendering (where Chart.js calls your callback), you control the DOM entirely — set styles directly on your custom tooltip element. For built-in tooltips, use Chart.js tooltip callbacks to modify styling; avoid CSS rules that broadly target `.chartjs-tooltip *`. |
+| Chart.js `bodyFont.size` etc. not respected in rendered tooltip | CSS rules on `.chartjs-tooltip` or custom tooltip container override Chart.js internal styles | For `external` tooltip (callback controls DOM): set styles directly on custom element. For built-in: use callbacks; avoid broad CSS on `.chartjs-tooltip *`.
 
-<!-- last-verified: 2026-07 -->
+<!-- last-verified: 2026-07-22 -->
+
+### `Chart.js tick callback breaks chart`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Chart blank after adding x-axis tick callback | `this.getLabelForValue(v)` in tick callback — `this` not reliably scale; arrow fns capture wrong `this`. Category axis `value` is numeric index, not label. | Capture labels in closure: `const labelsForTicks = labels;` then `labelsForTicks[val]` in callback. |
+
+### `Month/week bucket boundaries drift by timezone`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Chart shows wrong number of days at period boundaries | `new Date(y,m,1).toISOString()` converts local midnight → UTC, giving `2026-06-30T23:00Z` in UTC+1. Server `Truncate(24h)` hits wrong day. | All period boundaries must be UTC: `Date.UTC(y,m,d)` for construction, `getUTCDay/Month/etc()` for week calcs. Helper: `utcMidnight(y,m,d)` → `new Date(Date.UTC(y,m,d)).toISOString()`. |
+
+### `Period tooltip leaks zero-cost models`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Tooltip shows providers/models with $0 spend on that bucket day | Server pads all buckets with $0 entries per model; `bucketMap` has every model in every bucket. | Filter in tooltip: `(bucketMap[label] \|\| []).filter(it => +it.cost > 0)`. |
