@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/commoddity/discursive/internal/cli/util"
 )
 
 func TestStatusCmd_Output(t *testing.T) {
@@ -152,11 +154,11 @@ func TestRotateGatewayKey_ShowKey(t *testing.T) {
 }
 
 func TestGatewayKeyLogAttrs(t *testing.T) {
-	attrs := gatewayKeyLogAttrs("sk-secret", false)
+	attrs := util.GatewayKeyLogAttrs("sk-secret", false)
 	if len(attrs) != 2 || attrs[0] != "gateway_key_masked" {
 		t.Fatalf("masked attrs: %#v", attrs)
 	}
-	attrs = gatewayKeyLogAttrs("sk-secret", true)
+	attrs = util.GatewayKeyLogAttrs("sk-secret", true)
 	if len(attrs) != 2 || attrs[0] != "gateway_key" || attrs[1] != "sk-secret" {
 		t.Fatalf("show attrs: %#v", attrs)
 	}

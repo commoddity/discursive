@@ -1,4 +1,4 @@
-package cli
+package logs
 
 import (
 	"bufio"
@@ -10,9 +10,12 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/commoddity/discursive/internal/cli/util"
 )
 
-func newLogsCmd() *cobra.Command {
+// NewCmd returns the logs subcommand.
+func NewCmd(portable func() bool) *cobra.Command {
 	var followFlag bool
 	var linesFlag int
 	cmd := &cobra.Command{
@@ -27,7 +30,7 @@ func newLogsCmd() *cobra.Command {
 Logs are stored at {dataRoot}/gateway.log.  The --background flag on
 'start' redirects all output to this file.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dataRoot, err := resolveDataRoot()
+			dataRoot, err := util.ResolveDataRoot(portable())
 			if err != nil {
 				return err
 			}
@@ -60,7 +63,6 @@ func printLogs(w io.Writer, logPath string, lastN int) error {
 		return formatLogLines(w, f)
 	}
 
-	// Read all lines, keep the last N.
 	var lines []string
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -92,7 +94,6 @@ func tailLogs(w io.Writer, logPath string) error {
 	}
 	defer func() { _ = f.Close() }()
 
-	// Seek to end.
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
 		return err
 	}
@@ -130,29 +131,26 @@ func formatLogLines(w io.Writer, r io.Reader) error {
 func writePrettyLine(w io.Writer, raw string) {
 	var obj map[string]any
 	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
-		// Not valid JSON — print raw.
 		_, _ = fmt.Fprintln(w, raw)
 		return
 	}
 
-	// Extract level for a color prefix (if present).
 	level, _ := obj["level"].(string)
 
 	prefix := ""
 	switch level {
 	case "DEBUG":
-		prefix = "\033[90mDEBU\033[0m" // gray
+		prefix = "\033[90mDEBU\033[0m"
 	case "INFO":
-		prefix = "\033[36mINFO\033[0m" // cyan
+		prefix = "\033[36mINFO\033[0m"
 	case "WARN":
-		prefix = "\033[33mWARN\033[0m" // yellow
+		prefix = "\033[33mWARN\033[0m"
 	case "ERROR":
-		prefix = "\033[31mERRO\033[0m" // red
+		prefix = "\033[31mERRO\033[0m"
 	default:
 		prefix = "     "
 	}
 
-	// Pretty-print with indent, prefixed by level.
 	pretty, err := json.MarshalIndent(obj, "  ", "  ")
 	if err != nil {
 		_, _ = fmt.Fprintln(w, raw)

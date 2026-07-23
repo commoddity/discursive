@@ -1,4 +1,4 @@
-package cli
+package stop
 
 import (
 	"fmt"
@@ -10,16 +10,19 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/commoddity/discursive/internal/cli/util"
 )
 
-func newStopCmd() *cobra.Command {
+// NewCmd returns the stop subcommand.
+func NewCmd(portable func() bool) *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
 		Short: "🛑 Stop the running gateway (sends SIGTERM)",
 		Long:  "🛑  Reads the PID file from the data directory and sends SIGTERM\nto the gateway process.  No-op if no gateway is running.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			setupLogger()
-			dataRoot, err := resolveDataRoot()
+			util.SetupLogger()
+			dataRoot, err := util.ResolveDataRoot(portable())
 			if err != nil {
 				return err
 			}

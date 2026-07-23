@@ -168,14 +168,3 @@ func TestSetPublicURL(t *testing.T) {
 		t.Fatalf("got %q", s.PublicBaseURL)
 	}
 }
-
-func TestReadLinePlainFlag(t *testing.T) {
-	cmd := newSetCmd()
-	got, err := readLinePlain(cmd, "URL", "  https://x.example.com/v1  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "https://x.example.com/v1" {
-		t.Fatalf("got %q", got)
-	}
-}

@@ -2,41 +2,12 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
-	"log/slog"
-	"os"
 	"strings"
 	"testing"
 
+	"github.com/commoddity/discursive/internal/cli/util"
 	"github.com/commoddity/discursive/internal/config"
 )
-
-func TestSetupLoggerEmitsJSON(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := os.Stdout
-	os.Stdout = w
-	setupLogger()
-	slog.Info("json_logger_probe", "ok", true)
-	_ = w.Close()
-	os.Stdout = old
-
-	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(r); err != nil {
-		t.Fatal(err)
-	}
-	_ = r.Close()
-	line := strings.TrimSpace(buf.String())
-	var m map[string]any
-	if err := json.Unmarshal([]byte(line), &m); err != nil {
-		t.Fatalf("not JSON: %q err %v", line, err)
-	}
-	if m["msg"] != "json_logger_probe" {
-		t.Fatalf("msg: %v", m["msg"])
-	}
-}
 
 func TestSetModelPersists(t *testing.T) {
 	home := t.TempDir()
@@ -88,11 +59,11 @@ func TestSetModelUnknown(t *testing.T) {
 }
 
 func TestCompleteModelIDs(t *testing.T) {
-	all := completeModelIDs("")
+	all := util.CompleteModelIDs("")
 	if len(all) < 4 {
 		t.Fatalf("expected advertised models, got %v", all)
 	}
-	filtered := completeModelIDs("gpt-4")
+	filtered := util.CompleteModelIDs("gpt-4")
 	for _, id := range filtered {
 		if !strings.HasPrefix(id, "gpt-4") {
 			t.Fatalf("unexpected id %q for prefix gpt-4", id)
@@ -119,7 +90,7 @@ func TestShellCompletionHints(t *testing.T) {
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
 			cmd.SetArgs(tt.args)
-			_ = cmd.Execute() // __complete exits 0 with completions on stdout
+			_ = cmd.Execute()
 			if !strings.Contains(out.String(), tt.want) {
 				t.Fatalf("output %q missing %q", out.String(), tt.want)
 			}

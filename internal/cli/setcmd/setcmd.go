@@ -1,4 +1,4 @@
-package cli
+package setcmd
 
 import (
 	"fmt"
@@ -7,12 +7,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/commoddity/discursive/internal/cli/util"
 	"github.com/commoddity/discursive/internal/config"
 	"github.com/commoddity/discursive/internal/crypto"
 	"github.com/commoddity/discursive/internal/gateway"
 )
 
-func newSetCmd() *cobra.Command {
+// NewCmd returns the set subcommand.
+func NewCmd(portable func() bool) *cobra.Command {
 	var (
 		moonshotKey string
 		deepseekKey string
@@ -44,7 +46,7 @@ func newSetCmd() *cobra.Command {
 Omitting flags leaves the corresponding setting unchanged.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
-			return runSet(cmd, moonshotKey, deepseekKey, thauraKey, tunnelToken, publicURL, gatewayKey, showKey, model)
+			return runSet(portable, moonshotKey, deepseekKey, thauraKey, tunnelToken, publicURL, gatewayKey, showKey, model)
 		},
 	}
 
@@ -58,17 +60,16 @@ Omitting flags leaves the corresponding setting unchanged.`,
 	cmd.Flags().StringVar(&model, "model", "", "alias or real model id")
 
 	_ = cmd.RegisterFlagCompletionFunc("model", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return completeModelIDs(toComplete), cobra.ShellCompDirectiveNoFileComp
+		return util.CompleteModelIDs(toComplete), cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd
 }
 
-func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken, publicURL string, rotateGateway, showKey bool, modelID string) error {
-	_ = cmd
-	setupLogger()
+func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, tunnelToken, publicURL string, rotateGateway, showKey bool, modelID string) error {
+	util.SetupLogger()
 
-	dataRoot, err := resolveDataRoot()
+	dataRoot, err := util.ResolveDataRoot(portable())
 	if err != nil {
 		return err
 	}
@@ -79,7 +80,6 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken
 
 	anySet := false
 
-	// Moonshot key
 	if moonshotKey != "" {
 		plain := strings.TrimSpace(moonshotKey)
 		if plain == "" {
@@ -95,7 +95,6 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken
 		anySet = true
 	}
 
-	// DeepSeek key
 	if deepseekKey != "" {
 		plain := strings.TrimSpace(deepseekKey)
 		if plain == "" {
@@ -111,7 +110,6 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken
 		anySet = true
 	}
 
-	// Thaura key
 	if thauraKey != "" {
 		plain := strings.TrimSpace(thauraKey)
 		if plain == "" {
@@ -127,7 +125,6 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken
 		anySet = true
 	}
 
-	// Tunnel token (+ public URL logic borrowed from set-tunnel-token)
 	if tunnelToken != "" {
 		plain := strings.TrimSpace(tunnelToken)
 		if plain == "" {
@@ -140,7 +137,6 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken
 		anySet = true
 	}
 
-	// Public URL
 	if publicURL != "" {
 		norm, err := config.NormalizePublicBaseURL(publicURL)
 		if err != nil {
@@ -152,7 +148,6 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken
 		return fmt.Errorf("--public-url required when setting --tunnel-token")
 	}
 
-	// Model
 	if modelID != "" {
 		requested := strings.TrimSpace(modelID)
 		route, err := gateway.ResolveModel(requested)
@@ -169,7 +164,6 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken
 		anySet = true
 	}
 
-	// Rotate gateway key
 	if rotateGateway {
 		if err := s.RotateGatewayKey(); err != nil {
 			return fmt.Errorf("rotate gateway key: %w", err)
@@ -179,7 +173,7 @@ func runSet(cmd *cobra.Command, moonshotKey, deepseekKey, thauraKey, tunnelToken
 			"has_deepseek_key", s.HasDeepSeekKey(),
 			"has_thaura_key", s.HasThauraKey(),
 		}
-		attrs = append(attrs, gatewayKeyLogAttrs(s.GatewayKey, showKey)...)
+		attrs = append(attrs, util.GatewayKeyLogAttrs(s.GatewayKey, showKey)...)
 		slog.Info("rotated gateway key", attrs...)
 		anySet = true
 	}

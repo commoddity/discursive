@@ -1,4 +1,4 @@
-package cli
+package status
 
 import (
 	"fmt"
@@ -10,11 +10,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/commoddity/discursive/internal/cli/util"
 	"github.com/commoddity/discursive/internal/config"
 	"github.com/commoddity/discursive/internal/gateway"
 )
 
-func newStatusCmd() *cobra.Command {
+// NewCmd returns the status subcommand.
+func NewCmd(portable func() bool, version string) *cobra.Command {
 	var showKey bool
 	cmd := &cobra.Command{
 		Use:   "status",
@@ -28,8 +30,8 @@ is alive, uptime (if running), and log file path.
   discursive status              # gateway key masked
   discursive status --show-key   # print full gateway_key for Cursor setup`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			setupLogger()
-			dataRoot, err := resolveDataRoot()
+			util.SetupLogger()
+			dataRoot, err := util.ResolveDataRoot(portable())
 			if err != nil {
 				return err
 			}
@@ -53,14 +55,14 @@ is alive, uptime (if running), and log file path.
 			}
 
 			keyField := "gateway_key_masked"
-			keyValue := maskGatewayKey(settings.GatewayKey)
+			keyValue := util.MaskGatewayKey(settings.GatewayKey)
 			if showKey {
 				keyField = "gateway_key"
 				keyValue = settings.GatewayKey
 			}
 
 			out := map[string]any{
-				"version":          Version,
+				"version":          version,
 				"alias_model":      settings.AliasModel,
 				"real_model":       settings.RealModel,
 				"provider":         provider,
@@ -80,22 +82,13 @@ is alive, uptime (if running), and log file path.
 				"log_size":         logSize,
 			}
 
-			return emitPretty(out)
+			return util.EmitPretty(out)
 		},
 	}
 	cmd.Flags().BoolVar(&showKey, "show-key", false, "print the full gateway API key (default: masked)")
 	return cmd
 }
 
-// maskGatewayKey masks a gateway key. Uses crypto.MaskSecret for consistency.
-func maskGatewayKey(key string) string {
-	if len(key) <= 6 {
-		return "••••••"
-	}
-	return key[:3] + "••••••" + key[len(key)-4:]
-}
-
-// gatewayRuntime reads the PID file and checks whether the process is alive.
 func gatewayRuntime(dataRoot string) (bool, int, int64) {
 	pidPath := filepath.Join(dataRoot, "gateway.pid")
 	raw, err := os.ReadFile(pidPath)
@@ -117,7 +110,6 @@ func gatewayRuntime(dataRoot string) (bool, int, int64) {
 	return true, pid, uptime
 }
 
-// processAlive checks whether a process with the given PID exists.
 func processAlive(pid int) bool {
 	proc, err := os.FindProcess(pid)
 	if err != nil {

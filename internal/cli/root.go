@@ -2,32 +2,28 @@ package cli
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
-	"runtime/debug"
 
 	"github.com/spf13/cobra"
 
+	"github.com/commoddity/discursive/internal/cli/doctor"
+	"github.com/commoddity/discursive/internal/cli/initcmd"
+	"github.com/commoddity/discursive/internal/cli/loglevel"
+	"github.com/commoddity/discursive/internal/cli/logs"
+	"github.com/commoddity/discursive/internal/cli/setcmd"
+	"github.com/commoddity/discursive/internal/cli/start"
+	"github.com/commoddity/discursive/internal/cli/status"
+	"github.com/commoddity/discursive/internal/cli/stop"
+	"github.com/commoddity/discursive/internal/cli/usage"
+	"github.com/commoddity/discursive/internal/cli/util"
 	"github.com/commoddity/discursive/internal/config"
-	"github.com/commoddity/discursive/internal/usage"
 )
 
-var (
-	Version      = "0.0.0-dev"
-	portableFlag bool
-)
+var portableFlag bool
 
-func init() {
-	if Version != "0.0.0-dev" {
-		return // ldflags already injected a real version
-	}
-	if info, ok := debug.ReadBuildInfo(); ok {
-		if info.Main.Version != "" && info.Main.Version != "(devel)" {
-			Version = info.Main.Version
-		}
-	}
-}
+func portable() bool { return portableFlag }
 
+// NewRoot builds the discursive command tree.
 func NewRoot() *cobra.Command {
 	var showKey bool
 	cmd := &cobra.Command{
@@ -43,30 +39,28 @@ func NewRoot() *cobra.Command {
 
 	cmd.PersistentFlags().BoolVar(&portableFlag, "portable", false, "store data next to the executable")
 	cmd.Flags().BoolVar(&showKey, "show-key", false, "print the full gateway API key (default: masked)")
-	// Log level: DISCURSIVE_LOG_LEVEL=debug|info|warn|error (default info).
-	// slog is always JSON on stdout (jq-friendly).
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "version",
-		Short: "🏷️  Print version",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), Version)
-			return err
+	cmd.AddCommand(NewVersionCmd())
+	cmd.AddCommand(initcmd.NewCmd(portable))
+	cmd.AddCommand(setcmd.NewCmd(portable))
+	cmd.AddCommand(start.NewCmd(start.Options{
+		Version:  Version,
+		Portable: portable,
+		RunSetup: func(cmd *cobra.Command, fromStart bool) error {
+			return initcmd.RunSetup(cmd, portable, initcmd.Flags{}, initcmd.Opts{FromStart: fromStart})
 		},
-	})
-	cmd.AddCommand(newInitCmd())
-	cmd.AddCommand(newSetCmd())
-	cmd.AddCommand(newStartCmd())
-	cmd.AddCommand(newStopCmd())
-	cmd.AddCommand(newStatusCmd())
-	cmd.AddCommand(newLogsCmd())
-	cmd.AddCommand(newDoctorCmd())
-	cmd.AddCommand(newUsageCmd())
-	cmd.AddCommand(newLogLevelCmd())
+	}))
+	cmd.AddCommand(stop.NewCmd(portable))
+	cmd.AddCommand(status.NewCmd(portable, Version))
+	cmd.AddCommand(logs.NewCmd(portable))
+	cmd.AddCommand(doctor.NewCmd(portable))
+	cmd.AddCommand(usage.NewCmd(portable))
+	cmd.AddCommand(loglevel.NewCmd())
 
 	return cmd
 }
 
+// Execute runs the root command and returns an exit code.
 func Execute() int {
 	root := NewRoot()
 	if err := root.Execute(); err != nil {
@@ -78,13 +72,9 @@ func Execute() int {
 
 func runRoot(cmd *cobra.Command, showKey bool) error {
 	_ = cmd
-	setupLogger()
+	util.SetupLogger()
 
-	opts, err := config.DefaultResolveOpts(portableFlag)
-	if err != nil {
-		return err
-	}
-	root, err := config.EnsureDataRoot(opts)
+	root, err := util.ResolveDataRoot(portable())
 	if err != nil {
 		return err
 	}
@@ -98,7 +88,7 @@ func runRoot(cmd *cobra.Command, showKey bool) error {
 	}
 
 	keyField := "gateway_key_masked"
-	keyValue := maskGatewayKey(settings.GatewayKey)
+	keyValue := util.MaskGatewayKey(settings.GatewayKey)
 	if showKey {
 		keyField = "gateway_key"
 		keyValue = settings.GatewayKey
@@ -115,27 +105,5 @@ func runRoot(cmd *cobra.Command, showKey bool) error {
 		"version":          Version,
 		keyField:           keyValue,
 	}
-	return emitPretty(out)
-}
-
-func setupLogger() {
-	level := usage.LogLevelFromEnv()
-	opts := &slog.HandlerOptions{Level: level}
-	// stdout so operators can: go run ./cmd/kimi-cursor start | jq
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
-}
-
-func setupLoggerWithLevel(raw string) {
-	level := usage.ParseLogLevel(raw)
-	if raw != "" {
-		switch raw {
-		case "debug", "info", "warn", "error", "warning":
-			// valid; apply it
-		default:
-			slog.Warn("unknown log level, using info", "level", raw)
-			level = slog.LevelInfo
-		}
-	}
-	opts := &slog.HandlerOptions{Level: level}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
+	return util.EmitPretty(out)
 }

@@ -1,4 +1,4 @@
-package cli
+package loglevel
 
 import (
 	"fmt"
@@ -8,10 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/commoddity/discursive/internal/cli/util"
 	"github.com/commoddity/discursive/internal/usage"
 )
 
-func newLogLevelCmd() *cobra.Command {
+// NewCmd returns the log-level subcommand.
+func NewCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "log-level [debug|info|warn|error]",
 		Short: "🔊 Show or set log verbosity (debug / info / warn / error)",
@@ -46,7 +48,6 @@ Use export DISCURSIVE_LOG_LEVEL=debug in your shell profile to persist.`,
 			level := usage.ParseLogLevel(requested)
 			levelName := slogLevelName(level)
 
-			// Validate that the string maps correctly.
 			if requested != levelName && requested != "warning" {
 				return fmt.Errorf("unknown log level %q — use: debug, info, warn, error", args[0])
 			}
@@ -57,7 +58,7 @@ Use export DISCURSIVE_LOG_LEVEL=debug in your shell profile to persist.`,
 			if err := os.Setenv(usage.EnvLogLevel, levelName); err != nil {
 				return fmt.Errorf("set env: %w", err)
 			}
-			reloadLogger(level)
+			util.ReloadLogger(level)
 
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  Log level set to %s\n",
 				levelEmoji(level), levelName)
@@ -93,9 +94,4 @@ func slogLevelName(l slog.Level) string {
 	default:
 		return "error"
 	}
-}
-
-func reloadLogger(level slog.Level) {
-	opts := &slog.HandlerOptions{Level: level}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
 }

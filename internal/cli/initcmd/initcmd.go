@@ -1,21 +1,36 @@
-package cli
+package initcmd
 
 import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
+	"github.com/commoddity/discursive/internal/cli/util"
 	"github.com/commoddity/discursive/internal/cli/wizard"
 	"github.com/commoddity/discursive/internal/config"
 	"github.com/commoddity/discursive/internal/crypto"
 )
 
-func newInitCmd() *cobra.Command {
+// Flags holds non-interactive init/set values from CLI flags.
+type Flags struct {
+	Moonshot  string
+	Deepseek  string
+	Thaura    string
+	Tunnel    string
+	PublicURL string
+}
+
+// Opts controls setup behavior when invoked from init vs start.
+type Opts struct {
+	ForceAll  bool
+	FromStart bool
+}
+
+// NewCmd returns the init subcommand.
+func NewCmd(portable func() bool) *cobra.Command {
 	var (
 		moonshotFlag  string
 		deepseekFlag  string
@@ -32,13 +47,13 @@ a Cloudflare tunnel token, and your public HTTPS URL.
 Secrets are encrypted at rest and never sent to Cursor.
 Run this once, or let 'discursive start' trigger it automatically.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSetup(cmd, initFlags{
-				moonshot:  moonshotFlag,
-				deepseek:  deepseekFlag,
-				thaura:    thauraFlag,
-				tunnel:    tunnelFlag,
-				publicURL: publicURLFlag,
-			}, setupOpts{forceAll: true})
+			return RunSetup(cmd, portable, Flags{
+				Moonshot:  moonshotFlag,
+				Deepseek:  deepseekFlag,
+				Thaura:    thauraFlag,
+				Tunnel:    tunnelFlag,
+				PublicURL: publicURLFlag,
+			}, Opts{ForceAll: true})
 		},
 	}
 	cmd.Flags().StringVar(&moonshotFlag, "moonshot-key", "", "Moonshot/Kimi API key (omit to prompt)")
@@ -49,25 +64,11 @@ Run this once, or let 'discursive start' trigger it automatically.`,
 	return cmd
 }
 
-type initFlags struct {
-	moonshot  string
-	deepseek  string
-	thaura    string
-	tunnel    string
-	publicURL string
-}
+// RunSetup runs the interactive or flag-driven setup wizard.
+func RunSetup(cmd *cobra.Command, portable func() bool, flags Flags, opts Opts) error {
+	util.SetupLogger()
 
-type setupOpts struct {
-	// forceAll prompts for every field (explicit `init`).
-	forceAll bool
-	// fromStart adjusts messaging when invoked by `start`.
-	fromStart bool
-}
-
-func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
-	setupLogger()
-
-	dataRoot, err := resolveDataRoot()
+	dataRoot, err := util.ResolveDataRoot(portable())
 	if err != nil {
 		return err
 	}
@@ -76,12 +77,12 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 		return err
 	}
 
-	needMoonshot := opts.forceAll || flags.moonshot != "" || !s.HasMoonshotKey()
-	needDeepseek := opts.forceAll || flags.deepseek != "" || !s.HasDeepSeekKey()
+	needMoonshot := opts.ForceAll || flags.Moonshot != "" || !s.HasMoonshotKey()
+	needDeepseek := opts.ForceAll || flags.Deepseek != "" || !s.HasDeepSeekKey()
 	mode := config.NormalizeTunnelMode(s.TunnelMode)
-	needTunnel := opts.forceAll || flags.tunnel != "" ||
+	needTunnel := opts.ForceAll || flags.Tunnel != "" ||
 		(mode == config.TunnelModeNamed && !s.HasTunnelToken())
-	needPublicURL := opts.forceAll || flags.publicURL != "" ||
+	needPublicURL := opts.ForceAll || flags.PublicURL != "" ||
 		((mode == config.TunnelModeNamed || mode == config.TunnelModeNone) &&
 			strings.TrimSpace(s.PublicBaseURL) == "")
 
@@ -113,7 +114,7 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 
 	// Suppress JSON logs on stdout while wizard is drawing on stderr.
 	old := slog.Default()
-	if wizInteractive := stdinIsInteractive(cmd); wizInteractive {
+	if wizInteractive := util.StdinIsInteractive(cmd); wizInteractive {
 		slog.SetDefault(slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{})))
 	}
 	defer slog.SetDefault(old)
@@ -121,16 +122,16 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 	w := wizard.New(wizard.Options{
 		Out:         cmd.ErrOrStderr(),
 		In:          cmd.InOrStdin(),
-		Interactive: stdinIsInteractive(cmd),
+		Interactive: util.StdinIsInteractive(cmd),
 	})
-	w.Intro(opts.fromStart)
+	w.Intro(opts.FromStart)
 	step := 0
 
 	if needMoonshot {
 		step++
 		moonshot, err := w.AskSecret(step, total, "🌙", "Moonshot / Kimi API key",
 			"Get your key at https://platform.kimi.ai  →  API Keys.  Your key stays on this machine & is never sent to Cursor.",
-			flags.moonshot)
+			flags.Moonshot)
 		if err != nil {
 			return err
 		}
@@ -143,7 +144,7 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 		step++
 		deepseek, err := w.AskSecret(step, total, "🌊", "DeepSeek API key",
 			"Get your key at https://platform.deepseek.com  →  API Keys.  Your key stays on this machine & is never sent to Cursor.",
-			flags.deepseek)
+			flags.Deepseek)
 		if err != nil {
 			return err
 		}
@@ -153,8 +154,8 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 	}
 
 	// Thaura is optional — only save if a flag was explicitly set.
-	if flags.thaura != "" {
-		if err := s.SetThauraKey(dataRoot, flags.thaura); err != nil {
+	if flags.Thaura != "" {
+		if err := s.SetThauraKey(dataRoot, flags.Thaura); err != nil {
 			return err
 		}
 	}
@@ -163,7 +164,7 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 		step++
 		tunnelTok, err := w.AskSecret(step, total, "☁️", "Cloudflare tunnel token",
 			"Get started at https://one.dash.cloudflare.com  →  Zero Trust  →  Networks  →  Tunnels.  Create or pick a tunnel, then copy its token.",
-			flags.tunnel)
+			flags.Tunnel)
 		if err != nil {
 			return err
 		}
@@ -177,7 +178,7 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 		step++
 		publicRaw, err := w.AskLine(step, total, "🔗", "Public HTTPS base URL",
 			"https://<your-hostname>/v1  —  the hostname Cloudflare will route to this machine.  See https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/ for setup.\n     💡 If you're using a Cloudflare Quick Tunnel, skip this — Discursive will auto-detect the ephemeral URL.",
-			flags.publicURL)
+			flags.PublicURL)
 		if err != nil {
 			return err
 		}
@@ -210,11 +211,6 @@ func runSetup(cmd *cobra.Command, flags initFlags, opts setupOpts) error {
 		"gateway_key_masked", crypto.MaskSecret(s.GatewayKey),
 	)
 
-	w.Finish(opts.fromStart, s.PublicBaseURL, s.LocalPort, s.GatewayKey)
+	w.Finish(opts.FromStart, s.PublicBaseURL, s.LocalPort, s.GatewayKey)
 	return nil
-}
-
-func stdinIsInteractive(cmd *cobra.Command) bool {
-	f, ok := cmd.InOrStdin().(*os.File)
-	return ok && term.IsTerminal(int(f.Fd()))
 }

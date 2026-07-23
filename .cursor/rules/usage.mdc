@@ -47,7 +47,22 @@ Input $0.50/MTok, Output $2.00/MTok. No cached-token pricing. Hardcoded; check `
 
 ## Usage UI (dashboard)
 
-Runs always-on with gateway at `http://127.0.0.1:4002`. No flag, no standalone command.
+Runs always-on with gateway at `http://127.0.0.1:4002`. No flag, no standalone command. Loopback only — never via tunnel. Embedded in binary (`embed.FS`); starts/stops with gateway.
+
+### Dashboard panels (user-facing)
+
+Keep README § Usage Dashboard in sync when panels change.
+
+| Panel | What it shows |
+| --- | --- |
+| System health | Uptime, tunnel mode & public URL, masked gateway key (show/copy for Cursor) |
+| Provider balances | Moonshot + DeepSeek live balances via `/api/balances`; blurred by default (Show/Hide) |
+| Month projection | Avg daily spend, projected month total, vs last month |
+| Month to date | Requests, tokens, estimated cost |
+| Spend by period | Stacked bar chart by model; time-range selector + period-over-period % badge |
+| Spend by model / provider | Breakdown pie charts |
+| Sessions | Table with per-session drill-down by model |
+| Currency | USD / EUR / CNY display toggle (`localStorage`) |
 
 | Decision | Choice |
 | --- | --- |
@@ -205,7 +220,7 @@ rows for live cost math.
 | ----- | ---- | ----- |
 | Chart.js `bodyFont.size` etc. not respected in rendered tooltip | CSS rules on `.chartjs-tooltip` or custom tooltip container override Chart.js internal styles | For `external` tooltip (callback controls DOM): set styles directly on custom element. For built-in: use callbacks; avoid broad CSS on `.chartjs-tooltip *`.
 
-<!-- last-verified: 2026-07-22 -->
+<!-- last-verified: 2026-07-23 -->
 
 ### `Chart.js tick callback breaks chart`
 

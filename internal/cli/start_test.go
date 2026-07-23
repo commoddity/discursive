@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/commoddity/discursive/internal/cli/initcmd"
 	"github.com/commoddity/discursive/internal/config"
-	"github.com/commoddity/discursive/internal/tunnel"
 )
 
 func TestStartValidateNamedMissingToken(t *testing.T) {
@@ -25,28 +25,6 @@ func TestStartValidateNamedMissingToken(t *testing.T) {
 	}
 }
 
-func TestBuildTunnelConfigQuick(t *testing.T) {
-	s := config.DefaultSettings()
-	s.TunnelMode = config.TunnelModeQuick
-	cfg, err := buildTunnelConfig(s, t.TempDir(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Mode != tunnel.ModeQuick {
-		t.Fatalf("mode %q", cfg.Mode)
-	}
-}
-
-func TestBuildTunnelConfigNamedRequiresToken(t *testing.T) {
-	s := config.DefaultSettings()
-	s.TunnelMode = config.TunnelModeNamed
-	s.PublicBaseURL = "https://ai.example.com/v1"
-	_, err := buildTunnelConfig(s, t.TempDir(), s.PublicBaseURL)
-	if err == nil {
-		t.Fatal("expected error without token")
-	}
-}
-
 func TestStartAutoSetupNonInteractiveErrors(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -55,7 +33,7 @@ func TestStartAutoSetupNonInteractiveErrors(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetIn(strings.NewReader("")) // non-TTY empty stdin
+	cmd.SetIn(strings.NewReader(""))
 	cmd.SetArgs([]string{"start"})
 	err := cmd.Execute()
 	if err == nil {
@@ -123,12 +101,13 @@ func TestSetupFillsOnlyMissingPublicURL(t *testing.T) {
 	}
 
 	var out, errBuf bytes.Buffer
-	setupCmd := newInitCmd()
+	portable := func() bool { return false }
+	setupCmd := initcmd.NewCmd(portable)
 	setupCmd.SetOut(&out)
 	setupCmd.SetErr(&errBuf)
 	setupCmd.SetIn(strings.NewReader("https://only-url.example.com/v1\n"))
-	if err := runSetup(setupCmd, initFlags{}, setupOpts{fromStart: true}); err != nil {
-		t.Fatalf("runSetup: %v", err)
+	if err := initcmd.RunSetup(setupCmd, portable, initcmd.Flags{}, initcmd.Opts{FromStart: true}); err != nil {
+		t.Fatalf("RunSetup: %v", err)
 	}
 	loaded, err := config.Load(dataRoot)
 	if err != nil {

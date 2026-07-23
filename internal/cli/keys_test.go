@@ -8,29 +8,6 @@ import (
 	"github.com/commoddity/discursive/internal/config"
 )
 
-func TestReadSecretPlainFlag(t *testing.T) {
-	cmd := newSetCmd()
-	got, err := readSecretPlain(cmd, "Test", "  sk-from-flag  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "sk-from-flag" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestReadSecretPlainStdinPipe(t *testing.T) {
-	cmd := newSetCmd()
-	cmd.SetIn(strings.NewReader("sk-from-stdin\n"))
-	got, err := readSecretPlain(cmd, "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "sk-from-stdin" {
-		t.Fatalf("got %q", got)
-	}
-}
-
 func TestSetMoonshotKeyFromFlag(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -1,4 +1,4 @@
-package cli
+package util
 
 import (
 	"bufio"
@@ -9,22 +9,16 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-
-	"github.com/commoddity/discursive/internal/config"
-	"github.com/commoddity/discursive/internal/crypto"
 )
 
-// gatewayKeyLogAttrs returns slog attrs for the gateway key.
-// By default the key is masked; --show-key logs the full value for Cursor setup.
-func gatewayKeyLogAttrs(key string, show bool) []any {
-	if show {
-		return []any{"gateway_key", key}
-	}
-	return []any{"gateway_key_masked", crypto.MaskSecret(key)}
+// StdinIsInteractive reports whether cmd's stdin is a TTY.
+func StdinIsInteractive(cmd *cobra.Command) bool {
+	f, ok := cmd.InOrStdin().(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
 }
 
-// readSecretPlain reads a secret from flag, TTY (hidden), or stdin.
-func readSecretPlain(cmd *cobra.Command, label, keyFlag string) (string, error) {
+// ReadSecretPlain reads a secret from flag, TTY (hidden), or stdin.
+func ReadSecretPlain(cmd *cobra.Command, label, keyFlag string) (string, error) {
 	if plain := strings.TrimSpace(keyFlag); plain != "" {
 		return plain, nil
 	}
@@ -48,8 +42,8 @@ func readSecretPlain(cmd *cobra.Command, label, keyFlag string) (string, error) 
 	return readLineFromCmd(cmd)
 }
 
-// readLinePlain reads a non-secret value from flag, TTY (echoed), or stdin.
-func readLinePlain(cmd *cobra.Command, label, flagValue string) (string, error) {
+// ReadLinePlain reads a non-secret value from flag, TTY (echoed), or stdin.
+func ReadLinePlain(cmd *cobra.Command, label, flagValue string) (string, error) {
 	if plain := strings.TrimSpace(flagValue); plain != "" {
 		return plain, nil
 	}
@@ -74,8 +68,6 @@ func readLinePlain(cmd *cobra.Command, label, flagValue string) (string, error) 
 	return readLineFromCmd(cmd)
 }
 
-// readLineFromCmd reads one line from cmd's stdin, preserving a shared bufio.Reader
-// so multi-prompt commands (init) can consume successive lines from a pipe.
 func readLineFromCmd(cmd *cobra.Command) (string, error) {
 	br := ensureBufioReader(cmd)
 	line, err := br.ReadString('\n')
@@ -96,12 +88,4 @@ func ensureBufioReader(cmd *cobra.Command) *bufio.Reader {
 	br := bufio.NewReader(in)
 	cmd.SetIn(br)
 	return br
-}
-
-func resolveDataRoot() (string, error) {
-	opts, err := config.DefaultResolveOpts(portableFlag)
-	if err != nil {
-		return "", err
-	}
-	return config.EnsureDataRoot(opts)
 }

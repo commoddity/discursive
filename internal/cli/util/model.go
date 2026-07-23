@@ -1,4 +1,4 @@
-package cli
+package util
 
 import (
 	"strings"
@@ -6,7 +6,8 @@ import (
 	"github.com/commoddity/discursive/internal/gateway"
 )
 
-func completeModelIDs(toComplete string) []string {
+// CompleteModelIDs returns advertised model IDs matching toComplete (shell completion).
+func CompleteModelIDs(toComplete string) []string {
 	var out []string
 	for _, m := range gateway.ListAdvertisedModels() {
 		if toComplete == "" || strings.HasPrefix(m.ID, toComplete) {

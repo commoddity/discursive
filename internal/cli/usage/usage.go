@@ -1,4 +1,4 @@
-package cli
+package usage
 
 import (
 	"fmt"
@@ -6,10 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/commoddity/discursive/internal/usage"
+	"github.com/commoddity/discursive/internal/cli/util"
+	usagepkg "github.com/commoddity/discursive/internal/usage"
 )
 
-func newUsageCmd() *cobra.Command {
+// NewCmd returns the usage subcommand (includes purge).
+func NewCmd(portable func() bool) *cobra.Command {
 	var dateFlag, sessionFlag string
 	var daysFlag int
 
@@ -20,12 +22,12 @@ func newUsageCmd() *cobra.Command {
 pricing.  Defaults to today's usage.  Use --date for a specific day,
 --session for a session breakdown, or --days for the last N days.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			setupLogger()
-			dataRoot, err := resolveDataRoot()
+			util.SetupLogger()
+			dataRoot, err := util.ResolveDataRoot(portable())
 			if err != nil {
 				return err
 			}
-			store, err := usage.NewStore(dataRoot)
+			store, err := usagepkg.NewStore(dataRoot)
 			if err != nil {
 				return err
 			}
@@ -36,14 +38,14 @@ pricing.  Defaults to today's usage.  Use --date for a specific day,
 				if err != nil {
 					return fmt.Errorf("query session: %w", err)
 				}
-				return emitPretty(ds)
+				return util.EmitPretty(ds)
 
 			case daysFlag > 0:
 				summaries, err := store.QueryLastNDays(daysFlag)
 				if err != nil {
 					return fmt.Errorf("query last %d days: %w", daysFlag, err)
 				}
-				return emitPretty(summaries)
+				return util.EmitPretty(summaries)
 
 			default:
 				date := dateFlag
@@ -54,7 +56,7 @@ pricing.  Defaults to today's usage.  Use --date for a specific day,
 				if err != nil {
 					return fmt.Errorf("query daily totals: %w", err)
 				}
-				return emitPretty(ds)
+				return util.EmitPretty(ds)
 			}
 		},
 	}
@@ -63,11 +65,11 @@ pricing.  Defaults to today's usage.  Use --date for a specific day,
 	cmd.Flags().StringVar(&sessionFlag, "session", "", "show usage for a specific session ID")
 	cmd.Flags().IntVar(&daysFlag, "days", 0, "show usage for the last N days (array of daily summaries)")
 
-	cmd.AddCommand(newUsagePurgeCmd())
+	cmd.AddCommand(newPurgeCmd(portable))
 	return cmd
 }
 
-func newUsagePurgeCmd() *cobra.Command {
+func newPurgeCmd(portable func() bool) *cobra.Command {
 	var maxAgeFlag string
 	var dryRunFlag bool
 
@@ -79,19 +81,18 @@ func newUsagePurgeCmd() *cobra.Command {
 Supports Go duration strings: 24h, 7d, 90d, 30d, etc.
 Use --dry-run to see how many events would be deleted without actually deleting.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			setupLogger()
-			dataRoot, err := resolveDataRoot()
+			util.SetupLogger()
+			dataRoot, err := util.ResolveDataRoot(portable())
 			if err != nil {
 				return err
 			}
-			store, err := usage.NewStore(dataRoot)
+			store, err := usagepkg.NewStore(dataRoot)
 			if err != nil {
 				return err
 			}
 
 			dur, err := time.ParseDuration(maxAgeFlag)
 			if err != nil {
-				// Try parsing as days shorthand (e.g. "90d")
 				if len(maxAgeFlag) > 1 && maxAgeFlag[len(maxAgeFlag)-1] == 'd' {
 					daysStr := maxAgeFlag[:len(maxAgeFlag)-1]
 					if daysVal, err2 := time.ParseDuration(daysStr + "h"); err2 == nil {
