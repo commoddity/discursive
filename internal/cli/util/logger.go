@@ -5,6 +5,7 @@
 package util
 
 import (
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -15,8 +16,7 @@ import (
 // SetupLogger configures slog JSON on stdout from DISCURSIVE_LOG_LEVEL.
 func SetupLogger() {
 	level := usage.LogLevelFromEnv()
-	opts := &slog.HandlerOptions{Level: level}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
+	SetupLoggerToWriter(os.Stdout, level)
 }
 
 // SetupLoggerWithLevel configures slog from an explicit level string
@@ -32,8 +32,14 @@ func SetupLoggerWithLevel(raw string) {
 			level = slog.LevelInfo
 		}
 	}
+	SetupLoggerToWriter(os.Stdout, level)
+}
+
+// SetupLoggerToWriter configures slog JSON output to an arbitrary writer.
+// Used by background-mode start to write directly to the rotating log file.
+func SetupLoggerToWriter(w io.Writer, level slog.Level) {
 	opts := &slog.HandlerOptions{Level: level}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(w, opts)))
 }
 
 // ReloadLogger sets slog to the given level (used by log-level command).

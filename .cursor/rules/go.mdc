@@ -37,6 +37,10 @@ internal/
   `go run . start | jq .`
 - **Never** put API keys, gateway secrets, or raw Authorization headers in slog
   attributes or messages.
+- Background mode (`--background`) writes slog to a rotating log file via
+  `util.SetupLoggerToWriter(w, level)` **after** `daemon.Detach()`, so the
+  handler captures the correct writer fd — never through the stale initial
+  `os.Stdout` reference.
 
 ## Tests (hard AC)
 

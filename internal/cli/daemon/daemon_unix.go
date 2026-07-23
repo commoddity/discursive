@@ -6,8 +6,8 @@
 package daemon
 
 import (
+	"io"
 	"os"
-	"path/filepath"
 	"syscall"
 )
 
@@ -19,22 +19,25 @@ func SysProcAttr() *syscall.SysProcAttr {
 	}
 }
 
-// Detach re-opens stdio to detach from the terminal.
-// Called by the background child process (--_bg flag).
-func Detach(dataRoot string) {
-	logPath := filepath.Join(dataRoot, "gateway.log")
-
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+// Detach redirects stdin to /dev/null and stdout/stderr to the given writer.
+// Called by the background child process (--_bg flag) to detach from terminal.
+// The writer is typically a rotating log file writer.
+func Detach(stdout io.Writer, stderr io.Writer) {
+	devNull, err := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
 	if err != nil {
-		devNull, _ := os.OpenFile(os.DevNull, os.O_RDWR, 0)
-		os.Stdout = devNull
-		os.Stderr = devNull
+		devNull = nil
+	}
+	if devNull != nil {
 		os.Stdin = devNull
-		return
 	}
 
-	devNull, _ := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
-	os.Stdin = devNull
-	os.Stdout = logFile
-	os.Stderr = logFile
+	// We must assign *os.File values for os.Stdout/os.Stderr because the Go
+	// runtime and some libraries write to these directly.  The caller should
+	// pass the same underlying *os.File wrapped in the io.Writer for slog.
+	if f, ok := stdout.(*os.File); ok {
+		os.Stdout = f
+	}
+	if f, ok := stderr.(*os.File); ok {
+		os.Stderr = f
+	}
 }

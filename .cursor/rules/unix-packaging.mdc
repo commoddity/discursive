@@ -19,8 +19,21 @@ alwaysApply: false
 | macOS | `~/Library/Application Support/<AppName>/` |
 | Linux | XDG data/config dirs under `~/.local/share` / `~/.config` |
 
-Store: `config.json`, logs, usage JSONL, cloudflared binary. Portable mode may
+Store: `config.json`, `gateway.log`, usage JSONL, cloudflared binary. Portable mode may
 keep data next to the executable when a marker is present.
+
+### Log file rotation
+
+- **File**: `{dataRoot}/gateway.log` (see data-directory table above)
+- **Max size**: ~2 MB per file before rotation
+- **Rotation**: `gateway.log` → `gateway.1.log` → `gateway.2.log`, oldest dropped
+- **Total on disk**: ~4 MB max (current + 2 rotated backups)
+- **Write path**: background mode writes through `internal/cli/start/logwriter.go`
+  (`rotatingWriter`) directly from slog — not via re-assigned os.Stdout, which
+  would be stale after the initial handler setup.
+- **Tail**: `discursive logs --follow` uses `fsnotify` (kernel filesystem events),
+  not polling. Handles rotation events: drains old file on RENAME, follows
+  new `gateway.log` on CREATE.
 
 ## Secrets
 
