@@ -16,33 +16,37 @@ import (
 )
 
 func serveGateway(version, dataRoot string, settings config.AppSettings) error {
-	listen := fmt.Sprintf("127.0.0.1:%d", settings.LocalPort)
+	live := config.NewLiveSettings(dataRoot, settings)
+	snap := live.Snapshot()
+	listen := fmt.Sprintf("127.0.0.1:%d", snap.LocalPort)
 	srv, err := gateway.NewServer(gateway.ServerConfig{
 		ListenAddr: listen,
-		GatewayKey: settings.GatewayKey,
+		GatewayKey: snap.GatewayKey,
 		DataRoot:   dataRoot,
-		Settings:   &settings,
+		Settings:   &snap,
+		Live:       live,
 	})
 	if err != nil {
 		return err
 	}
 
-	publicURL := normalizePublicURL(settings.PublicBaseURL)
+	publicURL := normalizePublicURL(snap.PublicBaseURL)
 
 	slog.Info("gateway starting",
 		"listen", listen,
 		"data_root", dataRoot,
-		"tunnel_mode", config.NormalizeTunnelMode(settings.TunnelMode),
+		"tunnel_mode", config.NormalizeTunnelMode(snap.TunnelMode),
 		"public_url", publicURL,
-		"has_tunnel_token", settings.HasTunnelToken(),
-		"has_moonshot_key", settings.HasMoonshotKey(),
-		"has_deepseek_key", settings.HasDeepSeekKey(),
-		"gateway_key", settings.GatewayKey,
+		"has_tunnel_token", live.HasTunnelToken(),
+		"has_moonshot_key", live.HasMoonshotKey(),
+		"has_deepseek_key", live.HasDeepSeekKey(),
+		"gateway_key", snap.GatewayKey,
 		"session_id", srv.SessionID(),
 		"usage_ui_url", "http://127.0.0.1:4002",
+		"reasoning_effort", live.EffortMap(),
 	)
 
-	uiSrv := startUsageUI(version, srv, dataRoot, settings, publicURL)
+	uiSrv := startUsageUI(version, srv, live, publicURL)
 	defer func() { _ = uiSrv.Shutdown() }()
 
 	pidPath, err := writePIDFile(dataRoot)
@@ -54,7 +58,7 @@ func serveGateway(version, dataRoot string, settings config.AppSettings) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	tunCfg, err := BuildTunnelConfig(settings, dataRoot, publicURL)
+	tunCfg, err := BuildTunnelConfig(snap, dataRoot, publicURL)
 	if err != nil {
 		return err
 	}
@@ -85,29 +89,31 @@ func normalizePublicURL(raw string) string {
 	return raw
 }
 
-func startUsageUI(version string, srv *gateway.Server, dataRoot string, settings config.AppSettings, publicURL string) *usageui.Server {
+func startUsageUI(version string, srv *gateway.Server, live *config.LiveSettings, publicURL string) *usageui.Server {
+	snap := live.Snapshot()
 	uiSrv := usageui.NewServer("127.0.0.1:4002", srv.Store())
+	uiSrv.SetLive(live)
 	uiSrv.SetHealth(usageui.HealthInfo{
 		Version:        version,
 		PID:            os.Getpid(),
-		HasMoonshotKey: settings.HasMoonshotKey(),
-		HasDeepSeekKey: settings.HasDeepSeekKey(),
-		HasThauraKey:   settings.HasThauraKey(),
-		TunnelMode:     config.NormalizeTunnelMode(settings.TunnelMode),
+		HasMoonshotKey: live.HasMoonshotKey(),
+		HasDeepSeekKey: live.HasDeepSeekKey(),
+		HasThauraKey:   live.HasThauraKey(),
+		TunnelMode:     config.NormalizeTunnelMode(snap.TunnelMode),
 		PublicURL:      publicURL,
-		LocalPort:      int(settings.LocalPort),
-		GatewayKey:     settings.GatewayKey,
+		LocalPort:      int(snap.LocalPort),
+		GatewayKey:     snap.GatewayKey,
 	})
 	uiSrv.SetKeySource(usageui.KeySource{
 		Moonshot: func() (string, bool) {
-			k, err := settings.GetMoonshotKey(dataRoot)
+			k, err := live.GetMoonshotKey()
 			if err != nil || k == nil || *k == "" {
 				return "", false
 			}
 			return *k, true
 		},
 		DeepSeek: func() (string, bool) {
-			k, err := settings.GetDeepSeekKey(dataRoot)
+			k, err := live.GetDeepSeekKey()
 			if err != nil || k == nil || *k == "" {
 				return "", false
 			}

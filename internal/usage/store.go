@@ -21,6 +21,7 @@ type Event struct {
 	Timestamp        time.Time       `json:"timestamp"`
 	Provider         config.Provider `json:"provider"`
 	Model            string          `json:"model"`
+	Effort           string          `json:"effort,omitempty"` // reasoning effort for this call (logs only)
 	PromptTokens     uint64          `json:"promptTokens"`
 	CompletionTokens uint64          `json:"completionTokens"`
 	CacheHitTokens   uint64          `json:"cacheHitTokens"`

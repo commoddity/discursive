@@ -74,17 +74,28 @@ func TestDefaultSettings(t *testing.T) {
 			name: "product defaults",
 			got:  DefaultSettings(),
 			want: AppSettings{
-				LocalPort:  DefaultPort,
-				RealModel:  DefaultRealModel,
-				AliasModel: DefaultAliasModel,
-				TunnelMode: DefaultTunnelMode,
+				LocalPort:       DefaultPort,
+				RealModel:       DefaultRealModel,
+				AliasModel:      DefaultAliasModel,
+				TunnelMode:      DefaultTunnelMode,
+				ReasoningEffort: DefaultReasoningEffort(),
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.got != tt.want {
+			if tt.got.LocalPort != tt.want.LocalPort ||
+				tt.got.RealModel != tt.want.RealModel ||
+				tt.got.AliasModel != tt.want.AliasModel ||
+				tt.got.TunnelMode != tt.want.TunnelMode {
 				t.Fatalf("got %+v, want %+v", tt.got, tt.want)
+			}
+			gotE := NormalizeReasoningEffortMap(tt.got.ReasoningEffort)
+			wantE := NormalizeReasoningEffortMap(tt.want.ReasoningEffort)
+			for k, v := range wantE {
+				if gotE[k] != v {
+					t.Fatalf("effort[%s]=%q want %q", k, gotE[k], v)
+				}
 			}
 		})
 	}

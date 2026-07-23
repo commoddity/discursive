@@ -68,12 +68,13 @@ func uint64Field(m map[string]any, key string) uint64 {
 	return uint64(n)
 }
 
-func (s *Server) recordUsage(provider config.Provider, model, requestID string, lat time.Duration, u tokenUsage) {
+func (s *Server) recordUsage(provider config.Provider, model, effort, requestID string, lat time.Duration, u tokenUsage) {
 	if u.CacheHitTokens == 0 && u.CacheMissTokens == 0 && u.PromptTokens > 1024 {
 		slog.Debug("usage: no cache tokens reported by upstream",
 			"request_id", requestID,
 			"provider", string(provider),
 			"model", model,
+			"effort", effort,
 			"prompt_tokens", u.PromptTokens,
 		)
 	}
@@ -81,6 +82,7 @@ func (s *Server) recordUsage(provider config.Provider, model, requestID string, 
 		SessionID:        s.sessionID,
 		Provider:         provider,
 		Model:            model,
+		Effort:           effort,
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,
 		CacheHitTokens:   u.CacheHitTokens,
@@ -89,7 +91,7 @@ func (s *Server) recordUsage(provider config.Provider, model, requestID string, 
 		LatencyMS:        uint64(lat.Milliseconds()),
 	}
 	if err := s.store.RecordAndObserve(s.agg, ev); err != nil {
-		logRequest(requestID, "usage_record_error", err.Error())
+		logRequest(requestID, "usage_record_error", err.Error(), "effort", effort)
 	}
 }
 

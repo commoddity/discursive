@@ -13,25 +13,27 @@ const configFileName = "config.json"
 
 // AppSettings is the persisted settings (secrets encrypted at rest).
 type AppSettings struct {
-	LocalPort            uint16  `json:"localPort"`
-	RealModel            string  `json:"realModel"`
-	AliasModel           string  `json:"aliasModel"`
-	TunnelMode           string  `json:"tunnelMode,omitempty"`
-	PublicBaseURL        string  `json:"publicBaseUrl,omitempty"`
-	TunnelTokenEncrypted *string `json:"tunnelTokenEncrypted,omitempty"`
-	MoonshotKeyEncrypted *string `json:"moonshotKeyEncrypted,omitempty"`
-	DeepSeekKeyEncrypted *string `json:"deepseekKeyEncrypted,omitempty"`
-	ThauraKeyEncrypted   *string `json:"thauraKeyEncrypted,omitempty"`
-	GatewayKey           string  `json:"gatewayKey"`
+	LocalPort            uint16            `json:"localPort"`
+	RealModel            string            `json:"realModel"`
+	AliasModel           string            `json:"aliasModel"`
+	TunnelMode           string            `json:"tunnelMode,omitempty"`
+	PublicBaseURL        string            `json:"publicBaseUrl,omitempty"`
+	TunnelTokenEncrypted *string           `json:"tunnelTokenEncrypted,omitempty"`
+	MoonshotKeyEncrypted *string           `json:"moonshotKeyEncrypted,omitempty"`
+	DeepSeekKeyEncrypted *string           `json:"deepseekKeyEncrypted,omitempty"`
+	ThauraKeyEncrypted   *string           `json:"thauraKeyEncrypted,omitempty"`
+	GatewayKey           string            `json:"gatewayKey"`
+	ReasoningEffort      map[string]string `json:"reasoningEffort,omitempty"` // real model id → effort
 }
 
 // DefaultSettings returns product defaults (no upstream secrets; empty gateway until Ensure).
 func DefaultSettings() AppSettings {
 	return AppSettings{
-		LocalPort:  DefaultPort,
-		RealModel:  DefaultRealModel,
-		AliasModel: DefaultAliasModel,
-		TunnelMode: DefaultTunnelMode,
+		LocalPort:       DefaultPort,
+		RealModel:       DefaultRealModel,
+		AliasModel:      DefaultAliasModel,
+		TunnelMode:      DefaultTunnelMode,
+		ReasoningEffort: DefaultReasoningEffort(),
 	}
 }
 
@@ -70,6 +72,7 @@ func Load(dataRoot string) (AppSettings, error) {
 	if s.TunnelMode == "" {
 		s.TunnelMode = DefaultTunnelMode
 	}
+	s.ReasoningEffort = NormalizeReasoningEffortMap(s.ReasoningEffort)
 	if err := s.EnsureGatewayKey(); err != nil {
 		return AppSettings{}, err
 	}

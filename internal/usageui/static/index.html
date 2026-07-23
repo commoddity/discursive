@@ -200,6 +200,19 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .retention-info .icon { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; }
 .retention-info .tooltip { display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; color: var(--text); white-space: normal; width: 260px; z-index: 10; line-height: 1.5; text-align: left; box-sizing: border-box; }
 .retention-info:hover .tooltip { display: block; }
+.sessions-toggle-btn::before {
+  content: "Hide list";
+  grid-area: 1 / 1;
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sessions-toggle-btn > .sessions-toggle-text {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
 .sessions-info { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; cursor: help; flex-shrink: 0; position: relative; }
 .sessions-info::after { content: attr(data-tip); display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; color: var(--text); white-space: normal; width: 260px; z-index: 10; line-height: 1.5; text-align: left; box-sizing: border-box; }
 .sessions-info:hover::after { display: block; }
@@ -215,6 +228,104 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .health-info:hover::after { display: block; }
 .health-link { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.45rem; color: var(--text-muted); line-height: 1; cursor: pointer; flex-shrink: 0; text-decoration: none; margin-left: 4px; vertical-align: text-bottom; transition: all 0.15s; }
 .health-link:hover { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
+.effort-providers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+@media (max-width: 720px) {
+  .effort-providers { grid-template-columns: 1fr; }
+}
+.effort-provider {
+  border: 1px solid #484f58;
+  border-radius: 6px;
+  background: rgba(22, 27, 34, 0.8);
+  padding: 12px 14px;
+  min-width: 0;
+}
+.effort-provider.moonshot { border-color: rgba(124, 58, 237, 0.45); }
+.effort-provider.deepseek { border-color: rgba(37, 99, 235, 0.45); }
+.effort-provider-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  min-height: 24px;
+}
+.effort-provider-header .provider-logo-btn {
+  padding: 4px 8px;
+}
+.effort-provider-header .provider-logo-btn img {
+  height: 16px;
+  max-width: 100px;
+}
+.effort-models { display: flex; flex-direction: column; gap: 8px; }
+.effort-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.effort-model-label { font-size: 0.9rem; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.effort-model-actions { display: flex; align-items: center; gap: 8px; }
+.effort-select {
+  box-sizing: border-box;
+  width: var(--effort-select-width, 6.5rem);
+  min-width: var(--effort-select-width, 6.5rem);
+}
+.effort-save-status { font-size: 0.75rem; color: var(--text-muted); min-height: 1.1em; margin-top: 8px; }
+.effort-save-status.ok { color: var(--accent2); }
+.effort-save-status.err { color: var(--danger); }
+.effort-save-btn {
+  font-size: 0.72rem;
+  padding: 3px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  transition: all 0.15s;
+  min-height: 28px;
+  line-height: 1.4;
+}
+.effort-save-btn.moonshot {
+  color: var(--moonshot-light);
+  border-color: rgba(124, 58, 237, 0.35);
+  background: rgba(124, 58, 237, 0.12);
+}
+.effort-save-btn.moonshot:hover:not(:disabled) {
+  background: rgba(124, 58, 237, 0.22);
+  border-color: rgba(124, 58, 237, 0.55);
+}
+.effort-save-btn.deepseek {
+  color: var(--deepseek-light);
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.12);
+}
+.effort-save-btn.deepseek:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.22);
+  border-color: rgba(37, 99, 235, 0.55);
+}
+.effort-save-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(0.35);
+}
+.effort-toggle-btn::before {
+  content: "Hide";
+  grid-area: 1 / 1;
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.effort-toggle-btn > .effort-toggle-text {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
 #custom-tooltip { display: none; position: fixed; z-index: 100; background: #1a1f2b; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 0.78rem; color: var(--text); pointer-events: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.5); line-height: 1.6; }
 #custom-tooltip .tt-title { font-weight: 600; font-size: 0.82rem; margin-bottom: 4px; color: var(--text); }
 #custom-tooltip .tt-logo-row { margin-bottom: 6px; }
@@ -320,19 +431,38 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   </div>
 </div>
 
-<div class="card">
-  <div class="card-header">
+<div class="card" id="effort-card">
+  <div class="card-header bal-card-header">
+    <h2>🧠 Reasoning Effort</h2>
+    <div class="bal-header-actions">
+      <span class="health-info" style="margin-left:0" data-tip="Per-model reasoning effort for providers that support it. Lower effort usually means fewer thinking tokens and lower cost. Changes apply to new requests immediately.">?</span>
+      <button class="health-btn bal-toggle-btn effort-toggle-btn" type="button" id="effort-panel-toggle" onclick="toggleEffortPanel()"><span class="effort-toggle-text">Show</span></button>
+    </div>
+  </div>
+  <div id="effort-body" style="display:none">
+    <div class="loading" id="effort-loading">Loading...</div>
+    <div class="effort-providers" id="effort-providers" style="display:none"></div>
+    <div class="effort-save-status" id="effort-save-status"></div>
+    <div class="error" id="effort-error" style="display:none"></div>
+  </div>
+</div>
+
+<div class="card" id="sessions-card">
+  <div class="card-header bal-card-header">
     <h2>🧩 Sessions</h2>
-    <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-muted)">
-      <span id="sessions-stats"></span>
-      <span class="sessions-info" data-tip="Individual sessions shown for periods up to 1 week. Longer periods show session averages. List truncated to 100 most recent sessions.">?</span>
+    <div class="bal-header-actions">
+      <span class="sessions-info" data-tip="Summary reflects the selected time range. Individual sessions shown for periods up to 1 week; longer ranges show averages in the list. List truncated to 100 most recent sessions.">?</span>
+      <button class="health-btn bal-toggle-btn sessions-toggle-btn" type="button" id="sessions-list-toggle" onclick="toggleSessionsList()"><span class="sessions-toggle-text">Show list</span></button>
     </div>
   </div>
   <div class="loading" id="sessions-loading">Loading...</div>
-  <table style="display:none" id="sessions-table">
-    <thead><tr><th>Session ID</th><th>Requests</th><th>Tokens In</th><th>Tokens Out</th><th class="money-label">Est. USD</th><th>Last Seen</th></tr></thead>
-    <tbody id="sessions-body"></tbody>
-  </table>
+  <div class="summary" id="sessions-summary" style="display:none"></div>
+  <div id="sessions-detail" style="display:none">
+    <table style="display:none" id="sessions-table">
+      <thead><tr><th>Session ID</th><th>Requests</th><th>Tokens In</th><th>Tokens Out</th><th class="money-label">Est. USD</th><th>Last Seen</th></tr></thead>
+      <tbody id="sessions-body"></tbody>
+    </table>
+  </div>
   <div class="error" id="sessions-error" style="display:none"></div>
 </div>
 
@@ -825,6 +955,179 @@ function copyGatewayKey() {
   const grid = document.getElementById('health-grid');
   const raw = grid.dataset.gatewayKey;
   copyToClipboard(event, raw);
+}
+
+// --- Reasoning effort ---
+const LS_EFFORT_OPEN = 'discursive_usageui_effort_open';
+const PROVIDER_NAMES = { moonshot: 'Moonshot', deepseek: 'DeepSeek', thaura: 'Thaura' };
+const EFFORT_DOC_URLS = {
+  moonshot: 'https://platform.kimi.ai/docs/guide/use-reasoning-effort',
+  deepseek: 'https://api-docs.deepseek.com/guides/thinking_mode',
+};
+
+function ensureEffortPanelDefault() {
+  if (localStorage.getItem(LS_EFFORT_OPEN) === null) {
+    localStorage.setItem(LS_EFFORT_OPEN, '0');
+  }
+}
+
+function getEffortPanelOpen() {
+  return localStorage.getItem(LS_EFFORT_OPEN) === '1';
+}
+
+function saveEffortPanelOpen(open) {
+  localStorage.setItem(LS_EFFORT_OPEN, open ? '1' : '0');
+}
+
+function applyEffortPanelVisibility() {
+  const open = getEffortPanelOpen();
+  const body = document.getElementById('effort-body');
+  if (body) body.style.display = open ? 'block' : 'none';
+  const btn = document.getElementById('effort-panel-toggle');
+  if (btn) {
+    const label = btn.querySelector('.effort-toggle-text');
+    if (label) label.textContent = open ? 'Hide' : 'Show';
+  }
+}
+
+function toggleEffortPanel() {
+  saveEffortPanelOpen(!getEffortPanelOpen());
+  applyEffortPanelVisibility();
+  if (getEffortPanelOpen() && !window._effortLoaded) {
+    loadReasoningEffort();
+  }
+}
+
+function syncEffortSelectWidths() {
+  const sels = document.querySelectorAll('#effort-providers .effort-select');
+  if (!sels.length) return;
+  let longest = '';
+  sels.forEach(sel => {
+    Array.from(sel.options).forEach(o => {
+      if ((o.textContent || '').length > longest.length) longest = o.textContent;
+    });
+  });
+  const probe = document.createElement('select');
+  probe.className = 'time-select effort-select';
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;';
+  const opt = document.createElement('option');
+  opt.textContent = longest;
+  probe.appendChild(opt);
+  document.body.appendChild(probe);
+  const w = Math.ceil(probe.getBoundingClientRect().width);
+  document.body.removeChild(probe);
+  document.getElementById('effort-providers').style.setProperty('--effort-select-width', w + 'px');
+}
+
+function updateEffortSavedMap(data) {
+  window._effortSaved = {};
+  (data.providers || []).forEach(p => {
+    (p.models || []).forEach(m => {
+      window._effortSaved[m.id] = m.effort;
+    });
+  });
+}
+
+function updateEffortSaveButton(modelId) {
+  const sel = document.querySelector('select.effort-select[data-model="' + modelId + '"]');
+  const btn = document.querySelector('button.effort-save-btn[data-model="' + modelId + '"]');
+  if (!sel || !btn) return;
+  const saved = (window._effortSaved || {})[modelId];
+  const dirty = sel.value !== saved;
+  btn.disabled = !dirty;
+}
+
+function wireEffortRowListeners() {
+  document.querySelectorAll('#effort-providers .effort-select').forEach(sel => {
+    const modelId = sel.dataset.model;
+    sel.addEventListener('change', () => updateEffortSaveButton(modelId));
+    updateEffortSaveButton(modelId);
+  });
+}
+
+function renderEffortProviders(data) {
+  updateEffortSavedMap(data);
+  const root = document.getElementById('effort-providers');
+  const providers = data.providers || [];
+  root.innerHTML = providers.map(p => {
+    const cls = 'effort-provider ' + (p.id || '');
+    const logo = LOGO_URLS[p.id] || '';
+    const name = PROVIDER_NAMES[p.id] || p.label || p.id;
+    const docUrl = EFFORT_DOC_URLS[p.id] || '';
+    let logoHtml;
+    if (logo && docUrl) {
+      logoHtml = '<a class="provider-logo-btn" href="' + docUrl + '" target="_blank" rel="noopener" title="' + name + ' reasoning docs">' +
+        '<img src="' + logo + '" alt="' + name + '"></a>';
+    } else if (logo) {
+      logoHtml = '<span class="provider-logo-btn"><img src="' + logo + '" alt="' + name + '"></span>';
+    } else {
+      logoHtml = '<span class="effort-provider-title">' + name + '</span>';
+    }
+    const saveCls = 'effort-save-btn ' + (p.id || '');
+    const rows = (p.models || []).map(m => {
+      const opts = (m.options || []).map(o =>
+        '<option value="' + o + '"' + (o === m.effort ? ' selected' : '') + '>' + o + '</option>'
+      ).join('');
+      return '<div class="effort-row" data-model="' + m.id + '">' +
+        '<div class="effort-model-label">' + (m.label || m.id) + '</div>' +
+        '<div class="effort-model-actions">' +
+          '<select class="time-select effort-select" data-model="' + m.id + '">' + opts + '</select>' +
+          '<button class="' + saveCls + '" type="button" data-model="' + m.id + '" disabled onclick="saveModelEffort(\'' + m.id + '\')">Save</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    return '<div class="' + cls + '">' +
+      '<div class="effort-provider-header">' + logoHtml + '</div>' +
+      '<div class="effort-models">' + rows + '</div>' +
+    '</div>';
+  }).join('');
+  syncEffortSelectWidths();
+  wireEffortRowListeners();
+}
+
+async function loadReasoningEffort() {
+  try {
+    const data = await api('/api/reasoning-effort');
+    window._effortLoaded = true;
+    document.getElementById('effort-loading').style.display = 'none';
+    document.getElementById('effort-error').style.display = 'none';
+    const root = document.getElementById('effort-providers');
+    root.style.display = 'grid';
+    renderEffortProviders(data);
+  } catch (e) {
+    document.getElementById('effort-loading').style.display = 'none';
+    document.getElementById('effort-error').style.display = 'block';
+    document.getElementById('effort-error').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function saveModelEffort(modelId) {
+  const status = document.getElementById('effort-save-status');
+  const sel = document.querySelector('select.effort-select[data-model="' + modelId + '"]');
+  const btn = document.querySelector('button.effort-save-btn[data-model="' + modelId + '"]');
+  if (!sel || btn?.disabled) return;
+  status.className = 'effort-save-status';
+  status.textContent = 'Saving…';
+  try {
+    const body = {};
+    body[modelId] = sel.value;
+    const r = await fetch('/api/reasoning-effort', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error(t || (r.status + ' ' + r.statusText));
+    }
+    const data = await r.json();
+    renderEffortProviders(data);
+    status.className = 'effort-save-status ok';
+    status.textContent = 'Saved ' + modelId + ' → ' + body[modelId];
+  } catch (e) {
+    status.className = 'effort-save-status err';
+    status.textContent = 'Error: ' + e.message;
+  }
 }
 
 // --- MTD summary ---
@@ -1393,62 +1696,136 @@ async function loadByProvider() {
 }
 
 // --- Sessions ---
+const LS_SESSIONS_OPEN = 'discursive_usageui_sessions_open';
+
+function ensureSessionsListDefault() {
+  if (localStorage.getItem(LS_SESSIONS_OPEN) === null) {
+    localStorage.setItem(LS_SESSIONS_OPEN, '0');
+  }
+}
+
+function getSessionsListOpen() {
+  return localStorage.getItem(LS_SESSIONS_OPEN) === '1';
+}
+
+function saveSessionsListOpen(open) {
+  localStorage.setItem(LS_SESSIONS_OPEN, open ? '1' : '0');
+}
+
+function applySessionsListVisibility(hasRows) {
+  const open = getSessionsListOpen();
+  const detail = document.getElementById('sessions-detail');
+  const table = document.getElementById('sessions-table');
+  if (detail) detail.style.display = open && hasRows ? 'block' : 'none';
+  if (table) table.style.display = open && hasRows ? 'table' : 'none';
+  const btn = document.getElementById('sessions-list-toggle');
+  if (btn) {
+    const label = btn.querySelector('.sessions-toggle-text');
+    if (label) label.textContent = open ? 'Hide list' : 'Show list';
+    btn.style.display = hasRows ? 'inline-grid' : 'none';
+  }
+}
+
+function toggleSessionsList() {
+  saveSessionsListOpen(!getSessionsListOpen());
+  applySessionsListVisibility(!!window._sessionsHasRows);
+}
+
+function fmtTokenStat(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  return fmtNum(n);
+}
+
+function aggregateSessions(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  if (!list.length) {
+    return { count: 0, requests: 0, tokens_in: 0, tokens_out: 0, est_usd: 0 };
+  }
+  return {
+    count: list.length,
+    requests: list.reduce((s, x) => s + (x.request_count || 0), 0),
+    tokens_in: list.reduce((s, x) => s + (x.tokens_in || 0), 0),
+    tokens_out: list.reduce((s, x) => s + (x.tokens_out || 0), 0),
+    est_usd: list.reduce((s, x) => s + (x.est_usd || 0), 0),
+  };
+}
+
+function renderSessionsSummary(sessions) {
+  const agg = aggregateSessions(sessions);
+  const div = document.getElementById('sessions-summary');
+  div.style.display = 'grid';
+  div.innerHTML =
+    '<div class="stat"><div class="label">Sessions</div><div class="value">' + fmtNum(agg.count) + '</div></div>' +
+    '<div class="stat"><div class="label">Requests</div><div class="value">' + fmtNum(agg.requests) + '</div></div>' +
+    '<div class="stat"><div class="label">Tokens In</div><div class="value">' + fmtTokenStat(agg.tokens_in) + '</div></div>' +
+    '<div class="stat"><div class="label">Tokens Out</div><div class="value">' + fmtTokenStat(agg.tokens_out) + '</div></div>' +
+    '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="value">' + fmtMoney(agg.est_usd) + '</div></div>';
+}
+
+function renderSessionsTable(sessions, range) {
+  const body = document.getElementById('sessions-body');
+  body.innerHTML = '';
+
+  const isLongRange = ['30d', 'this-month', 'last-month', 'last-week'].includes(range);
+
+  if (isLongRange && sessions.length > 0) {
+    const count = sessions.length;
+    const avgReqs = Math.round(sessions.reduce((s, x) => s + x.request_count, 0) / count);
+    const avgIn = Math.round(sessions.reduce((s, x) => s + x.tokens_in, 0) / count);
+    const avgOut = Math.round(sessions.reduce((s, x) => s + x.tokens_out, 0) / count);
+    const avgUSD = Number((sessions.reduce((s, x) => s + x.est_usd, 0) / count).toFixed(6));
+
+    const tr = document.createElement('tr');
+    tr.className = 'session-row';
+    tr.innerHTML =
+      '<td><em style="color:var(--text-muted)">Average of ' + count + ' sessions</em></td>' +
+      '<td class="num">' + fmtNum(avgReqs) + '</td>' +
+      '<td class="num">' + fmtNum(avgIn) + '</td>' +
+      '<td class="num">' + fmtNum(avgOut) + '</td>' +
+      '<td class="usd">' + fmtMoney(avgUSD) + '</td>' +
+      '<td>—</td>';
+    body.appendChild(tr);
+    return true;
+  }
+
+  const shown = sessions.slice(0, 100);
+  for (const s of shown) {
+    const tr = document.createElement('tr');
+    tr.className = 'session-row';
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => showSessionModal(s.session_id);
+    tr.innerHTML =
+      '<td><code>' + s.session_id.substring(0, 16) + '...</code></td>' +
+      '<td class="num">' + fmtNum(s.request_count) + '</td>' +
+      '<td class="num">' + fmtNum(s.tokens_in) + '</td>' +
+      '<td class="num">' + fmtNum(s.tokens_out) + '</td>' +
+      '<td class="usd">' + fmtMoney(s.est_usd) + '</td>' +
+      '<td>' + fmtDate(s.last_seen) + '</td>';
+    body.appendChild(tr);
+  }
+  return shown.length > 0;
+}
+
 async function loadSessions() {
   try {
     const range = getSavedRange();
     const since = timeRangeToSince(range);
-    const sessions = await api('/api/sessions?since=' + encodeURIComponent(since));
+    const raw = await api('/api/sessions?since=' + encodeURIComponent(since));
+    const sessions = Array.isArray(raw) ? raw : [];
+
     document.getElementById('sessions-loading').style.display = 'none';
+    document.getElementById('sessions-error').style.display = 'none';
 
-    // Stats row
-    document.getElementById('sessions-stats').textContent = sessions.length + ' session' + (sessions.length !== 1 ? 's' : '');
-
-    const body = document.getElementById('sessions-body');
-    body.innerHTML = '';
-
-    // For time ranges longer than a week, aggregate sessions into averages
-    const isLongRange = ['30d', 'this-month', 'last-month', 'last-week'].includes(range);
-
-    if (isLongRange && sessions.length > 0) {
-      // Compute averages across all sessions
-      const count = sessions.length;
-      const avgReqs = Math.round(sessions.reduce((s,x) => s + x.request_count, 0) / count);
-      const avgIn = Math.round(sessions.reduce((s,x) => s + x.tokens_in, 0) / count);
-      const avgOut = Math.round(sessions.reduce((s,x) => s + x.tokens_out, 0) / count);
-      const avgUSD = Number((sessions.reduce((s,x) => s + x.est_usd, 0) / count).toFixed(6));
-
-      const tr = document.createElement('tr');
-      tr.className = 'session-row';
-      tr.innerHTML =
-        '<td><em style="color:var(--text-muted)">Average of ' + count + ' sessions</em></td>'+
-        '<td class="num">'+fmtNum(avgReqs)+'</td>'+
-        '<td class="num">'+fmtNum(avgIn)+'</td>'+
-        '<td class="num">'+fmtNum(avgOut)+'</td>'+
-        '<td class="usd">' + fmtMoney(avgUSD) + '</td>'+
-        '<td>—</td>';
-      body.appendChild(tr);
-    } else {
-      const shown = sessions.slice(0, 100);
-      for (const s of shown) {
-        const tr = document.createElement('tr');
-        tr.className = 'session-row';
-        tr.style.cursor = 'pointer';
-        tr.onclick = () => showSessionModal(s.session_id);
-        tr.innerHTML =
-          '<td><code>'+s.session_id.substring(0,16)+'...</code></td>'+
-          '<td class="num">'+fmtNum(s.request_count)+'</td>'+
-          '<td class="num">'+fmtNum(s.tokens_in)+'</td>'+
-          '<td class="num">'+fmtNum(s.tokens_out)+'</td>'+
-          '<td class="usd">' + fmtMoney(s.est_usd) + '</td>'+
-          '<td>'+fmtDate(s.last_seen)+'</td>';
-        body.appendChild(tr);
-      }
-    }
-    document.getElementById('sessions-table').style.display = sessions.length ? 'table' : 'none';
+    renderSessionsSummary(sessions);
+    const hasRows = renderSessionsTable(sessions, range);
+    window._sessionsHasRows = hasRows;
+    applySessionsListVisibility(hasRows);
   } catch(e) {
     document.getElementById('sessions-loading').style.display = 'none';
     document.getElementById('sessions-error').style.display = 'block';
     document.getElementById('sessions-error').textContent = 'Error: ' + e.message;
+    window._sessionsHasRows = false;
+    applySessionsListVisibility(false);
   }
 }
 
@@ -1593,7 +1970,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateMoneyLabels();
   ensureBalancesHiddenDefault();
   applyBalancesVisibility();
+  ensureSessionsListDefault();
+  ensureEffortPanelDefault();
+  applyEffortPanelVisibility();
   loadHealth();
+  if (getEffortPanelOpen()) loadReasoningEffort();
   loadBalances();
   loadMTD();
   reloadGraphs();

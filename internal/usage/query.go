@@ -477,7 +477,7 @@ func (s *Store) QuerySessionsSince(since time.Time) ([]SessionInfo, error) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []SessionInfo
+	var out = make([]SessionInfo, 0)
 	for rows.Next() {
 		var si SessionInfo
 		if err := rows.Scan(&si.SessionID,

@@ -165,6 +165,7 @@ func LogEvent(ev Event) {
 		"session_id", ev.SessionID,
 		"provider", string(ev.Provider),
 		"model", ev.Model,
+		"effort", ev.Effort,
 		"tokens_in", ev.PromptTokens,
 		"tokens_out", ev.CompletionTokens,
 		"cache_hit_tokens", ev.CacheHitTokens,

@@ -21,6 +21,7 @@ type ServerConfig struct {
 	GatewayKey      string
 	DataRoot        string
 	Settings        *config.AppSettings
+	Live            *config.LiveSettings // optional; when set, drives per-model reasoning effort
 	HTTPClient      *http.Client
 	ChatURLOverride map[config.Provider]string // tests only
 }
@@ -35,6 +36,7 @@ type Server struct {
 	agg       *usage.Aggregator
 	sessionID string
 	settings  *config.AppSettings
+	live      *config.LiveSettings
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -42,8 +44,12 @@ type Server struct {
 
 // NewServer builds a gateway server (does not listen yet).
 func NewServer(cfg ServerConfig) (*Server, error) {
+	if cfg.Settings == nil && cfg.Live == nil {
+		return nil, fmt.Errorf("gateway: Settings or Live required")
+	}
 	if cfg.Settings == nil {
-		return nil, fmt.Errorf("gateway: Settings required")
+		snap := cfg.Live.Snapshot()
+		cfg.Settings = &snap
 	}
 	if cfg.GatewayKey == "" {
 		cfg.GatewayKey = cfg.Settings.GatewayKey
@@ -70,6 +76,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		agg:       usage.NewAggregator(0),
 		sessionID: newSessionID(),
 		settings:  cfg.Settings,
+		live:      cfg.Live,
 	}
 	s.routes()
 	return s, nil
@@ -206,6 +213,16 @@ func newRequestID() string {
 		return fmt.Sprintf("req_%d", time.Now().UnixNano())
 	}
 	return "req_" + hex.EncodeToString(b[:])
+}
+
+func (s *Server) sanitizeConfig() SanitizeConfig {
+	scfg := DefaultSanitizeConfig()
+	if s.live != nil {
+		scfg.EffortByModel = s.live.EffortMap()
+	} else if s.settings != nil {
+		scfg.EffortByModel = config.NormalizeReasoningEffortMap(s.settings.ReasoningEffort)
+	}
+	return scfg
 }
 
 func logRequest(requestID string, attrs ...any) {

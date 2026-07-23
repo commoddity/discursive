@@ -76,8 +76,10 @@ func isDeepSeekValidReasoningEffort(v any) bool {
 		return false
 	}
 	s = strings.TrimSpace(s)
+	// Official API values are high|max; low|medium|xhigh are compatibility aliases
+	// (mapped upstream by DeepSeek / by our normalizer before send).
 	switch s {
-	case "low", "medium", "high", "max":
+	case "high", "max", "low", "medium", "xhigh":
 		return true
 	default:
 		return false

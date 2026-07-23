@@ -15,6 +15,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/commoddity/discursive/internal/config"
 	"github.com/commoddity/discursive/internal/usage"
 )
 
@@ -45,6 +46,7 @@ type Server struct {
 	startTime  time.Time
 	keySource  KeySource
 	httpClient *http.Client // optional; tests inject a mock transport
+	live       *config.LiveSettings
 }
 
 // NewServer creates a usage UI server backed by the given store.
@@ -92,6 +94,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/exchange-rate", s.handleExchangeRate)
 	mux.HandleFunc("/api/balances", s.handleBalances)
+	mux.HandleFunc("/api/reasoning-effort", s.handleReasoningEffort)
 
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -115,6 +118,11 @@ func (s *Server) Shutdown() error {
 func (s *Server) SetHealth(h HealthInfo) {
 	s.health = h
 	s.startTime = time.Now()
+}
+
+// SetLive wires app settings for reasoning-effort load/save.
+func (s *Server) SetLive(live *config.LiveSettings) {
+	s.live = live
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

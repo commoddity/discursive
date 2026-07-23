@@ -14,7 +14,8 @@ type SanitizeConfig struct {
 	InjectReasoningPlaceholder bool // overridden false for K3 unless explicitly set
 	MaxTokensDefault           int
 	MaxTokensCap               int
-	ThinkingDisabled           bool
+	ThinkingDisabled           bool              // retained for tests/compat; K2 uses EffortByModel off|on
+	EffortByModel              map[string]string // real model id → effort (from app settings)
 }
 
 // DefaultSanitizeConfig returns product defaults.
@@ -25,6 +26,7 @@ func DefaultSanitizeConfig() SanitizeConfig {
 		MaxTokensDefault:           defaultMaxTokens,
 		MaxTokensCap:               maxTokensCap,
 		ThinkingDisabled:           true,
+		EffortByModel:              config.DefaultReasoningEffort(),
 	}
 }
 
@@ -33,6 +35,7 @@ type SanitizeResult struct {
 	Body     map[string]any
 	Provider config.Provider
 	Model    string
+	Effort   string // effective reasoning effort sent upstream (or "n/a" / "off")
 }
 
 // SanitizeRequest applies the full sanitizer pipeline per gateway.mdc order.
@@ -64,7 +67,7 @@ func SanitizeRequest(body map[string]any, cfg SanitizeConfig) (SanitizeResult, e
 
 	stripImages := route.Provider == config.ProviderDeepSeek
 
-	applyThinkingPolicy(body, route, cfg.ThinkingDisabled)
+	applyThinkingPolicy(body, route, cfg)
 
 	if cfg.ForceNonStreaming {
 		body["stream"] = false
@@ -109,33 +112,76 @@ func SanitizeRequest(body map[string]any, cfg SanitizeConfig) (SanitizeResult, e
 		Body:     body,
 		Provider: route.Provider,
 		Model:    route.RealModel,
+		Effort:   effectiveEffort(body, route),
 	}, nil
 }
 
-func applyThinkingPolicy(body map[string]any, route Route, thinkingDisabled bool) {
+func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
+	effort := config.EffortForModel(cfg.EffortByModel, route.RealModel)
 	switch route.Policy {
 	case PolicyK3:
 		delete(body, "thinking")
-		body["reasoning_effort"] = "max"
+		if effort == "" {
+			effort = "low"
+		}
+		body["reasoning_effort"] = effort
 	case PolicyK2:
 		delete(body, "reasoning_effort")
-		if thinkingDisabled {
+		// K2.6 uses thinking on/off only (not reasoning_effort). Config values: off|on.
+		if effort == "" || effort == config.EffortOff {
 			body["thinking"] = map[string]any{"type": "disabled"}
 		} else {
 			body["thinking"] = map[string]any{"type": "enabled"}
 		}
 	case PolicyDeepSeek:
-		if thinkingDisabled {
+		if effort == "" || effort == config.EffortOff {
 			body["thinking"] = map[string]any{"type": "disabled"}
-		} else {
-			body["thinking"] = map[string]any{"type": "enabled"}
-		}
-		if !isDeepSeekValidReasoningEffort(body["reasoning_effort"]) {
 			delete(body, "reasoning_effort")
+		} else {
+			// Docs: thinking enabled + reasoning_effort high|max only.
+			// low/medium → high, xhigh → max (compatibility aliases).
+			norm, err := config.NormalizeReasoningEffort(route.RealModel, effort)
+			if err != nil || norm == config.EffortOff {
+				body["thinking"] = map[string]any{"type": "disabled"}
+				delete(body, "reasoning_effort")
+			} else {
+				body["thinking"] = map[string]any{"type": "enabled"}
+				body["reasoning_effort"] = norm
+			}
 		}
 	case PolicyThaura:
 		delete(body, "thinking")
 		delete(body, "reasoning_effort")
+	}
+}
+
+// effectiveEffort reports the effort label for logs after policy application.
+func effectiveEffort(body map[string]any, route Route) string {
+	switch route.Policy {
+	case PolicyK3:
+		if s, ok := body["reasoning_effort"].(string); ok && s != "" {
+			return s
+		}
+		return "low"
+	case PolicyK2:
+		if thinking, ok := body["thinking"].(map[string]any); ok {
+			if thinking["type"] == "enabled" {
+				return config.EffortOn
+			}
+		}
+		return config.EffortOff
+	case PolicyDeepSeek:
+		if thinking, ok := body["thinking"].(map[string]any); ok {
+			if thinking["type"] == "disabled" {
+				return config.EffortOff
+			}
+		}
+		if s, ok := body["reasoning_effort"].(string); ok && s != "" {
+			return s
+		}
+		return config.EffortOff
+	default:
+		return "n/a"
 	}
 }
 

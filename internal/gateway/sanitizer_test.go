@@ -32,14 +32,94 @@ func TestSanitizeRequest_K3Thinking(t *testing.T) {
 	if res.Model != "kimi-k3" || res.Provider != config.ProviderMoonshot {
 		t.Fatalf("route: %+v", res)
 	}
-	if res.Body["reasoning_effort"] != "max" {
+	if res.Body["reasoning_effort"] != "low" {
 		t.Fatalf("reasoning_effort: %v", res.Body["reasoning_effort"])
+	}
+	if res.Effort != "low" {
+		t.Fatalf("Effort: %q", res.Effort)
 	}
 	if _, ok := res.Body["thinking"]; ok {
 		t.Fatal("thinking should be stripped for K3")
 	}
 	if _, ok := res.Body["temperature"]; ok {
 		t.Fatal("temperature should be stripped")
+	}
+}
+
+func TestSanitizeRequest_K3EffortFromConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		effort string
+		want   string
+	}{
+		{name: "high", effort: "high", want: "high"},
+		{name: "max", effort: "max", want: "max"},
+		{name: "low", effort: "low", want: "low"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.EffortByModel = map[string]string{config.ModelKimiK3: tt.effort}
+			body := map[string]any{
+				"model":    "kimi-k3",
+				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+			}
+			res, err := SanitizeRequest(body, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Body["reasoning_effort"] != tt.want {
+				t.Fatalf("reasoning_effort: %v want %q", res.Body["reasoning_effort"], tt.want)
+			}
+			if res.Effort != tt.want {
+				t.Fatalf("Effort: %q", res.Effort)
+			}
+		})
+	}
+}
+
+func TestSanitizeRequest_DeepSeekEffortFromConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		effort     string
+		wantThink  string
+		wantEffort any // nil means absent
+		logEffort  string
+	}{
+		{name: "off", effort: "off", wantThink: "disabled", wantEffort: nil, logEffort: "off"},
+		{name: "high", effort: "high", wantThink: "enabled", wantEffort: "high", logEffort: "high"},
+		{name: "max", effort: "max", wantThink: "enabled", wantEffort: "max", logEffort: "max"},
+		{name: "medium maps to high", effort: "medium", wantThink: "enabled", wantEffort: "high", logEffort: "high"},
+		{name: "xhigh maps to max", effort: "xhigh", wantThink: "enabled", wantEffort: "max", logEffort: "max"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.EffortByModel = map[string]string{config.ModelDeepSeekV4Pro: tt.effort}
+			body := map[string]any{
+				"model":    "deepseek-v4-pro",
+				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+			}
+			res, err := SanitizeRequest(body, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			thinking, ok := res.Body["thinking"].(map[string]any)
+			if !ok || thinking["type"] != tt.wantThink {
+				t.Fatalf("thinking: %v", res.Body["thinking"])
+			}
+			got, has := res.Body["reasoning_effort"]
+			if tt.wantEffort == nil {
+				if has {
+					t.Fatalf("expected no reasoning_effort, got %v", got)
+				}
+			} else if got != tt.wantEffort {
+				t.Fatalf("reasoning_effort: %v want %v", got, tt.wantEffort)
+			}
+			if res.Effort != tt.logEffort {
+				t.Fatalf("Effort: %q want %q", res.Effort, tt.logEffort)
+			}
+		})
 	}
 }
 
@@ -59,6 +139,45 @@ func TestSanitizeRequest_K2Thinking(t *testing.T) {
 	}
 	if _, ok := res.Body["reasoning_effort"]; ok {
 		t.Fatal("reasoning_effort should be stripped for K2")
+	}
+	if res.Effort != "off" {
+		t.Fatalf("Effort: %q", res.Effort)
+	}
+}
+
+func TestSanitizeRequest_K2EffortFromConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		effort    string
+		wantThink string
+		logEffort string
+	}{
+		{name: "off", effort: "off", wantThink: "disabled", logEffort: "off"},
+		{name: "on", effort: "on", wantThink: "enabled", logEffort: "on"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.EffortByModel = map[string]string{config.ModelKimiK26: tt.effort}
+			body := map[string]any{
+				"model":    "kimi-k2.6",
+				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+			}
+			res, err := SanitizeRequest(body, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			thinking, ok := res.Body["thinking"].(map[string]any)
+			if !ok || thinking["type"] != tt.wantThink {
+				t.Fatalf("thinking: %v", res.Body["thinking"])
+			}
+			if _, has := res.Body["reasoning_effort"]; has {
+				t.Fatal("reasoning_effort must not be sent for K2")
+			}
+			if res.Effort != tt.logEffort {
+				t.Fatalf("Effort: %q", res.Effort)
+			}
+		})
 	}
 }
 

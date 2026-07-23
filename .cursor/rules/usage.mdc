@@ -61,7 +61,7 @@ Keep README § Usage Dashboard in sync when panels change.
 | Month to date | Requests, tokens, estimated cost |
 | Spend by period | Stacked bar chart by model; time-range selector + period-over-period % badge |
 | Spend by model / provider | Breakdown pie charts |
-| Sessions | Table with per-session drill-down by model |
+| Sessions | Collapsible summary row (default) + optional session list; pref `discursive_usageui_sessions_open` |
 | Currency | USD / EUR / CNY display toggle (`localStorage`) |
 
 | Decision | Choice |
@@ -121,6 +121,10 @@ Comparison `since`/`until` computed by `getPrevPeriodComparison()` → shifts pr
 ### Chart.js external tooltips
 
 Spend-by-Model and Spend-by-Provider use Chart.js `external` tooltip for HTML (provider logos). Injected as `#custom-tooltip`. Inline styles from Chart.js may conflict → use `!important` in CSS.
+
+### Session list UI
+
+Default: summary stats row for the selected time range (sessions, requests, tokens, cost). Full table hidden until **Show list** (`localStorage` key `discursive_usageui_sessions_open`). Long ranges (>1 week) show per-session averages in the list; shorter ranges show individual sessions (max 100).
 
 ### Session accounting
 

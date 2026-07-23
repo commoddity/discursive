@@ -150,20 +150,46 @@ a public HTTPS URL.
 
 ## 📊 Usage Dashboard
 
+<div align="center">
+  <img src=".github/img/usage-dashboard.png" alt="Usage Dashboard" width="500">
+</div>
+<p align="center">
+  <em>Usage Dashboard</em>
+</p>
+
 The gateway serves a local usage dashboard at `http://localhost:4002`
 (loopback only). It starts automatically with `discursive start` — no extra
 process or configuration.
 
 - **System health** - health checks & system uptime
+- **Reasoning effort** — per-model `low` / `high` / `max` (and DeepSeek `off`) saved to app settings
 - **Provider balances & monthly spend projection** — average daily spend, projected monthly total
 - **Month to date spending** — requests, tokens, and estimated cost (USD, EUR, CNY)
 - **Spend by period, model, and provider** — clear charts per time period, model, and provider
+- **Sessions** — summary stats for the selected range; expand to browse individual sessions
 
 > **💡 Note:** The Usage Dashboard is not exposed via the public tunnel. Only accessible locally on `localhost:4002`.
 
 ---
 
 ## 🪐 Providers
+
+Models that support configurable reasoning / thinking (`kimi-k3`, `kimi-k2.6`,
+`deepseek-v4-pro`, `deepseek-v4-flash`) can be tuned from the Usage Dashboard
+(**Reasoning Effort** card at `http://127.0.0.1:4002`). Values are stored in app
+settings and applied to new gateway requests immediately (no restart). Gateway
+logs include an `effort` field on request/response/usage lines.
+
+| Model                                   | Options              | Default                                                                                  |
+| --------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------- |
+| `kimi-k3`                               | `low`, `high`, `max` | `low` (API default is `max`; we default lower for cost)                                  |
+| `kimi-k2.6`                             | `off`, `on`          | `off` (maps to `thinking: disabled` / `enabled`)                                         |
+| `deepseek-v4-pro` / `deepseek-v4-flash` | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
+
+- Lower effort usually means fewer thinking tokens and lower cost. `thaura` does not
+expose this control. 
+- Kimi K2.6 only supports thinking on/off: [Kimi K2.6](https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart)
+- DeepSeek only documents `high`/`max` for effort: [DeepSeek Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)).
 
 ### 🌙 Moonshot (Kimi) <!-- omit in toc -->
 
@@ -179,6 +205,7 @@ windows and native reasoning capabilities.
 
 - Pricing: [https://platform.kimi.ai/docs/pricing/chat](https://platform.kimi.ai/docs/pricing/chat)
 - API docs: [https://platform.kimi.ai/docs/](https://platform.kimi.ai/docs/)
+- K3 reasoning effort: [Reasoning Effort](https://platform.kimi.ai/docs/guide/use-reasoning-effort)
 
 ---
 
@@ -198,6 +225,7 @@ models at a fraction of the cost per token.
 
 - Pricing: [https://api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/quick_start/pricing)
 - API docs: [https://api-docs.deepseek.com/](https://api-docs.deepseek.com/)
+- Thinking mode: [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)
 
 ---
 
