@@ -1,32 +1,32 @@
+<p align="center">
+  <img src=".github/img/Discursive.png" alt="Discursive" width="600" />
+</p>
 
+<div align="center">
+  <blockquote>
+    <em>/dĭ-skûr′sĭv/ - proceeding coherently from topic to topic; marked by analytical reasoning</em>
+  </blockquote>
+  <p>A gateway proxy that enables <a href="https://cursor.com">Cursor</a>'s full agentic workflow with alternative providers.</p>
+</div>
 
-> */dĭ-skûr′sĭv/ - proceeding coherently from topic to topic; marked by analytical reasoning*
+<p align="center">
+  <a href="https://platform.kimi.ai/"><img src=".github/img/moonshot-white.svg" alt="Moonshot Kimi" height="35" valign="middle" /></a>
+  &ensp;&middot;&ensp;
+  <a href="https://api-docs.deepseek.com/"><img src=".github/img/deepseek.svg" alt="DeepSeek" height="35" valign="middle" /></a>
+  &ensp;&middot;&ensp;
+  <a href="https://thaura.ai/"><img src=".github/img/thaura.png" alt="Thaura AI" height="35" valign="middle" /></a>
+</p>
 
-A gateway proxy that enables [Cursor](https://cursor.com)'s full agentic workflow with alternative providers.
-
- ·   · 
-
-### Written in
+<h3 align="center">Written in <a href="https://go.dev/"><img src=".github/img/go.svg" alt="Go" height="28" valign="middle" /></a></h3>
 
 ---
 
-
-
-### Table of Contents 
+### Table of Contents <!-- omit in toc -->
 
 - [📦 Quickstart](#-quickstart)
-  - [1. Install](#1-install)
-  - [Dependencies](#dependencies)
-  - [2. Start the gateway](#2-start-the-gateway)
-  - [3. Configure Cursor](#3-configure-cursor)
-  - [4. Switch providers](#4-switch-providers)
-  - [5. Switch back to Cursor's models](#5-switch-back-to-cursors-models)
 - [☁️ Setting up Cloudflare](#️-setting-up-cloudflare)
 - [📊 Usage Dashboard](#-usage-dashboard)
 - [🪐 Providers](#-providers)
-  - [🌙 Moonshot (Kimi)](#-moonshot-kimi)
-  - [🐋 DeepSeek](#-deepseek)
-  - [🐪 Thaura](#-thaura)
 - [🛠 Tech Stack](#-tech-stack)
 - [📁 File Structure](#-file-structure)
 - [🖥 CLI Commands](#-cli-commands)
@@ -39,13 +39,9 @@ A gateway proxy that enables [Cursor](https://cursor.com)'s full agentic workflo
 
 ---
 
-
-
 ## 📦 Quickstart
 
-
-
-### 1. Install 
+### 1. Install <!-- omit in toc -->
 
 ```bash
 go install github.com/commoddity/discursive@latest
@@ -53,26 +49,30 @@ go install github.com/commoddity/discursive@latest
 
 Or download a [release binary](https://github.com/commoddity/discursive/releases) and put it on your `PATH`.
 
-### Dependencies 
+### Prerequisites <!-- omit in toc -->
+
+#### Dependencies <!-- omit in toc -->
 
 - [Go](https://go.dev/dl/) 1.26.5+
 - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
 
+On first run, the interactive wizard also prompts for:
 
+| Item                    | Required | Where to get / notes                                       |
+| ----------------------- | -------- | ---------------------------------------------------------- |
+| Moonshot (Kimi) API key | ✅ Yes    | [platform.kimi.ai](https://platform.kimi.ai/)              |
+| DeepSeek API key        | ✅ Yes    | [platform.deepseek.com](https://platform.deepseek.com/)    |
+| Cloudflare tunnel token | ✅ Yes    | See [Setting up Cloudflare](#-setting-up-cloudflare) below |
+| Public HTTPS URL        | ✅ Yes    | Hostname from tunnel setup with `/v1` appended             |
+| Thaura AI API key       | No       | [thaura.ai](https://thaura.ai/api-platform)                |
 
-### 2. Start the gateway 
+### 2. Start the gateway <!-- omit in toc -->
 
 ```bash
 discursive start --background
 ```
 
-On first run, the gateway auto-invokes an interactive wizard that prompts for:
-
-- **Moonshot/Kimi API key** — get one at [platform.kimi.ai](https://platform.kimi.ai/)
-- **DeepSeek API key** — get one at [platform.deepseek.com](https://platform.deepseek.com/)
-- **Thaura AI API key** (optional) — get one at [thaura.ai](https://thaura.ai/api-platform)
-- **Cloudflare tunnel token** — see [Setting up Cloudflare](#-setting-up-cloudflare) below
-- **Public HTTPS URL** — the hostname you configured in the tunnel setup with `/v1` appended
+On first run, the gateway auto-invokes the interactive wizard (see [Prerequisites](#prerequisites)).
 
 Keys are encrypted at rest. Secrets are never sent to Cursor or logged.
 
@@ -86,17 +86,15 @@ discursive status --show-key | jq
 Gateway keys are masked by default. Pass `--show-key` to print the full
 `gateway_key` for Cursor setup.
 
-### 3. Configure Cursor 
+### 3. Configure Cursor <!-- omit in toc -->
 
 Open **Cursor Settings → Models** and enter:
-
 
 | Setting                  | Value                                                 |
 | ------------------------ | ----------------------------------------------------- |
 | OpenAI API Key           | `gateway_key` from `discursive status --show-key`     |
 | Override OpenAI Base URL | `public_url` from `discursive status` (ends in `/v1`) |
 | Model                    | Pick an alias from the table below (e.g. `gpt-4o`)    |
-
 
 Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 `Connection verified` above the Base URL field.
@@ -106,9 +104,7 @@ Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 > hover over the `?` icons next to ☁️ Tunnel and 🔐 Gateway Key for field-specific
 > setup instructions.
 
-
-
-### 4. Switch providers 
+### 4. Switch providers <!-- omit in toc -->
 
 Change the model alias in Cursor's model picker — no restart needed:
 
@@ -124,7 +120,7 @@ Change the model alias in Cursor's model picker — no restart needed:
 
 
 
-### 5. Switch back to Cursor's models 
+### 5. Switch back to Cursor's models <!-- omit in toc -->
 
 In Cursor Settings → Models: turn off "Override OpenAI API Key" and
 "Override OpenAI Base URL", then pick a Cursor-native model.
@@ -169,7 +165,7 @@ process or configuration.
 
 ## 🪐 Providers
 
-### 🌙 Moonshot (Kimi)
+### 🌙 Moonshot (Kimi) <!-- omit in toc -->
 
 [Moonshot](https://platform.kimi.ai/) provides frontier models with long-context
 windows and native reasoning capabilities.
@@ -188,7 +184,7 @@ windows and native reasoning capabilities.
 
 
 
-### 🐋 DeepSeek
+### 🐋 DeepSeek <!-- omit in toc -->
 
 [DeepSeek](https://api-docs.deepseek.com/) provides cost-efficient reasoning
 models at a fraction of the cost per token.
@@ -207,7 +203,7 @@ models at a fraction of the cost per token.
 
 
 
-### 🐪 Thaura
+### 🐪 Thaura <!-- omit in toc -->
 
 [Thaura](https://thaura.ai/) is an AI platform that combines technical
 excellence with ethical principles, designed to support Palestinian liberation
