@@ -38,11 +38,13 @@ var staticFS embed.FS
 
 // Server serves the usage dashboard on a loopback listener.
 type Server struct {
-	addr      string
-	store     *usage.Store
-	httpSrv   *http.Server
-	health    HealthInfo
-	startTime time.Time
+	addr       string
+	store      *usage.Store
+	httpSrv    *http.Server
+	health     HealthInfo
+	startTime  time.Time
+	keySource  KeySource
+	httpClient *http.Client // optional; tests inject a mock transport
 }
 
 // NewServer creates a usage UI server backed by the given store.
@@ -89,6 +91,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/exchange-rate", s.handleExchangeRate)
+	mux.HandleFunc("/api/balances", s.handleBalances)
 
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -246,6 +249,12 @@ func (s *Server) handleByDayModel(w http.ResponseWriter, r *http.Request) {
 			bucketKey = t.Format("2006-01-02T15:04:00")
 		} else {
 			bucketKey = t.Format("2006-01-02")
+		}
+		if len(modelKeys) == 0 {
+			// No models in range — still emit one zero row per bucket so the
+			// client can render an empty axis grid (e.g. Today with no usage yet).
+			flat = append(flat, FlatRow{Bucket: bucketKey})
+			continue
 		}
 		for _, mk := range modelKeys {
 			mr := modelSet[mk]

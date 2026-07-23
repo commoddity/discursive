@@ -56,12 +56,20 @@ Runs always-on with gateway at `http://127.0.0.1:4002`. No flag, no standalone c
 | Persistence | SQLite at `{dataRoot}/usage/usage.db` (shared with gateway) |
 | UI stack | Go `embed.FS` + HTML/CSS/vanilla JS — no React/Vue/npm |
 | Charts | Chart.js 4.4.7 — vendored in `static/` (offline) |
-| API | `/api/summary`, `/api/by-day-model`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions` |
+| API | `/api/summary`, `/api/by-day-model`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions`, `/api/balances` |
 | Lifecycle | Start/stop with gateway |
 
 ### Currency support
 
 USD/EUR/CNY dropdown. Persisted in `localStorage` (`discursive_currency`). Rates proxied via Go backend `/api/exchange-rate` → `api.frankfurter.app`; cached in `localStorage` (`discursive_fx_rates`, 24h TTL). New currencies: add to `<select>` HTML + `fetchExchangeRate` `?to=` param.
+
+### Provider balances + month projection
+
+Two half-width cards above Month-to-Date (`card-row`). Poll with `refreshAll` (15s).
+
+**Balances** (`GET /api/balances`): server-side proxy with stored upstream keys (never expose keys). Moonshot `GET {base}/users/me/balance` → `available_balance` USD. DeepSeek `GET {base}/user/balance` → prefer USD `total_balance`, else CNY÷FX→USD. Color thresholds always on USD: `<$5` red, `<$15` yellow, `<$100` green, `≥$100` blue. Display via `fmtMoney`.
+
+**Projection**: from MTD `est_usd`. `avgDaily = mtd / UTC dayOfMonth` (includes zero-spend days). `projected = avgDaily × daysInMonth`.
 
 ### Period selector
 

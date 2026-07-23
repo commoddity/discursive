@@ -158,6 +158,22 @@ func serveGateway(dataRoot string, settings config.AppSettings) error {
 		LocalPort:      int(settings.LocalPort),
 		GatewayKey:     settings.GatewayKey,
 	})
+	uiSrv.SetKeySource(usageui.KeySource{
+		Moonshot: func() (string, bool) {
+			k, err := settings.GetMoonshotKey(dataRoot)
+			if err != nil || k == nil || *k == "" {
+				return "", false
+			}
+			return *k, true
+		},
+		DeepSeek: func() (string, bool) {
+			k, err := settings.GetDeepSeekKey(dataRoot)
+			if err != nil || k == nil || *k == "" {
+				return "", false
+			}
+			return *k, true
+		},
+	})
 	if err := uiSrv.Start(); err != nil {
 		slog.Warn("usage_ui_start_failed", "err", err)
 	}

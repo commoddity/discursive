@@ -26,11 +26,38 @@
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 24px; max-width: 1100px; margin: 0 auto; }
 .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
 .header img { height: 32px; width: auto; }
+.header .provider-logo-btn img { height: 20px; }
 .header .providers { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .header .provider-indicator { display: flex; align-items: center; gap: 6px; opacity: 0.4; transition: opacity 0.2s; }
 .header .provider-indicator.enabled { opacity: 1; }
-.header .provider-indicator img { height: 22px; width: auto; }
 .header .provider-indicator .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+/* Clickable provider logo button — panel-like border, slightly brighter to signal affordance */
+.provider-logo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #484f58;
+  background: rgba(22, 27, 34, 0.8);
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.provider-logo-btn img {
+  height: 20px;
+  width: auto;
+  max-width: 110px;
+  object-fit: contain;
+  display: block;
+}
+.provider-logo-btn:hover {
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.1);
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.18);
+}
 .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 h2 { font-size: 1.1rem; color: var(--text-muted); font-weight: 500; }
 .time-select { font-size: 0.8rem; padding: 4px 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
@@ -38,7 +65,82 @@ h2 { font-size: 1.1rem; color: var(--text-muted); font-weight: 500; }
 .dropdown-label { font-size: 0.78rem; color: var(--text-muted); margin-right: 4px; }
 .dropdown-group { display: flex; align-items: center; gap: 8px; }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+.card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.card-row > .card { margin-bottom: 0; height: 100%; }
+@media (max-width: 720px) { .card-row { grid-template-columns: 1fr; } }
+.bal-red { color: var(--danger); }
+.bal-yellow { color: var(--warn); }
+.bal-green { color: var(--accent2); }
+.bal-blue { color: var(--accent); }
+.bal-stat-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 6px;
+  padding: 6px 8px;
+  border: 1px solid #484f58;
+  background: rgba(22, 27, 34, 0.8);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+  overflow: hidden;
+}
+.bal-stat-link:hover {
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.1);
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.18);
+}
+.bal-stat-link .value { text-decoration: none; }
+#balances-summary .bal-stat-link .value { font-size: 1.25rem; margin-top: 2px; }
+.bal-stat-link .label { margin-bottom: 2px; }
+.bal-stat-link .provider-logo-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+  cursor: inherit;
+}
+.bal-stat-link .provider-logo-btn img { height: 16px; }
+.bal-stat-link:hover .provider-logo-btn {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+.bal-amount {
+  font-variant-numeric: tabular-nums;
+  min-height: 1.25em;
+  display: inline-block;
+}
+.bal-card-header { align-items: center; min-height: 0; }
+.bal-card-header h2 { margin: 0; line-height: 1.2; }
+.bal-header-actions { display: flex; align-items: center; gap: 6px; }
+.bal-toggle-btn {
+  min-height: 0 !important;
+  padding: 0 8px !important;
+  font-size: 0.68rem !important;
+  line-height: 1.25 !important;
+  height: 18px;
+  box-sizing: border-box;
+  display: inline-grid !important;
+  place-items: center;
+}
+/* Reserve width for the longer label so Show↔Hide never shifts layout */
+.bal-toggle-btn::before {
+  content: "Hide";
+  grid-area: 1 / 1;
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.bal-toggle-btn > .bal-toggle-text {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
+#projection-summary { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+#projection-summary .value { font-size: 1.25rem; }
+#balances-summary { grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .period-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .period-summary .stat { text-align: center; }
 .period-summary .label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -72,6 +174,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .health-btn.copy-btn:hover { background: rgba(63,185,80,0.16); border-color: rgba(63,185,80,0.45); }
 .health-btn.copied-flash { color: var(--accent2) !important; border-color: var(--accent2) !important; background: rgba(63,185,80,0.2) !important; }
 .gw-key-blur { color: transparent; text-shadow: 0 0 6px var(--text-muted); user-select: none; cursor: default; }
+.bal-amount.gw-key-blur {
+  color: var(--text-muted) !important;
+  text-shadow: none;
+  filter: blur(14px);
+  opacity: 0.85;
+  user-select: none;
+}
 .gw-key-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .dot-ok { background: var(--accent2); }
 .dot-warn { background: var(--warn); }
@@ -89,21 +198,20 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .stats-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.78rem; color: var(--text-muted); }
 .retention-info { position: relative; display: inline-flex; align-items: center; cursor: help; }
 .retention-info .icon { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; }
-.retention-info .tooltip { display: none; position: absolute; top: 50%; left: calc(100% + 8px); transform: translateY(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.5; }
-.retention-info .tooltip::after { content: ''; position: absolute; top: 50%; right: 100%; transform: translateY(-50%); border: 5px solid transparent; border-right-color: var(--border); }
+.retention-info .tooltip { display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; color: var(--text); white-space: normal; width: 260px; z-index: 10; line-height: 1.5; text-align: left; box-sizing: border-box; }
 .retention-info:hover .tooltip { display: block; }
 .sessions-info { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; cursor: help; flex-shrink: 0; position: relative; }
-.sessions-info::after { content: attr(data-tip); display: none; position: absolute; top: 50%; right: calc(100% + 8px); transform: translateY(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.5; }
+.sessions-info::after { content: attr(data-tip); display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; color: var(--text); white-space: normal; width: 260px; z-index: 10; line-height: 1.5; text-align: left; box-sizing: border-box; }
 .sessions-info:hover::after { display: block; }
-.pricing-tip { display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.6; font-weight: normal; }
+.pricing-tip { display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; color: var(--text); white-space: normal; width: 260px; z-index: 10; line-height: 1.6; font-weight: normal; text-align: left; box-sizing: border-box; }
 .pricing-tip > div { pointer-events: none; }
 .provider-indicator a:hover .pricing-tip { display: block; }
 .fx-info { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; cursor: help; margin-right: 2px; flex-shrink: 0; position: relative; }
-.fx-info::after { content: attr(data-tip); display: none; position: absolute; top: 50%; left: calc(100% + 8px); transform: translateY(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: nowrap; z-index: 10; line-height: 1.5; }
+.fx-info::after { content: attr(data-tip); display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; color: var(--text); white-space: normal; width: 260px; z-index: 10; line-height: 1.5; text-align: left; box-sizing: border-box; }
 .fx-info:hover::after { display: block; }
 
 .health-info { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted); line-height: 1; cursor: help; flex-shrink: 0; position: relative; margin-left: 4px; vertical-align: text-bottom; }
-.health-info::after { content: attr(data-tip); display: none; position: absolute; top: 50%; left: calc(100% + 8px); transform: translateY(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.72rem; color: var(--text); white-space: normal; z-index: 10; line-height: 1.5; max-width: 320px; text-align: left; text-transform: none; letter-spacing: normal; }
+.health-info::after { content: attr(data-tip); display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; color: var(--text); white-space: normal; width: 260px; z-index: 10; line-height: 1.5; text-align: left; text-transform: none; letter-spacing: normal; box-sizing: border-box; }
 .health-info:hover::after { display: block; }
 .health-link { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.45rem; color: var(--text-muted); line-height: 1; cursor: pointer; flex-shrink: 0; text-decoration: none; margin-left: 4px; vertical-align: text-bottom; transition: all 0.15s; }
 .health-link:hover { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
@@ -126,6 +234,27 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   <div class="loading" id="health-loading">Loading...</div>
   <div class="health-grid" id="health-grid" style="display:none"></div>
   <div class="error" id="health-error" style="display:none"></div>
+</div>
+
+<div class="card-row">
+  <div class="card" id="balances-card">
+    <div class="card-header bal-card-header" style="margin-bottom:12px">
+      <h2>💴 Provider Balances</h2>
+      <div class="bal-header-actions">
+        <span class="health-info" style="margin-left:0" data-tip="Click a provider balance card to open that provider's top-up page.">?</span>
+        <button class="health-btn bal-toggle-btn" type="button" id="bal-visibility-toggle" onclick="toggleBalancesVisible()"><span class="bal-toggle-text">Show</span></button>
+      </div>
+    </div>
+    <div class="loading" id="balances-loading">Loading...</div>
+    <div class="summary" id="balances-summary" style="display:none"></div>
+    <div class="error" id="balances-error" style="display:none"></div>
+  </div>
+  <div class="card" id="projection-card">
+    <h2 style="margin-bottom:12px">📈 Month Projection</h2>
+    <div class="loading" id="projection-loading">Loading...</div>
+    <div class="summary" id="projection-summary" style="display:none"></div>
+    <div class="error" id="projection-error" style="display:none"></div>
+  </div>
 </div>
 
 <div class="card" id="mtd-card">
@@ -436,6 +565,12 @@ const PRICING_URLS = {
   thaura: 'https://thaura.ai/pricing'
 };
 
+// Provider top-up / pay console URLs (balance panel logo links)
+const TOPUP_URLS = {
+  moonshot: 'https://platform.kimi.ai/console/pay',
+  deepseek: 'https://platform.deepseek.com/top_up',
+};
+
 // Pricing per 1M tokens in USD (source: usage.mdc rules)
 // { model: { cache_hit: price, input: price, output: price } }
 // Thaura has no cache tier.
@@ -642,7 +777,7 @@ async function loadHealth() {
     providers.innerHTML = provData.map(p =>
       '<div class="provider-indicator' + (p.ok ? ' enabled' : '') + '">' +
         '<div class="dot ' + (p.ok ? 'dot-ok' : 'dot-err') + '"></div>' +
-        '<a href="' + (PRICING_URLS[p.id] || '#') + '" target="_blank" rel="noopener" title="' + p.name + ' pricing" style="display:flex;align-items:center;position:relative;">' +
+        '<a class="provider-logo-btn" href="' + (PRICING_URLS[p.id] || '#') + '" target="_blank" rel="noopener" title="' + p.name + ' pricing">' +
           '<img src="' + p.logo + '" alt="' + p.name + '" />' +
           '<span class="pricing-tip"><div>' + pricingTooltip(p.id) + '</div></span>' +
         '</a>' +
@@ -705,11 +840,164 @@ async function loadMTD() {
       '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+(s.tokens_out >= 1e6 ? (s.tokens_out/1e6).toFixed(2)+'M' : fmtNum(s.tokens_out))+'</div></div>'+
       '<div class="stat"><div class="label">Cache Hits</div><div class="value">'+(s.cache_hit_tokens >= 1e6 ? (s.cache_hit_tokens/1e6).toFixed(2)+'M' : fmtNum(s.cache_hit_tokens))+'</div></div>'+
       '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="value">' + fmtMoney(s.est_usd) + '</div></div>';
+
+    // Projection uses same MTD payload (zero-spend days included in avg).
+    await renderProjection(s.est_usd || 0);
   } catch(e) {
     document.getElementById('mtd-loading').style.display = 'none';
     document.getElementById('mtd-error').style.display = 'block';
     document.getElementById('mtd-error').textContent = 'Error: ' + e.message;
+    document.getElementById('projection-loading').style.display = 'none';
+    document.getElementById('projection-error').style.display = 'block';
+    document.getElementById('projection-error').textContent = 'Error: ' + e.message;
   }
+}
+
+// Balance color thresholds are always in USD.
+function balanceColorClass(usd) {
+  if (usd == null || isNaN(usd)) return '';
+  if (usd < 5) return 'bal-red';
+  if (usd < 15) return 'bal-yellow';
+  if (usd < 100) return 'bal-green';
+  return 'bal-blue';
+}
+
+function balanceToUSD(b) {
+  if (!b) return null;
+  if (b.available_usd != null) return +b.available_usd;
+  if (b.amount == null) return null;
+  if (b.currency === 'USD') return +b.amount;
+  if (b.currency === 'CNY' && cnyRate > 0) return +b.amount / cnyRate;
+  return null;
+}
+
+function balanceLabel(provider) {
+  const logo = LOGO_URLS[provider] || '';
+  const name = provider.charAt(0).toUpperCase() + provider.slice(1);
+  return '<span class="provider-logo-btn"><img src="' + logo + '" alt="' + name + '"></span>';
+}
+
+const LS_BAL_VISIBLE = 'discursive_usageui_balances_shown';
+function getBalancesVisible() {
+  // First visit / unset → hidden. Only an explicit '1' shows balances.
+  return localStorage.getItem(LS_BAL_VISIBLE) === '1';
+}
+function saveBalancesVisible(v) {
+  localStorage.setItem(LS_BAL_VISIBLE, v ? '1' : '0');
+}
+function ensureBalancesHiddenDefault() {
+  if (localStorage.getItem(LS_BAL_VISIBLE) === null) {
+    saveBalancesVisible(false);
+  }
+}
+
+function applyBalancesVisibility() {
+  const visible = getBalancesVisible();
+  document.querySelectorAll('.bal-amount').forEach(el => {
+    if (visible) el.classList.remove('gw-key-blur');
+    else el.classList.add('gw-key-blur');
+  });
+  const btn = document.getElementById('bal-visibility-toggle');
+  if (btn) {
+    const label = btn.querySelector('.bal-toggle-text');
+    if (label) label.textContent = visible ? 'Hide' : 'Show';
+  }
+}
+
+function toggleBalancesVisible() {
+  saveBalancesVisible(!getBalancesVisible());
+  applyBalancesVisibility();
+}
+
+function renderBalanceStat(provider, b) {
+  const href = TOPUP_URLS[provider] || '#';
+  const name = provider.charAt(0).toUpperCase() + provider.slice(1);
+  const label = balanceLabel(provider);
+  const blurCls = getBalancesVisible() ? '' : ' gw-key-blur';
+  const wrap = (inner) =>
+    '<div class="stat"><a class="bal-stat-link" href="' + href + '" target="_blank" rel="noopener" title="Top up ' + name + '">' +
+      inner +
+    '</a></div>';
+
+  if (!b || !b.configured) {
+    return wrap('<div class="label">' + label + '</div><div class="value" style="color:var(--text-muted);font-size:1.1rem">Not configured</div>');
+  }
+  if (b.error && b.available_usd == null && b.amount == null) {
+    return wrap('<div class="label">' + label + '</div><div class="value bal-red" style="font-size:1.1rem">Error</div><div class="sub">' + escapeHtml(b.error) + '</div>');
+  }
+  const usd = balanceToUSD(b);
+  if (usd == null) {
+    return wrap('<div class="label">' + label + '</div><div class="value" style="color:var(--text-muted);font-size:1.1rem">—</div>');
+  }
+  const cls = balanceColorClass(usd);
+  return wrap('<div class="label">' + label + '</div><div class="value bal-amount' + blurCls + ' ' + cls + '">' + fmtMoney(usd) + '</div>');
+}
+
+async function loadBalances() {
+  try {
+    const data = await api('/api/balances');
+    document.getElementById('balances-loading').style.display = 'none';
+    document.getElementById('balances-error').style.display = 'none';
+    const div = document.getElementById('balances-summary');
+    div.style.display = 'grid';
+    div.innerHTML =
+      renderBalanceStat('moonshot', data.moonshot) +
+      renderBalanceStat('deepseek', data.deepseek);
+    applyBalancesVisibility();
+  } catch(e) {
+    document.getElementById('balances-loading').style.display = 'none';
+    document.getElementById('balances-error').style.display = 'block';
+    document.getElementById('balances-error').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function renderProjection(mtdUsd) {
+  document.getElementById('projection-loading').style.display = 'none';
+  document.getElementById('projection-error').style.display = 'none';
+  const now = new Date();
+  const dayOfMonth = now.getUTCDate(); // MTD is UTC — include today + prior zero days
+  const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+  const avgDaily = mtdUsd / dayOfMonth;
+  const projected = avgDaily * daysInMonth;
+
+  // Previous calendar month total — "No Data" when no usage.
+  let prevTotal = null;
+  try {
+    const since = utcMidnight(now.getUTCFullYear(), now.getUTCMonth() - 1, 1);
+    const until = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).toISOString();
+    const rows = await api('/api/by-day-model?since=' + encodeURIComponent(since) +
+      '&until=' + encodeURIComponent(until) + '&bucket=1d');
+    let cost = 0, reqs = 0;
+    for (const r of rows) {
+      cost += r.est_usd || 0;
+      reqs += r.request_count || 0;
+    }
+    if (reqs > 0 || cost > 0) prevTotal = cost;
+  } catch (e) { /* leave prevTotal null */ }
+
+  // Single comparison: projected month vs previous month total.
+  let vsHtml;
+  if (prevTotal == null || prevTotal === 0) {
+    vsHtml = '<div class="value bal-blue" style="font-size:1.1rem">No Data</div>' +
+      '<div class="sub">previous month</div>';
+  } else {
+    const pct = ((projected - prevTotal) / prevTotal * 100).toFixed(1);
+    const cls = projected < prevTotal ? 'cmp-down' : 'cmp-up';
+    const sign = projected >= prevTotal ? '+' : '';
+    vsHtml = '<div class="value ' + cls + '">' + sign + pct + '%</div>' +
+      '<div class="sub">vs last month</div>';
+  }
+
+  const div = document.getElementById('projection-summary');
+  div.style.display = 'grid';
+  div.innerHTML =
+    '<div class="stat"><div class="label">Avg Daily Spend</div>' +
+      '<div class="value">' + fmtMoney(avgDaily) + '</div>' +
+      '<div class="sub">day ' + dayOfMonth + ' of ' + daysInMonth + '</div></div>' +
+    '<div class="stat"><div class="label">Projected Month</div>' +
+      '<div class="value">' + fmtMoney(projected) + '</div>' +
+      '<div class="sub">avg × ' + daysInMonth + ' days</div></div>' +
+    '<div class="stat"><div class="label">vs Last Month</div>' + vsHtml + '</div>';
 }
 
 function timeRangeToBucket(val) {
@@ -792,37 +1080,33 @@ async function loadByDay() {
 
     // Populate period summary stats (aggregate across all rows)
     const psum = document.getElementById('period-summary');
-    if (rows.length === 0) {
-      psum.style.display = 'none';
-    } else {
-      let reqs = 0, tIn = 0, tOut = 0, tHit = 0, tCost = 0;
-      for (const r of rows) {
-        reqs += r.request_count || 0;
-        tIn  += r.tokens_in || 0;
-        tOut += r.tokens_out || 0;
-        tHit += r.cache_hit_tokens || 0;
-        tCost += r.est_usd || 0;
-      }
-
-      // Relative change badge for current-period comparisons
-      let changeHtml = '';
-      if (refCost !== null && refCost !== 0) {
-        const pct = ((tCost - refCost) / refCost * 100).toFixed(1);
-        const isLower = tCost < refCost;
-        const cls = isLower ? 'cmp-down' : 'cmp-up';
-        const sign = tCost >= refCost ? '+' : '';
-        changeHtml = ' <span class="' + cls + '">' + sign + pct + '%</span>';
-      }
-
-      psum.style.display = 'grid';
-      const estValClass = changeHtml ? 'value value-flex' : 'value';
-      psum.innerHTML =
-        '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(reqs)+'</div></div>'+
-        '<div class="stat"><div class="label">Tokens In</div><div class="value">'+(tIn >= 1e6 ? (tIn/1e6).toFixed(2)+'M' : fmtNum(tIn))+'</div></div>'+
-        '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+(tOut >= 1e6 ? (tOut/1e6).toFixed(2)+'M' : fmtNum(tOut))+'</div></div>'+
-        '<div class="stat"><div class="label">Cache Hits</div><div class="value">'+(tHit >= 1e6 ? (tHit/1e6).toFixed(2)+'M' : fmtNum(tHit))+'</div></div>'+
-        '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="' + estValClass + '">' + fmtMoney(tCost) + changeHtml + '</div></div>';
+    let reqs = 0, tIn = 0, tOut = 0, tHit = 0, tCost = 0;
+    for (const r of rows) {
+      reqs += r.request_count || 0;
+      tIn  += r.tokens_in || 0;
+      tOut += r.tokens_out || 0;
+      tHit += r.cache_hit_tokens || 0;
+      tCost += r.est_usd || 0;
     }
+
+    // Relative change badge for current-period comparisons
+    let changeHtml = '';
+    if (refCost !== null && refCost !== 0) {
+      const pct = ((tCost - refCost) / refCost * 100).toFixed(1);
+      const isLower = tCost < refCost;
+      const cls = isLower ? 'cmp-down' : 'cmp-up';
+      const sign = tCost >= refCost ? '+' : '';
+      changeHtml = ' <span class="' + cls + '">' + sign + pct + '%</span>';
+    }
+
+    psum.style.display = 'grid';
+    const estValClass = changeHtml ? 'value value-flex' : 'value';
+    psum.innerHTML =
+      '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(reqs)+'</div></div>'+
+      '<div class="stat"><div class="label">Tokens In</div><div class="value">'+(tIn >= 1e6 ? (tIn/1e6).toFixed(2)+'M' : fmtNum(tIn))+'</div></div>'+
+      '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+(tOut >= 1e6 ? (tOut/1e6).toFixed(2)+'M' : fmtNum(tOut))+'</div></div>'+
+      '<div class="stat"><div class="label">Cache Hits</div><div class="value">'+(tHit >= 1e6 ? (tHit/1e6).toFixed(2)+'M' : fmtNum(tHit))+'</div></div>'+
+      '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="' + estValClass + '">' + fmtMoney(tCost) + changeHtml + '</div></div>';
 
     // Build bucket→models map: { bucket: [{provider, model, cost}, ...] }
     const bucketMap = {};
@@ -833,6 +1117,8 @@ async function loadByDay() {
 
     for (const r of rows) {
       if (!bucketMap[r.bucket]) bucketMap[r.bucket] = [];
+      // Placeholder pad rows (no provider/model) only establish the bucket axis.
+      if (!r.provider && !r.model) continue;
       bucketMap[r.bucket].push({ provider: r.provider, model: r.model, cost: r.est_usd });
 
       const key = r.provider + '::' + r.model;
@@ -847,8 +1133,8 @@ async function loadByDay() {
     const labels = Object.keys(bucketMap).sort();
     const labelsForTicks = labels; // capture for tick callback
 
-    // Build one dataset per model
-    const datasets = modelKeys.map(key => {
+    // Build one dataset per model; if no usage yet, one zero series so axes still render.
+    let datasets = modelKeys.map(key => {
       const prov = modelProvider[key];
       const model = modelName[key];
       const color = modelColor(prov, model);
@@ -867,11 +1153,18 @@ async function loadByDay() {
       };
     });
 
-    // Sort datasets by order (first model key = highest spend)
-    datasets.sort((a, b) => a.order - b.order);
-
-    // Give the last (top) bar rounded top corners
-    if (datasets.length > 0) {
+    if (datasets.length === 0) {
+      datasets = [{
+        label: 'No data',
+        data: labels.map(() => 0),
+        backgroundColor: 'rgba(139,148,158,0.2)',
+        borderRadius: 4,
+        order: 0,
+      }];
+    } else {
+      // Sort datasets by order (first model key = highest spend)
+      datasets.sort((a, b) => a.order - b.order);
+      // Give the last (top) bar rounded top corners
       datasets[datasets.length - 1].borderRadius = 4;
     }
 
@@ -1264,6 +1557,7 @@ function stopPolling() {
 }
 function refreshAll() {
   loadHealth();
+  loadBalances();
   loadMTD();
   reloadGraphs();
 }
@@ -1290,13 +1584,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveCurrency(curSel.value);
     updateMoneyLabels();
     loadHealth();   // re-render started-at in new locale
+    loadBalances();
     reloadGraphs();
     loadMTD();
     loadSessions();
   });
 
   updateMoneyLabels();
+  ensureBalancesHiddenDefault();
+  applyBalancesVisibility();
   loadHealth();
+  loadBalances();
   loadMTD();
   reloadGraphs();
   loadStats();

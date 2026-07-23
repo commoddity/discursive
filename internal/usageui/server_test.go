@@ -76,6 +76,7 @@ func doJSON(t *testing.T, srv *Server, path string) *httptest.ResponseRecorder {
 	mux.HandleFunc("/api/by-provider", srv.handleByProvider)
 	mux.HandleFunc("/api/sessions", srv.handleSessions)
 	mux.HandleFunc("/api/health", srv.handleHealth)
+	mux.HandleFunc("/api/balances", srv.handleBalances)
 
 	req := httptest.NewRequest("GET", path, nil)
 	w := httptest.NewRecorder()
@@ -292,5 +293,52 @@ func TestAPIBadSince(t *testing.T) {
 	w := doJSON(t, srv, "/api/by-day?since=not-a-date")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for bad since, got %d", w.Code)
+	}
+}
+
+func TestAPIByDayModelEmptyPadsHourBuckets(t *testing.T) {
+	// Empty store — Today-style range must still return hour slots for the empty chart axis.
+	store, err := usage.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{addr: "", store: store}
+
+	since := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2026, 7, 23, 2, 30, 0, 0, time.UTC) // → 3 hour buckets (00, 01, 02)
+	path := "/api/by-day-model?since=" + since.Format(time.RFC3339) +
+		"&until=" + until.Format(time.RFC3339) + "&bucket=1h"
+
+	req := httptest.NewRequest("GET", path, nil)
+	w := httptest.NewRecorder()
+	srv.handleByDayModel(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", w.Code, w.Body.String())
+	}
+
+	var rows []struct {
+		Bucket   string  `json:"bucket"`
+		Provider string  `json:"provider"`
+		Model    string  `json:"model"`
+		EstUSD   float64 `json:"est_usd"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 padded hour buckets, got %d: %+v", len(rows), rows)
+	}
+	want := []string{
+		"2026-07-23T00:00:00",
+		"2026-07-23T01:00:00",
+		"2026-07-23T02:00:00",
+	}
+	for i, r := range rows {
+		if r.Bucket != want[i] {
+			t.Errorf("row %d bucket=%q want %q", i, r.Bucket, want[i])
+		}
+		if r.Provider != "" || r.Model != "" || r.EstUSD != 0 {
+			t.Errorf("row %d should be empty placeholder, got %+v", i, r)
+		}
 	}
 }
