@@ -11,7 +11,7 @@ const (
 	maxSchemaDepth       = 9
 
 	defaultMaxTokens = 32768
-	maxTokensCap     = 262144
+	maxTokensCap     = 512000
 
 	probeUserContent = "Hi"
 
