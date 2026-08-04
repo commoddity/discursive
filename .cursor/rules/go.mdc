@@ -64,7 +64,7 @@ internal/
 
 ## Inspiration directive (hard)
 
-- Product Go source and comments must **never** mention Claude Code or imply we
+- Product Go source and comments must **never** reference coding agent inspiration origin or imply we
   ship/vendor third-party agent source.
 - Never copy `examples/use-kimi-on-cursor` into the product module path; port
   behavior.

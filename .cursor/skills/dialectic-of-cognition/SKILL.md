@@ -14,8 +14,7 @@ Rules)** section of `.cursor/rules/general.mdc`. Read that section in full
 before proceeding — it is the authoritative process. What follows is the
 operational harness; the rules file defines the principles.
 
-**Store**: write only to `.cursor/rules/*.mdc`. Never create or edit
-`.claude/rules/`.
+**Store**: write only to `.cursor/rules/*.mdc`. Never create or edit another rules directory.
 
 This command has two modes. Run A and/or B as applicable.
 

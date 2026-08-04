@@ -36,7 +36,7 @@ the user before heavy work if they are still on a small model.
    **and** DeepSeek (`gateway.mdc` / `kimi.mdc` / `deepseek.mdc`).
 4. Upstream keys (Moonshot + DeepSeek) never in Cursor; gateway `sk-{alnum}` only;
    never log API keys. `log/slog` for product logging.
-5. Never vendor `examples/use-kimi-on-cursor` or name Claude Code in product source.
+5. Never vendor `examples/use-kimi-on-cursor` or name external coding agent products in product source.
 6. Read matching domain rules before coding (`gateway`, `kimi`, `deepseek`, `tunnel`,
    `cobra`, etc.).
 7. **Table-driven `go test`** — do not mark Acceptance criteria passed for new/changed

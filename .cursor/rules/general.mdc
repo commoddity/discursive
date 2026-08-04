@@ -5,13 +5,11 @@ alwaysApply: true
 
 # Discursive — Agent Rules
 
-This file is the always-on entry for Cursor (`.cursor/rules/general.mdc`) and
-for any coding agent that loads `CLAUDE.md` (symlink → here). Domain playbooks
-live beside it as `.cursor/rules/*.mdc`. Invocable workflows live in
-`.claude/skills/*/SKILL.md`.
+This file is the always-on entry for Cursor (`.cursor/rules/general.mdc`).
+Domain playbooks live beside it as `.cursor/rules/*.mdc`. Invocable workflows
+live in `.cursor/skills/*/SKILL.md`.
 
-**`.cursor/rules/` is the sole source of truth for rules.** There is no parallel
-`.claude/rules/` tree. Do not recreate one.
+**`.cursor/rules/` is the sole source of truth for rules.**
 
 **Hub → spoke (hard):** `general.mdc` is the always-on hub (routing, safety,
 cross-cutting). Domain playbooks are spokes (`.cursor/rules/*.mdc`). Do not
@@ -87,7 +85,7 @@ internal/
   doctor/            # health checks
 examples/use-kimi-on-cursor/  # behavioral reference
 .cursor/rules/       # this tree
-.claude/skills/      # invocable agent skills
+.cursor/skills/      # invocable agent skills
 ```
 
 ### Inspiration sources (hard)
@@ -103,9 +101,6 @@ examples/use-kimi-on-cursor/  # behavioral reference
  https://api-docs.deepseek.com/.
 - Thaura AI details: `.cursor/rules/thaura.mdc`. If incomplete, fetch
  https://thaura.ai/api-platform.
-- Never name Claude Code (or inspiration origin) in product source, comments,
-  user-facing copy, or commit messages for product code. Planning/rules may say
-  at most “inspired by Claude Code.”
 
 ### Build & Run (target)
 
@@ -255,7 +250,7 @@ Rules must improve over time. Follow Mao's dialectic of cognition:
 > *From the particular to the general, then from the general to the particular.*
 
 **Operational harness**: invoke `/dialectic-of-cognition` (see
-`.claude/skills/dialectic-of-cognition/SKILL.md`) after non-trivial sessions.
+`.cursor/skills/dialectic-of-cognition/SKILL.md`) after non-trivial sessions.
 **Principles** live in this section — the skill is only the procedure.
 
 **Trigger**: Apply this process when ANY of these are true:
@@ -367,11 +362,11 @@ details, and GitHub Actions deprecation guidance.
 
 | Skill | Path | Purpose |
 | ---- | --- | ---- |
-| `/dialectic-of-cognition` | `.claude/skills/dialectic-of-cognition/SKILL.md` | Capture session learnings into `.cursor/rules/*.mdc` |
-| `/task-1-plan` | `.claude/skills/task-1-plan/SKILL.md` | Plan/re-plan one `planning/TXX` task |
-| `/task-2-execute` | `.claude/skills/task-2-execute/SKILL.md` | Execute one phase task until AC pass; hand off to `/task-3-complete` |
-| `/task-3-complete` | `.claude/skills/task-3-complete/SKILL.md` | Verify + dialectic + INDEX `✅` + commit + push (default) + manual test + next `<stub-stem>` branch |
-| `/audit-rules` | `.claude/skills/audit-rules/SKILL.md` | Read-only audit of rules + skills vs codebase |
+| `/dialectic-of-cognition` | `.cursor/skills/dialectic-of-cognition/SKILL.md` | Capture session learnings into `.cursor/rules/*.mdc` |
+| `/task-1-plan` | `.cursor/skills/task-1-plan/SKILL.md` | Plan/re-plan one `planning/TXX` task |
+| `/task-2-execute` | `.cursor/skills/task-2-execute/SKILL.md` | Execute one phase task until AC pass; hand off to `/task-3-complete` |
+| `/task-3-complete` | `.cursor/skills/task-3-complete/SKILL.md` | Verify + dialectic + INDEX `✅` + commit + push (default) + manual test + next `<stub-stem>` branch |
+| `/audit-rules` | `.cursor/skills/audit-rules/SKILL.md` | Read-only audit of rules + skills vs codebase |
 
 ### Knowledge stores
 

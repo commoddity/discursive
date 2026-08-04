@@ -1,7 +1,7 @@
 ---
 name: audit-rules
 description: >
-  Full audit of all .cursor/rules/*.mdc and .claude/skills/*/SKILL.md files
+  Full audit of all .cursor/rules/*.mdc and .cursor/skills/*/SKILL.md files
   against the current codebase. Verifies paths, package names, skill
   frontmatter, and routing completeness. Read-only — never auto-removes content;
   all changes require human approval.
@@ -11,12 +11,12 @@ allowed-tools: Bash, Read, Grep, Glob
 
 # /audit-rules — Full rules + skills audit against current codebase
 
-You are auditing ALL `.cursor/rules/*.mdc` rule files AND `.claude/skills/*/SKILL.md`
+You are auditing ALL `.cursor/rules/*.mdc` rule files AND `.cursor/skills/*/SKILL.md`
 skill files for mechanical accuracy against the live codebase. This is a
 **verification pass**, not a cleanup pass.
 
 **Principles**: `.cursor/rules/general.mdc`
-**Store**: `.cursor/rules/*.mdc` only — never `.claude/rules/`
+**Store**: `.cursor/rules/*.mdc` only
 
 ## CRITICAL CONSTRAINTS
 
@@ -43,7 +43,7 @@ For each `.cursor/rules/*.mdc`: paths, package names, problem-class tables,
 
 ### Skills
 
-For each `.claude/skills/*/SKILL.md`: frontmatter, path refs, no `.claude/rules/`.
+For each `.cursor/skills/*/SKILL.md`: frontmatter, path refs.
 
 ---
 
@@ -68,9 +68,7 @@ For each `.claude/skills/*/SKILL.md`: frontmatter, path refs, no `.claude/rules/
 ## Phase 3 — Structural audit
 
 - Routing Map + table in `general.mdc` vs actual `.cursor/rules/*.mdc`
-- Skills inventory in `general.mdc` vs `.claude/skills/*/`
-- `CLAUDE.md` must be symlink → `.cursor/rules/general.mdc`
-- `.claude/rules/` must not exist
+- Skills inventory in `general.mdc` vs `.cursor/skills/*/`
 - Expected spokes: `general`, `go`, `cobra`, `kimi`, `deepseek`, `gateway`,
   `cursor-settings`, `tunnel`, `unix-packaging`, `usage`
 - `/task-3-complete` must document push-by-default, `--no-push`, and Manual test
@@ -100,4 +98,4 @@ missing skills for common workflows.
 ## Output format
 
 Use the standard audit tables (BROKEN / PENDING_SCAFFOLD / STALE / MISSING)
-plus Summary counts. Include Layout: CLAUDE.md symlink OK/BROKEN.
+plus Summary counts.

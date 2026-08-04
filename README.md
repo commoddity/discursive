@@ -310,7 +310,7 @@ internal/
   usage/                  # Pricing tables, token/cost store, slog helpers
   usageui/               # Embedded usage dashboard (HTTP, Chart.js)
 .cursor/rules/            # Agent conventions
-.claude/skills/           # Invocable workflows
+.cursor/skills/           # Invocable workflows
 planning/          # MVP task sequence (T01–T10)
 ```
 

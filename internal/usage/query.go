@@ -309,7 +309,7 @@ type SessionInfo struct {
 // QueryMonthToDate returns a DailySummary for the current month (UTC).
 func (s *Store) QueryMonthToDate() (DailySummary, error) {
 	now := time.Now().UTC()
-	start := now.Format("2006-01-01")
+	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 	rows, err := s.db.Query(
 		`SELECT id, session_id, timestamp, provider, model,
 		 prompt_tokens, completion_tokens, cache_hit_tokens, cache_miss_tokens,
