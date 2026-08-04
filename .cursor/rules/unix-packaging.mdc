@@ -67,4 +67,14 @@ keep data next to the executable when a marker is present.
 | ----- | ---- | ----- |
 | Table-driven path tests skip Linux (or macOS) cases on the other host | Resolution reads `runtime.GOOS` / env with no injection seam | Pass GOOS / HOME / XDG / exe dir via an opts struct so both platforms are covered in unit tests |
 
-<!-- last-verified: 2026-07 -->
+### `Background daemon stops unexpectedly`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Background daemon process stops without explicit user command (appears to "stop on its own") | External OS signals (`SIGTERM`, `SIGHUP`) sent by system or other processes (e.g., IDE lifecycle, macOS process management). Normal signal handling cannot distinguish between "user wants stop" and "system is cleaning up". | Implement explicit coordination mechanism (e.g., stop file polling). Background daemon ignores `SIGTERM` and `SIGHUP` (or defers them), and instead polls for stop file every 500ms. Stop command writes stop file, waits for process to exit, then cleans up artifacts. |
+
+### `Stop command fails after implementing stop-file coordination`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| After implementing stop file polling, `discursive stop` appears to not kill the process | Two issues: (1) stop command deletes the stop file immediately after writing, before polling gateway can detect it; (2) signal handling changes made background daemon ignore `SIGTERM` (for defense against external signals), but stop command still only sends `SIGTERM`. | Stop command must write stop file, wait for processes to exit (poll `processAlive` up to timeout), then fall back to `SIGKILL` if needed, and **only then** clean up stop file and PID artifacts. Background daemon must check for stop file immediately on startup, not just after initial delay. |

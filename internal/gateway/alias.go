@@ -15,6 +15,7 @@ const (
 	PolicyK2
 	PolicyDeepSeek
 	PolicyThaura
+	PolicyZai
 )
 
 // Route is the resolved alias → provider + real model + thinking policy.
@@ -40,6 +41,8 @@ func ListAdvertisedModels() []AdvertisedModel {
 		{ID: "o1", Provider: config.ProviderDeepSeek},
 		{ID: "o3-mini", Provider: config.ProviderDeepSeek},
 		{ID: "gpt-5-nano", Provider: config.ProviderThaura},
+		{ID: "gpt-4.1-turbo", Provider: config.ProviderZai},
+		{ID: "gpt-4.1", Provider: config.ProviderZai},
 	}
 }
 
@@ -65,6 +68,14 @@ func ResolveModel(requested string) (Route, error) {
 		return Route{config.ProviderThaura, "thaura", PolicyThaura}, nil
 	case "thaura":
 		return Route{config.ProviderThaura, "thaura", PolicyThaura}, nil
+	case "gpt-4.1-turbo":
+		return Route{config.ProviderZai, "glm-5.2", PolicyZai}, nil
+	case "gpt-4.1":
+		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil
+	case "glm-5.2":
+		return Route{config.ProviderZai, "glm-5.2", PolicyZai}, nil
+	case "glm-4.7":
+		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil
 	default:
 		return Route{}, fmt.Errorf("unknown model alias %q", requested)
 	}
@@ -80,6 +91,22 @@ func isDeepSeekValidReasoningEffort(v any) bool {
 	// (mapped upstream by DeepSeek / by our normalizer before send).
 	switch s {
 	case "high", "max", "low", "medium", "xhigh":
+		return true
+	default:
+		return false
+	}
+}
+
+func isZaiValidReasoningEffort(v any) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	s = strings.TrimSpace(s)
+	// Z.AI accepts none|minimal|low|medium|high|xhigh|max.
+	// low|medium → high and xhigh → max in normalizer.
+	switch s {
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max":
 		return true
 	default:
 		return false

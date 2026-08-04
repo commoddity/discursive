@@ -152,6 +152,32 @@ func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
 	case PolicyThaura:
 		delete(body, "thinking")
 		delete(body, "reasoning_effort")
+	case PolicyZai:
+		// glm-5.2: thinking + reasoning_effort (like DeepSeek).
+		// glm-4.7: thinking on/off only (no reasoning_effort).
+		if route.RealModel == "glm-4.7" {
+			delete(body, "reasoning_effort")
+			if effort == "" || effort == config.EffortOff {
+				body["thinking"] = map[string]any{"type": "disabled"}
+			} else {
+				body["thinking"] = map[string]any{"type": "enabled"}
+			}
+		} else {
+			// glm-5.2 and other Z.AI models supporting reasoning_effort.
+			if effort == "" || effort == config.EffortOff {
+				body["thinking"] = map[string]any{"type": "disabled"}
+				delete(body, "reasoning_effort")
+			} else {
+				norm, err := config.NormalizeReasoningEffort(route.RealModel, effort)
+				if err != nil || norm == config.EffortOff {
+					body["thinking"] = map[string]any{"type": "disabled"}
+					delete(body, "reasoning_effort")
+				} else {
+					body["thinking"] = map[string]any{"type": "enabled"}
+					body["reasoning_effort"] = norm
+				}
+			}
+		}
 	}
 }
 
@@ -171,6 +197,16 @@ func effectiveEffort(body map[string]any, route Route) string {
 		}
 		return config.EffortOff
 	case PolicyDeepSeek:
+		if thinking, ok := body["thinking"].(map[string]any); ok {
+			if thinking["type"] == "disabled" {
+				return config.EffortOff
+			}
+		}
+		if s, ok := body["reasoning_effort"].(string); ok && s != "" {
+			return s
+		}
+		return config.EffortOff
+	case PolicyZai:
 		if thinking, ok := body["thinking"].(map[string]any); ok {
 			if thinking["type"] == "disabled" {
 				return config.EffortOff
@@ -204,6 +240,11 @@ func stripUnsupportedParams(body map[string]any, route Route) {
 		}
 	case PolicyThaura:
 		delete(body, "reasoning_effort")
+	case PolicyZai:
+		// Validate reasoning_effort if present — same normalization as DeepSeek.
+		if !isZaiValidReasoningEffort(body["reasoning_effort"]) {
+			delete(body, "reasoning_effort")
+		}
 	}
 
 	if rf, ok := body["response_format"].(map[string]any); ok {

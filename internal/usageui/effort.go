@@ -97,6 +97,8 @@ func providerLabel(p config.Provider) string {
 		return "DeepSeek"
 	case config.ProviderThaura:
 		return "Thaura"
+	case config.ProviderZai:
+		return "Z.AI"
 	default:
 		return string(p)
 	}

@@ -19,6 +19,7 @@ type Flags struct {
 	Moonshot  string
 	Deepseek  string
 	Thaura    string
+	Zai       string
 	Tunnel    string
 	PublicURL string
 }
@@ -35,6 +36,7 @@ func NewCmd(portable func() bool) *cobra.Command {
 		moonshotFlag  string
 		deepseekFlag  string
 		thauraFlag    string
+		zaiFlag       string
 		tunnelFlag    string
 		publicURLFlag string
 	)
@@ -51,6 +53,7 @@ Run this once, or let 'discursive start' trigger it automatically.`,
 				Moonshot:  moonshotFlag,
 				Deepseek:  deepseekFlag,
 				Thaura:    thauraFlag,
+				Zai:       zaiFlag,
 				Tunnel:    tunnelFlag,
 				PublicURL: publicURLFlag,
 			}, Opts{ForceAll: true})
@@ -59,6 +62,7 @@ Run this once, or let 'discursive start' trigger it automatically.`,
 	cmd.Flags().StringVar(&moonshotFlag, "moonshot-key", "", "Moonshot/Kimi API key (omit to prompt)")
 	cmd.Flags().StringVar(&deepseekFlag, "deepseek-key", "", "DeepSeek API key (omit to prompt)")
 	cmd.Flags().StringVar(&thauraFlag, "thaura-key", "", "Thaura AI API key (optional, omit to skip)")
+	cmd.Flags().StringVar(&zaiFlag, "zai-key", "", "Z.AI API key (optional, omit to skip)")
 	cmd.Flags().StringVar(&tunnelFlag, "tunnel-token", "", "Cloudflare tunnel token (omit to prompt)")
 	cmd.Flags().StringVar(&publicURLFlag, "public-url", "", "public HTTPS base URL ending in /v1 (omit to prompt)")
 	return cmd
@@ -93,6 +97,7 @@ func RunSetup(cmd *cobra.Command, portable func() bool, flags Flags, opts Opts) 
 			"has_moonshot_key", s.HasMoonshotKey(),
 			"has_deepseek_key", s.HasDeepSeekKey(),
 			"has_thaura_key", s.HasThauraKey(),
+			"has_zai_key", s.HasZaiKey(),
 			"has_tunnel_token", s.HasTunnelToken(),
 		)
 		return nil
@@ -160,6 +165,13 @@ func RunSetup(cmd *cobra.Command, portable func() bool, flags Flags, opts Opts) 
 		}
 	}
 
+	// Z.AI is optional — only save if a flag was explicitly set.
+	if flags.Zai != "" {
+		if err := s.SetZaiKey(dataRoot, flags.Zai); err != nil {
+			return err
+		}
+	}
+
 	if needTunnel {
 		step++
 		tunnelTok, err := w.AskSecret(step, total, "☁️", "Cloudflare tunnel token",
@@ -206,6 +218,7 @@ func RunSetup(cmd *cobra.Command, portable func() bool, flags Flags, opts Opts) 
 		"has_moonshot_key", s.HasMoonshotKey(),
 		"has_deepseek_key", s.HasDeepSeekKey(),
 		"has_thaura_key", s.HasThauraKey(),
+		"has_zai_key", s.HasZaiKey(),
 		"has_tunnel_token", s.HasTunnelToken(),
 		"gateway_key", s.GatewayKey,
 		"gateway_key_masked", crypto.MaskSecret(s.GatewayKey),

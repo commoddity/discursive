@@ -121,6 +121,45 @@ func TestEstimateUSD(t *testing.T) {
 			tokens:   UsageTokens{PromptTokens: 100},
 			wantErr:  true,
 		},
+		{
+			name:     "zai_glm52_mixed",
+			provider: config.ProviderZai,
+			model:    "glm-5.2",
+			tokens: UsageTokens{
+				CacheHitTokens:   1_000_000,
+				CacheMissTokens:  500_000,
+				CompletionTokens: 100_000,
+			},
+			want: perMillion(1_000_000, 0.26) + perMillion(500_000, 1.40) + perMillion(100_000, 4.40),
+		},
+		{
+			name:     "zai_glm52_cache_hit_only",
+			provider: config.ProviderZai,
+			model:    "glm-5.2",
+			tokens:   UsageTokens{CacheHitTokens: 1_000_000},
+			want:     0.26,
+		},
+		{
+			name:     "zai_glm52_input_only",
+			provider: config.ProviderZai,
+			model:    "glm-5.2",
+			tokens:   UsageTokens{PromptTokens: 1_000_000},
+			want:     1.40,
+		},
+		{
+			name:     "zai_glm47_input_output",
+			provider: config.ProviderZai,
+			model:    "glm-4.7",
+			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
+			want:     0.60 + 2.20,
+		},
+		{
+			name:     "unknown_zai_model",
+			provider: config.ProviderZai,
+			model:    "glm-unknown",
+			tokens:   UsageTokens{PromptTokens: 100},
+			wantErr:  true,
+		},
 	}
 
 	for _, tt := range tests {

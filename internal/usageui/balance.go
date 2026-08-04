@@ -18,24 +18,39 @@ import (
 type KeySource struct {
 	Moonshot func() (string, bool) // key, ok
 	DeepSeek func() (string, bool)
+	Zai      func() (string, bool)
 }
 
 // ProviderBalance is one provider's balance for the dashboard.
 // Prefer AvailableUSD for threshold coloring. When only a non-USD amount is
-// known (DeepSeek CNY without FX), Amount+Currency are set and AvailableUSD is nil.
+// known (DeepSeek CNY without FX, Z.AI credits), Amount+Currency are set and
+// AvailableUSD is nil. UsagePercent is the consumed quota percentage when known
+// (Z.AI coding-plan credits).
 type ProviderBalance struct {
 	Configured   bool     `json:"configured"`
 	AvailableUSD *float64 `json:"available_usd"` // nil when unavailable / needs client FX
 	Amount       *float64 `json:"amount,omitempty"`
 	Currency     string   `json:"currency,omitempty"`
-	IsAvailable  *bool    `json:"is_available,omitempty"` // DeepSeek only
-	Error        string   `json:"error,omitempty"`
+	UsagePercent *float64 `json:"usage_percent,omitempty"`
+	// Credits holds a per-bucket breakdown when the provider is credit-based
+	// (Z.AI GLM Coding Plan). Each entry is {label, remaining, percentage}.
+	Credits     []CreditBucket `json:"credits,omitempty"`
+	IsAvailable *bool          `json:"is_available,omitempty"` // DeepSeek only
+	Error       string         `json:"error,omitempty"`
+}
+
+// CreditBucket is one quota window (e.g. 5-hour vs weekly) for credit-based providers.
+type CreditBucket struct {
+	Label      string  `json:"label"`
+	Remaining  float64 `json:"remaining"`
+	Percentage float64 `json:"percentage"`
 }
 
 // BalancesResponse is the /api/balances payload.
 type BalancesResponse struct {
 	Moonshot ProviderBalance `json:"moonshot"`
 	DeepSeek ProviderBalance `json:"deepseek"`
+	Zai      ProviderBalance `json:"zai"`
 }
 
 type deepSeekBalanceInfo struct {
@@ -56,9 +71,9 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 		client = &http.Client{Timeout: 8 * time.Second}
 	}
 
-	var moonshot, deepseek ProviderBalance
+	var moonshot, deepseek, zai ProviderBalance
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		moonshot = fetchMoonshotBalance(client, s.keySource.Moonshot)
@@ -67,9 +82,13 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 		defer wg.Done()
 		deepseek = fetchDeepSeekBalance(client, s.keySource.DeepSeek)
 	}()
+	go func() {
+		defer wg.Done()
+		zai = fetchZaiBalance(client, s.keySource.Zai)
+	}()
 	wg.Wait()
 
-	writeJSON(w, BalancesResponse{Moonshot: moonshot, DeepSeek: deepseek})
+	writeJSON(w, BalancesResponse{Moonshot: moonshot, DeepSeek: deepseek, Zai: zai})
 }
 
 func fetchMoonshotBalance(client *http.Client, getKey func() (string, bool)) ProviderBalance {
@@ -213,6 +232,112 @@ func fetchUSDtoCNY(client *http.Client) (float64, error) {
 		return 0, fmt.Errorf("no CNY rate")
 	}
 	return rate, nil
+}
+
+func fetchZaiBalance(client *http.Client, getKey func() (string, bool)) ProviderBalance {
+	if getKey == nil {
+		return ProviderBalance{Configured: false}
+	}
+	key, ok := getKey()
+	if !ok || key == "" {
+		return ProviderBalance{Configured: false}
+	}
+
+	// GLM Coding Plan quota API (credits-based, not USD balance).
+	// Docs: https://docs.z.ai/devpack/overview
+	url := "https://api.z.ai/api/monitor/usage/quota/limit"
+	body, status, err := getJSON(client, url, key)
+	if err != nil {
+		return ProviderBalance{Configured: true, Error: err.Error()}
+	}
+	if status == http.StatusUnauthorized {
+		return ProviderBalance{Configured: true, Error: "unauthorized"}
+	}
+	if status != http.StatusOK {
+		return ProviderBalance{Configured: true, Error: fmt.Sprintf("upstream status %d", status)}
+	}
+
+	var resp struct {
+		Code    int    `json:"code"`
+		Msg     string `json:"msg"`
+		Success bool   `json:"success"`
+		Data    struct {
+			Level  string           `json:"level"`
+			Limits []zaiCreditLimit `json:"limits"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return ProviderBalance{Configured: true, Error: "invalid response"}
+	}
+	if resp.Code != 200 || !resp.Success {
+		return ProviderBalance{Configured: true, Error: fmt.Sprintf("code %d: %s", resp.Code, resp.Msg)}
+	}
+
+	limits, ok := collectZaiCreditBuckets(resp.Data.Limits)
+	if !ok {
+		return ProviderBalance{Configured: true, Error: "no credit quota"}
+	}
+
+	// Primary (display headline) bucket: prefer weekly, else 5-hour.
+	primary := limits[0]
+	for _, l := range limits {
+		if l.Label == "Weekly" {
+			primary = l
+			break
+		}
+	}
+	return ProviderBalance{
+		Configured:   true,
+		Amount:       &primary.Remaining,
+		Currency:     "credits",
+		UsagePercent: &primary.Percentage,
+		Credits:      limits,
+	}
+}
+
+type zaiCreditLimit struct {
+	Type          string `json:"type"`
+	Unit          int    `json:"unit"`
+	Number        int    `json:"number"`
+	Usage         int    `json:"usage"`
+	CurrentValue  int    `json:"currentValue"`
+	Remaining     int    `json:"remaining"`
+	Percentage    int    `json:"percentage"`
+	NextResetTime int64  `json:"nextResetTime"`
+}
+
+// collectZaiCreditBuckets maps the Z.AI credit limits to labeled buckets and
+// returns them ordered weekly-first when both present (primary headline bucket
+// is the weekly allowance). The weekly bucket has a larger total allowance than
+// the 5-hour bucket.
+func collectZaiCreditBuckets(limits []zaiCreditLimit) ([]CreditBucket, bool) {
+	var buckets []CreditBucket
+	for _, l := range limits {
+		if l.Type != "CREDIT_LIMIT" {
+			continue
+		}
+		label := "5-Hour"
+		// Larger total allowance => weekly (per Z.AI plan docs: 5h=2k, weekly=10k on Lite).
+		if l.Usage > 2000 {
+			label = "Weekly"
+		}
+		buckets = append(buckets, CreditBucket{
+			Label:      label,
+			Remaining:  float64(l.Remaining),
+			Percentage: float64(l.Percentage),
+		})
+	}
+	if len(buckets) == 0 {
+		return nil, false
+	}
+	// Weekly first when present.
+	for i := 1; i < len(buckets); i++ {
+		if buckets[i].Label == "Weekly" {
+			buckets[0], buckets[i] = buckets[i], buckets[0]
+			break
+		}
+	}
+	return buckets, true
 }
 
 func getJSON(client *http.Client, url, bearer string) ([]byte, int, error) {

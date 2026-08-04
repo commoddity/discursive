@@ -13,14 +13,17 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 		moonshot     string
 		deepseek     string
 		thaura       string
+		zai          string
 		wantMoonshot bool
 		wantDeepseek bool
 		wantThaura   bool
+		wantZai      bool
 	}{
 		{name: "both_keys", moonshot: "sk-moon-aaa", deepseek: "sk-deep-bbb", wantMoonshot: true, wantDeepseek: true},
 		{name: "moonshot_only", moonshot: "sk-moon-only", wantMoonshot: true},
 		{name: "deepseek_only", deepseek: "sk-deep-only", wantDeepseek: true},
 		{name: "thaura_only", thaura: "sk-thaur-aaa", wantThaura: true},
+		{name: "zai_only", zai: "sk-zai-ccc", wantZai: true},
 		{name: "neither"},
 	}
 	for _, tt := range tests {
@@ -50,6 +53,11 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if tt.zai != "" {
+				if err := s.SetZaiKey(dataRoot, tt.zai); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := Save(dataRoot, s); err != nil {
 				t.Fatal(err)
 			}
@@ -70,6 +78,9 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 			if loaded.HasThauraKey() != tt.wantThaura {
 				t.Fatalf("has thaura=%v want %v", loaded.HasThauraKey(), tt.wantThaura)
 			}
+			if loaded.HasZaiKey() != tt.wantZai {
+				t.Fatalf("has zai=%v want %v", loaded.HasZaiKey(), tt.wantZai)
+			}
 
 			gotM, err := loaded.GetMoonshotKey(dataRoot)
 			if err != nil {
@@ -83,9 +94,14 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			gotZ, err := loaded.GetZaiKey(dataRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
 			assertOptional(t, gotM, tt.moonshot, tt.wantMoonshot)
 			assertOptional(t, gotD, tt.deepseek, tt.wantDeepseek)
 			assertOptional(t, gotT, tt.thaura, tt.wantThaura)
+			assertOptional(t, gotZ, tt.zai, tt.wantZai)
 
 			if tt.moonshot != "" && loaded.MoonshotKeyEncrypted != nil {
 				if *loaded.MoonshotKeyEncrypted == base64.StdEncoding.EncodeToString([]byte(tt.moonshot)) {
@@ -100,6 +116,11 @@ func TestLoadSaveRoundTripBothKeys(t *testing.T) {
 			if tt.thaura != "" && loaded.ThauraKeyEncrypted != nil {
 				if *loaded.ThauraKeyEncrypted == base64.StdEncoding.EncodeToString([]byte(tt.thaura)) {
 					t.Fatal("thaura ciphertext is plaintext base64")
+				}
+			}
+			if tt.zai != "" && loaded.ZaiKeyEncrypted != nil {
+				if *loaded.ZaiKeyEncrypted == base64.StdEncoding.EncodeToString([]byte(tt.zai)) {
+					t.Fatal("zai ciphertext is plaintext base64")
 				}
 			}
 

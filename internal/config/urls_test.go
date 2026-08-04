@@ -27,6 +27,11 @@ func TestUpstreamBaseURLDefaultsAndEnv(t *testing.T) {
 			want:     DefaultThauraBaseURL,
 		},
 		{
+			name:     "zai_default",
+			provider: ProviderZai,
+			want:     DefaultZaiBaseURL,
+		},
+		{
 			name:     "unknown_provider",
 			provider: Provider("openai"),
 			wantErr:  true,
@@ -72,6 +77,11 @@ func TestChatCompletionsURLNoDoubleV1(t *testing.T) {
 			name:     "thaura_default",
 			provider: ProviderThaura,
 			want:     "https://backend.thaura.ai/v1/chat/completions",
+		},
+		{
+			name:     "zai_default",
+			provider: ProviderZai,
+			want:     "https://api.z.ai/api/coding/paas/v4/chat/completions",
 		},
 	}
 

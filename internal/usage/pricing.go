@@ -15,6 +15,7 @@ import (
 //
 //	https://api-docs.deepseek.com/quick_start/pricing
 //	https://thaura.ai/api-platform
+//	https://docs.z.ai/guides/overview/pricing
 
 var ErrUnknownModel = errors.New("unknown model for pricing")
 
@@ -59,6 +60,17 @@ var thauraPricing = map[string]thauraRates{
 	"thaura": {0.50, 2.00},
 }
 
+// zaiRates USD per 1M tokens (cache hit, input, output).
+// Source: https://docs.z.ai/guides/overview/pricing
+type zaiRates struct {
+	cacheHit, input, output float64
+}
+
+var zaiPricing = map[string]zaiRates{
+	"glm-5.2": {0.26, 1.40, 4.40},
+	"glm-4.7": {0.11, 0.60, 2.20},
+}
+
 // cursorComparisonUSD is REFERENCE ONLY — never used by EstimateUSD.
 // Peer reading for CLI/docs (T09); source: usage.mdc Cursor comparison table.
 var cursorComparisonUSD = struct {
@@ -100,6 +112,15 @@ func EstimateUSD(provider config.Provider, model string, u UsageTokens) (float64
 		}
 		// No cache split: full prompt billed at input rate.
 		return perMillion(u.PromptTokens, r.input) +
+			perMillion(u.CompletionTokens, r.output), nil
+	case config.ProviderZai:
+		r, ok := zaiPricing[model]
+		if !ok {
+			return 0, fmt.Errorf("%w: zai %q", ErrUnknownModel, model)
+		}
+		hit, miss := splitPrompt(u)
+		return perMillion(hit, r.cacheHit) +
+			perMillion(miss, r.input) +
 			perMillion(u.CompletionTokens, r.output), nil
 	default:
 		return 0, fmt.Errorf("%w: provider %q", ErrUnknownModel, provider)

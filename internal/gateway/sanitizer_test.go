@@ -609,6 +609,74 @@ func assertNoImageURL(t *testing.T, v any) {
 	}
 }
 
+func TestSanitizeRequest_ZaiEffortFromConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		effort     string
+		wantThink  string
+		wantEffort any // nil means absent
+		logEffort  string
+	}{
+		{name: "off", effort: "off", wantThink: "disabled", wantEffort: nil, logEffort: "off"},
+		{name: "high", effort: "high", wantThink: "enabled", wantEffort: "high", logEffort: "high"},
+		{name: "max", effort: "max", wantThink: "enabled", wantEffort: "max", logEffort: "max"},
+		{name: "medium maps to high", effort: "medium", wantThink: "enabled", wantEffort: "high", logEffort: "high"},
+		{name: "xhigh maps to max", effort: "xhigh", wantThink: "enabled", wantEffort: "max", logEffort: "max"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.EffortByModel = map[string]string{config.ModelZaiGLM52: tt.effort}
+			body := map[string]any{
+				"model":    "glm-5.2",
+				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+			}
+			res, err := SanitizeRequest(body, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			thinking, ok := res.Body["thinking"].(map[string]any)
+			if !ok || thinking["type"] != tt.wantThink {
+				t.Fatalf("thinking: %v", res.Body["thinking"])
+			}
+			got, has := res.Body["reasoning_effort"]
+			if tt.wantEffort == nil {
+				if has {
+					t.Fatalf("expected no reasoning_effort, got %v", got)
+				}
+			} else if got != tt.wantEffort {
+				t.Fatalf("reasoning_effort: %v want %v", got, tt.wantEffort)
+			}
+			if res.Effort != tt.logEffort {
+				t.Fatalf("Effort: %q want %q", res.Effort, tt.logEffort)
+			}
+		})
+	}
+}
+
+func TestSanitizeRequest_ZaiGLM47Thinking(t *testing.T) {
+	// glm-4.7 uses thinking type only, no reasoning_effort
+	cfg := testConfig()
+	cfg.EffortByModel = map[string]string{config.ModelZaiGLM52: "off"}
+
+	// default = off
+	body := map[string]any{
+		"model":    "glm-4.7",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}
+	res, err := SanitizeRequest(body, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thinking, ok := res.Body["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "disabled" {
+		t.Fatalf("thinking: %v", res.Body["thinking"])
+	}
+	if _, has := res.Body["reasoning_effort"]; has {
+		t.Fatal("reasoning_effort should be absent for glm-4.7")
+	}
+}
+
 func TestParseUsageObject(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -25,6 +25,10 @@ func TestResolveModel(t *testing.T) {
 		{name: "real deepseek flash", request: "deepseek-v4-flash", provider: config.ProviderDeepSeek, model: "deepseek-v4-flash", policy: PolicyDeepSeek},
 		{name: "thaura alias", request: "gpt-5-nano", provider: config.ProviderThaura, model: "thaura", policy: PolicyThaura},
 		{name: "real thaura", request: "thaura", provider: config.ProviderThaura, model: "thaura", policy: PolicyThaura},
+		{name: "zai glm-5.2 alias", request: "gpt-4.1-turbo", provider: config.ProviderZai, model: "glm-5.2", policy: PolicyZai},
+		{name: "zai glm-4.7 alias", request: "gpt-4.1", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
+		{name: "real glm-5.2", request: "glm-5.2", provider: config.ProviderZai, model: "glm-5.2", policy: PolicyZai},
+		{name: "real glm-4.7", request: "glm-4.7", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
 		{name: "unknown", request: "gpt-3.5-turbo", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -48,10 +52,10 @@ func TestResolveModel(t *testing.T) {
 
 func TestListAdvertisedModels(t *testing.T) {
 	list := ListAdvertisedModels()
-	if len(list) != 5 {
-		t.Fatalf("len=%d want 5", len(list))
+	if len(list) != 7 {
+		t.Fatalf("len=%d want 7", len(list))
 	}
-	var sawMoonshot, sawDeepSeek, sawThaura bool
+	var sawMoonshot, sawDeepSeek, sawThaura, sawZai bool
 	for i, m := range list {
 		if _, err := ResolveModel(m.ID); err != nil {
 			t.Fatalf("list[%d] id %q not resolvable: %v", i, m.ID, err)
@@ -65,8 +69,11 @@ func TestListAdvertisedModels(t *testing.T) {
 		if m.Provider == config.ProviderThaura {
 			sawThaura = true
 		}
+		if m.Provider == config.ProviderZai {
+			sawZai = true
+		}
 	}
-	if !sawMoonshot || !sawDeepSeek || !sawThaura {
-		t.Fatal("expected all three providers in advertise list")
+	if !sawMoonshot || !sawDeepSeek || !sawThaura || !sawZai {
+		t.Fatal("expected all four providers in advertise list")
 	}
 }

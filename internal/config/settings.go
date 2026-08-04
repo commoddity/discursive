@@ -22,6 +22,7 @@ type AppSettings struct {
 	MoonshotKeyEncrypted *string           `json:"moonshotKeyEncrypted,omitempty"`
 	DeepSeekKeyEncrypted *string           `json:"deepseekKeyEncrypted,omitempty"`
 	ThauraKeyEncrypted   *string           `json:"thauraKeyEncrypted,omitempty"`
+	ZaiKeyEncrypted      *string           `json:"zaiKeyEncrypted,omitempty"`
 	GatewayKey           string            `json:"gatewayKey"`
 	ReasoningEffort      map[string]string `json:"reasoningEffort,omitempty"` // real model id → effort
 }
@@ -204,6 +205,33 @@ func (s *AppSettings) GetThauraKey(dataRoot string) (*string, error) {
 // HasThauraKey reports whether an encrypted Thaura key is present.
 func (s AppSettings) HasThauraKey() bool {
 	return s.ThauraKeyEncrypted != nil && *s.ThauraKeyEncrypted != ""
+}
+
+// SetZaiKey encrypts and stores the Z.AI API key.
+func (s *AppSettings) SetZaiKey(dataRoot, plaintext string) error {
+	enc, err := crypto.Protect(dataRoot, plaintext)
+	if err != nil {
+		return err
+	}
+	s.ZaiKeyEncrypted = &enc
+	return nil
+}
+
+// GetZaiKey decrypts the stored Z.AI key, or nil if unset.
+func (s *AppSettings) GetZaiKey(dataRoot string) (*string, error) {
+	if s.ZaiKeyEncrypted == nil || *s.ZaiKeyEncrypted == "" {
+		return nil, nil
+	}
+	plain, err := crypto.Unprotect(dataRoot, *s.ZaiKeyEncrypted)
+	if err != nil {
+		return nil, err
+	}
+	return &plain, nil
+}
+
+// HasZaiKey reports whether an encrypted Z.AI key is present.
+func (s AppSettings) HasZaiKey() bool {
+	return s.ZaiKeyEncrypted != nil && *s.ZaiKeyEncrypted != ""
 }
 
 // SetTunnelToken encrypts and stores the Cloudflare tunnel token.

@@ -107,6 +107,18 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 		}(),
 	})
 
+	// 3a. zai_key_present
+	checks = append(checks, Check{
+		Name: "zai_key_present",
+		OK:   settings.HasZaiKey(),
+		Detail: func() string {
+			if settings.HasZaiKey() {
+				return ""
+			}
+			return "optional: Z.AI API key not saved (run set --zai-key to enable the gpt-4.1-turbo / gpt-4.1 aliases)"
+		}(),
+	})
+
 	// 4. gateway_key_valid
 	gkOk := crypto.IsOpenAIStyleGatewayKey(settings.GatewayKey)
 	checks = append(checks, Check{

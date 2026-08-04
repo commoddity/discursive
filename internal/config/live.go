@@ -101,6 +101,13 @@ func (l *LiveSettings) HasThauraKey() bool {
 	return l.settings.HasThauraKey()
 }
 
+// HasZaiKey reports whether a Z.AI key is configured.
+func (l *LiveSettings) HasZaiKey() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.settings.HasZaiKey()
+}
+
 // HasTunnelToken reports whether a tunnel token is configured.
 func (l *LiveSettings) HasTunnelToken() bool {
 	l.mu.RLock()
@@ -127,6 +134,13 @@ func (l *LiveSettings) GetThauraKey() (*string, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.settings.GetThauraKey(l.dataRoot)
+}
+
+// GetZaiKey decrypts the stored Z.AI key.
+func (l *LiveSettings) GetZaiKey() (*string, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.settings.GetZaiKey(l.dataRoot)
 }
 
 // GetTunnelToken decrypts the stored tunnel token.

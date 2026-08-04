@@ -20,7 +20,7 @@ What you need from the user:
 | Required | Description |
 | -------- | ----------- |
 | Model name | Real model id, e.g. `kimi-k3.5` or `deepseek-v4-fast` |
-| Cursor alias (OpenAI) | What Cursor sees, e.g. `gpt-5-high-unlimited` |
+| Cursor alias (OpenAI) | What Cursor sees, e.g. `gpt-4o-turbo` |
 | Docs page from provider | Model-specific docs URL for pricing/parameters |
 | Maybe: pricing | USD/MTok cache-hit, input, output rates |
 

@@ -16,6 +16,8 @@ const (
 	ProviderDeepSeek Provider = "deepseek"
 	// ProviderThaura identifies the Thaura AI API host.
 	ProviderThaura Provider = "thaura"
+	// ProviderZai identifies the Z.AI API host.
+	ProviderZai Provider = "zai"
 )
 
 // Hardcoded upstream OpenAI-compatible API roots (no trailing slash).
@@ -39,6 +41,26 @@ const (
 // (Anthropic-compat URL https://api.deepseek.com/anthropic is out of MVP —
 // Cursor override path is OpenAI chat completions only.)
 //
+// Thaura AI
+// ---------
+// Docs: https://thaura.ai/api-platform
+// OpenAI-compat base URL:
+//
+//	POST https://backend.thaura.ai/v1/chat/completions
+//
+// Z.AI
+// ----
+// Docs: https://docs.z.ai/
+// On-demand pay-per-token: https://docs.z.ai/guides/overview/pricing
+// GLM Coding Plan: https://docs.z.ai/devpack/overview  (subscription, credits quota)
+// OpenAI-compat base URL (GLM Coding Plan, or the on-demand endpoint):
+//
+//	Coding Plan: POST https://api.z.ai/api/coding/paas/v4/chat/completions
+//	On-demand:   POST https://api.z.ai/api/paas/v4/chat/completions
+//
+// Z.AI uses thinking: {type: enabled|disabled} for glm-4.7 and
+// glm-5.2 supports reasoning_effort (none|minimal|low|medium|high|xhigh|max)
+// with normalization: low|medium → high, xhigh → max, none|minimal disable.
 // Local OpenAI schema reference (do not vendor into the binary):
 // examples/openai-openapi/
 //
@@ -48,6 +70,7 @@ const (
 	DefaultMoonshotBaseURL = "https://api.moonshot.ai/v1"
 	DefaultDeepSeekBaseURL = "https://api.deepseek.com"
 	DefaultThauraBaseURL   = "https://backend.thaura.ai/v1"
+	DefaultZaiBaseURL      = "https://api.z.ai/api/coding/paas/v4"
 )
 
 // UpstreamBaseURL returns the OpenAI-compatible API root for provider.
@@ -59,6 +82,8 @@ func UpstreamBaseURL(provider Provider) (string, error) {
 		return DefaultDeepSeekBaseURL, nil
 	case ProviderThaura:
 		return DefaultThauraBaseURL, nil
+	case ProviderZai:
+		return DefaultZaiBaseURL, nil
 	default:
 		return "", fmt.Errorf("unknown provider %q", provider)
 	}

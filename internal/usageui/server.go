@@ -28,6 +28,7 @@ type HealthInfo struct {
 	HasMoonshotKey bool   `json:"has_moonshot_key"`
 	HasDeepSeekKey bool   `json:"has_deepseek_key"`
 	HasThauraKey   bool   `json:"has_thaura_key"`
+	HasZaiKey      bool   `json:"has_zai_key"`
 	TunnelMode     string `json:"tunnel_mode"`
 	PublicURL      string `json:"public_url"`
 	LocalPort      int    `json:"local_port"`

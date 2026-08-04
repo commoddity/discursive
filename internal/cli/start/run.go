@@ -82,5 +82,8 @@ func runStart(cmd *cobra.Command, opts Options, tunnelFlag, publicURLFlag, logLe
 		}
 	}
 
+	if bgChild {
+		return serveWithWatchdog(opts.Version, dataRoot, settings)
+	}
 	return serveGateway(opts.Version, dataRoot, settings)
 }

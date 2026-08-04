@@ -1,0 +1,101 @@
+---
+description: Z.AI provider (models, API, pricing, sanitizer policy)
+globs: "**/gateway/alias.go,**/gateway/sanitizer.go,**/config/urls.go"
+alwaysApply: false
+---
+
+# Z.AI Rules
+
+Z.AI (GLM) is an OpenAI-compatible provider at the **GLM Coding Plan** base URL `https://api.z.ai/api/coding/paas/v4`.
+Models: GLM series with thinking support.
+
+## Model table
+
+| Cursor alias     | Real model | Description                                          |
+| ---------------- | ---------- | ---------------------------------------------------- |
+| `gpt-4.1-turbo`  | `glm-5.2`  | Planning model; reasoning_effort + prompt caching    |
+| `gpt-4.1`        | `glm-4.7`  | Budget execution; thinking on/off only               |
+
+## API key
+
+- Key field: `zaiKeyEncrypted` in `config.AppSettings`
+- Set via: `discursive set --zai-key <key>` or `--zai-key` flag on `init`
+- Retrieved via: `settings.GetZaiKey(dataRoot)` in gateway/server.go
+- Z.AI is optional — the gateway works without it
+
+## Pricing (USD per 1M tokens)
+
+Source: https://docs.z.ai/guides/overview/pricing
+
+| Model     | Cache hit / MTok | Input / MTok | Output / MTok |
+| --------- | ---------------- | ------------ | ------------- |
+| `glm-5.2` | $0.26            | $1.40        | $4.40         |
+| `glm-4.7` | $0.11            | $0.60        | $2.20         |
+
+## Sanitizer policy
+
+| Model     | Parameter          | Action                                                                                         |
+| --------- | ------------------ | ---------------------------------------------------------------------------------------------- |
+| `glm-5.2` | `thinking`         | Set `{type: "enabled"}` when reasoning is requested, else `{type: "disabled"}`                 |
+| `glm-5.2` | `reasoning_effort` | Normalized via `normalizeZaiEffort()` → `none`/`minimal`/`low`↦off, `medium`↦high, `high`/`xhigh`↦max |
+| `glm-4.7` | `thinking`         | Set `{type: "enabled"|"disabled"}`; no reasoning_effort support                                |
+| `glm-4.7` | `reasoning_effort` | Deleted                                                                                        |
+
+Apply `PolicyZai` case in `applyThinkingPolicy()` and `stripUnsupportedParams()`.
+
+## Reasoning effort normalization (Z.AI-specific)
+
+Z.AI supports `reasoning_effort` values: `none`, `minimal`, `low`, `medium`, `high`, `max`.
+The gateway normalizes higher-level effort labels:
+
+| UI label       | Z.AI value |
+| -------------- | ---------- |
+| Off / None     | `none`     |
+| Minimal / Low  | `minimal`  |
+| Medium         | `high`     |
+| High           | `max`      |
+
+The `ReasoningEffortCatalog` entry for `glm-5.2` advertises: `Off`, `high`, `max`.
+`glm-4.7` does not appear in the catalog (no effort selection).
+
+## Upstream config
+
+| Item       | Value                           |
+| ---------- | ------------------------------- |
+| Default URL| `https://api.z.ai/api/coding/paas/v4` |
+| On-demand  | `https://api.z.ai/api/paas/v4`       |
+| Docs       | https://docs.z.ai                    |
+| API ref    | https://docs.z.ai/api-reference/llm/chat-completion |
+| Pricing    | https://docs.z.ai/guides/overview/pricing |
+| Coding plan| https://docs.z.ai/devpack/overview    |
+| Console    | https://z.ai/manage-apikey/billing    |
+
+## Color (usage UI)
+
+| Provider | CSS variable | Hex       |
+| -------- | ------------ | --------- |
+| zai      | `--zai`      | `#ec4899` |
+
+## Balance API
+
+Z.AI is credits-based (GLM Coding Plan). The usage dashboard fetches remaining
+credits via the quota API:
+- `GET https://api.z.ai/api/monitor/usage/quota/limit` (Bearer auth, returns `data.limits[]` buckets of type `CREDIT_LIMIT` with `remaining`/`percentage`). The weekly bucket carries a `nextResetTime`; the 5-hour bucket does not.
+
+Also checkable manually at https://z.ai/manage-apikey/billing.
+
+## Symptoms & fixes
+
+### `Z.AI request fails with Unauthorized`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Z.AI returns 401 or "Unauthorized" even with valid API key | Using wrong API endpoint for the user's plan type (e.g., on-demand API `/api/paas/v4` vs GLM Coding Plan API `/api/coding/paas/v4`) | Verify the user's Z.AI plan type (Coding Plan vs on-demand). For GLM Coding Plan, use `https://api.z.ai/api/coding/paas/v4`. For on-demand, use `https://api.z.ai/api/paas/v4`. |
+
+### `Z.AI request appears to hang or timeout`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Cursor request to Z.AI model appears to hang for over a minute with no response and no credits used | Z.AI GLM Coding Plan has higher latency (~5s to first token) than other providers (e.g., DeepSeek). Gateway proxy works fine (verify via curl to loopback), but Cursor client may timeout before first token arrives. | Verify gateway proxy works via direct curl test. If successful, inform user that Z.AI has higher latency and the "hang" may be Cursor-side timeout. No gateway fix required. |
+
+<!-- last-verified: 2026-08 -->

@@ -22,7 +22,7 @@ type testEnv struct {
 	upCalls    *atomic.Int32
 }
 
-func setupEnv(t *testing.T, moonshotKey, deepseekKey string, upstream http.HandlerFunc) *testEnv {
+func setupEnv(t *testing.T, moonshotKey, deepseekKey, zaiKey string, upstream http.HandlerFunc) *testEnv {
 	t.Helper()
 	dataRoot := t.TempDir()
 	settings := config.DefaultSettings()
@@ -36,6 +36,11 @@ func setupEnv(t *testing.T, moonshotKey, deepseekKey string, upstream http.Handl
 	}
 	if deepseekKey != "" {
 		if err := settings.SetDeepSeekKey(dataRoot, deepseekKey); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if zaiKey != "" {
+		if err := settings.SetZaiKey(dataRoot, zaiKey); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -59,6 +64,7 @@ func setupEnv(t *testing.T, moonshotKey, deepseekKey string, upstream http.Handl
 		ChatURLOverride: map[config.Provider]string{
 			config.ProviderMoonshot: up.URL + "/moonshot/chat/completions",
 			config.ProviderDeepSeek: up.URL + "/deepseek/chat/completions",
+			config.ProviderZai:      up.URL + "/zai/chat/completions",
 		},
 	})
 	if err != nil {
@@ -118,7 +124,7 @@ func mockCompletion(model string) map[string]any {
 }
 
 func TestAuthAndHealth(t *testing.T) {
-	env := setupEnv(t, "sk-moon", "", func(w http.ResponseWriter, r *http.Request) {
+	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("upstream should not be called")
 	})
 
@@ -182,7 +188,7 @@ func TestAuthAndHealth(t *testing.T) {
 }
 
 func TestModelsListContent(t *testing.T) {
-	env := setupEnv(t, "sk-moon", "sk-ds", func(w http.ResponseWriter, r *http.Request) {
+	env := setupEnv(t, "sk-moon", "sk-ds", "", func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("upstream should not be called")
 	})
 	res, body := env.doJSON(t, http.MethodGet, "/v1/models", true, nil)
@@ -199,7 +205,7 @@ func TestModelsListContent(t *testing.T) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Object != "list" || len(payload.Data) != 5 {
+	if payload.Object != "list" || len(payload.Data) != 7 {
 		t.Fatalf("payload: %+v", payload)
 	}
 	ids := map[string]bool{}
@@ -209,7 +215,7 @@ func TestModelsListContent(t *testing.T) {
 		}
 		ids[m.ID] = true
 	}
-	for _, want := range []string{"gpt-4o", "o3-mini", "gpt-5-nano"} {
+	for _, want := range []string{"gpt-4o", "o3-mini", "gpt-5-nano", "gpt-4.1-turbo", "gpt-4.1"} {
 		if !ids[want] {
 			t.Fatalf("missing id %s", want)
 		}
@@ -219,7 +225,7 @@ func TestModelsListContent(t *testing.T) {
 func TestProxyMoonshotAndUsage(t *testing.T) {
 	var sawModel string
 	var sawPath string
-	env := setupEnv(t, "sk-moon", "", func(w http.ResponseWriter, r *http.Request) {
+	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
 		sawPath = r.URL.Path
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -267,7 +273,7 @@ func TestProxyMoonshotAndUsage(t *testing.T) {
 
 func TestProxyDeepSeek(t *testing.T) {
 	var sawPath string
-	env := setupEnv(t, "", "sk-ds", func(w http.ResponseWriter, r *http.Request) {
+	env := setupEnv(t, "", "sk-ds", "", func(w http.ResponseWriter, r *http.Request) {
 		sawPath = r.URL.Path
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -296,7 +302,7 @@ func TestProxyDeepSeek(t *testing.T) {
 }
 
 func TestMissingDeepSeekKeyNoMoonshotFallback(t *testing.T) {
-	env := setupEnv(t, "sk-moon", "", func(w http.ResponseWriter, r *http.Request) {
+	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("must not hit upstream")
 	})
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
@@ -314,8 +320,57 @@ func TestMissingDeepSeekKeyNoMoonshotFallback(t *testing.T) {
 	}
 }
 
+func TestProxyZai(t *testing.T) {
+	var sawPath string
+	env := setupEnv(t, "", "", "sk-zai", func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["model"] != "glm-4.7" {
+			t.Errorf("model %v", body["model"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockCompletion("glm-4.7"))
+	})
+
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model":    "gpt-4.1",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(sawPath, "zai") {
+		t.Fatalf("path %q", sawPath)
+	}
+	store, _ := usage.NewStore(env.dataRoot)
+	events, _ := store.LoadEvents()
+	if len(events) != 1 || events[0].Provider != config.ProviderZai {
+		t.Fatalf("events: %+v", events)
+	}
+}
+
+func TestMissingZaiKeyNoFallback(t *testing.T) {
+	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("must not hit upstream")
+	})
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model":    "gpt-4.1",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status %d body %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "API key not configured") {
+		t.Fatalf("expected key error: %s", body)
+	}
+	if env.upCalls.Load() != 0 {
+		t.Fatalf("upstream calls %d", env.upCalls.Load())
+	}
+}
+
 func TestStreamPassthrough(t *testing.T) {
-	env := setupEnv(t, "sk-moon", "", func(w http.ResponseWriter, r *http.Request) {
+	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
 		_, _ = w.Write([]byte("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n"))
@@ -348,7 +403,7 @@ func TestStreamPassthrough(t *testing.T) {
 }
 
 func TestStreamSynthesize(t *testing.T) {
-	env := setupEnv(t, "sk-moon", "", func(w http.ResponseWriter, r *http.Request) {
+	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k2.6"))
 	})
@@ -370,7 +425,7 @@ func TestStreamSynthesize(t *testing.T) {
 
 func TestToolCallIDRetry(t *testing.T) {
 	var calls atomic.Int32
-	env := setupEnv(t, "sk-moon", "", func(w http.ResponseWriter, r *http.Request) {
+	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
 		n := calls.Add(1)
 		if n == 1 {
 			w.WriteHeader(http.StatusBadRequest)

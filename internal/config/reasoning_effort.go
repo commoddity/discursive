@@ -11,6 +11,7 @@ const (
 	ModelKimiK26         = "kimi-k2.6"
 	ModelDeepSeekV4Pro   = "deepseek-v4-pro"
 	ModelDeepSeekV4Flash = "deepseek-v4-flash"
+	ModelZaiGLM52        = "glm-5.2"
 )
 
 // EffortOff disables thinking (K2.6 / DeepSeek). Not used for K3.
@@ -36,6 +37,10 @@ type ReasoningEffortSpec struct {
 //
 // Kimi K3 options follow https://platform.kimi.ai/docs/guide/use-reasoning-effort :
 // low|high|max (API default is max; product default is low for cost).
+//
+// Z.AI glm-5.2 options follow https://docs.z.ai/guides/capabilities/thinking :
+// none|minimal|low|medium|high|xhigh|max. low|medium → high, xhigh → max
+// by upstream. We expose off|high|max for consistency with DeepSeek UX.
 func ReasoningEffortCatalog() []ReasoningEffortSpec {
 	return []ReasoningEffortSpec{
 		{
@@ -63,6 +68,13 @@ func ReasoningEffortCatalog() []ReasoningEffortSpec {
 			Model:    ModelDeepSeekV4Flash,
 			Provider: ProviderDeepSeek,
 			Label:    "DeepSeek V4 Flash",
+			Options:  []string{EffortOff, "high", "max"},
+			Default:  EffortOff,
+		},
+		{
+			Model:    ModelZaiGLM52,
+			Provider: ProviderZai,
+			Label:    "GLM-5.2",
 			Options:  []string{EffortOff, "high", "max"},
 			Default:  EffortOff,
 		},
@@ -105,6 +117,9 @@ func NormalizeReasoningEffort(model, effort string) (string, error) {
 		if isDeepSeekModel(model) {
 			return normalizeDeepSeekEffort(effort)
 		}
+		if isZaiModel(model) {
+			return normalizeZaiEffort(effort)
+		}
 		for _, opt := range spec.Options {
 			if effort == opt {
 				return opt, nil
@@ -117,6 +132,28 @@ func NormalizeReasoningEffort(model, effort string) (string, error) {
 
 func isDeepSeekModel(model string) bool {
 	return model == ModelDeepSeekV4Pro || model == ModelDeepSeekV4Flash
+}
+
+func isZaiModel(model string) bool {
+	return model == ModelZaiGLM52
+}
+
+// normalizeZaiEffort maps Z.AI effort values per official docs:
+// off stays off (disables thinking). high|max are real.
+// low|medium → high, xhigh → max, none|minimal → off (disable thinking).
+func normalizeZaiEffort(effort string) (string, error) {
+	switch effort {
+	case EffortOff, "none", "minimal":
+		return EffortOff, nil
+	case "high", "max":
+		return effort, nil
+	case "low", "medium":
+		return "high", nil
+	case "xhigh":
+		return "max", nil
+	default:
+		return "", fmt.Errorf("invalid reasoning effort %q for Z.AI (want off|high|max)", effort)
+	}
 }
 
 // normalizeDeepSeekEffort maps DeepSeek effort values per official docs:

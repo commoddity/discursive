@@ -183,8 +183,128 @@ func TestHandleBalancesNoKeys(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Moonshot.Configured || resp.DeepSeek.Configured {
+	if resp.Moonshot.Configured || resp.DeepSeek.Configured || resp.Zai.Configured {
 		t.Fatalf("expected unconfigured: %+v", resp)
+	}
+}
+
+func TestFetchZaiBalance(t *testing.T) {
+	zaiBody := `{"code":200,"msg":"Operation successful","success":true,"data":{"level":"lite","limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,"usage":2000,"remaining":1800,"percentage":10},{"type":"CREDIT_LIMIT","unit":6,"number":1,"usage":10000,"remaining":7500,"percentage":25,"nextResetTime":1786438400971}]}}`
+
+	tests := []struct {
+		name       string
+		getKey     func() (string, bool)
+		status     int
+		body       string
+		wantConf   bool
+		wantAmt    *float64
+		wantPct    *float64
+		wantErrSub string
+	}{
+		{
+			name:     "no key",
+			getKey:   func() (string, bool) { return "", false },
+			wantConf: false,
+		},
+		{
+			name:     "nil getKey",
+			getKey:   nil,
+			wantConf: false,
+		},
+		{
+			name:     "success weekly credits",
+			getKey:   func() (string, bool) { return "sk-zai-test", true },
+			status:   200,
+			body:     zaiBody,
+			wantConf: true,
+			wantAmt:  floatPtr(7500),
+			wantPct:  floatPtr(25),
+		},
+		{
+			name:       "unauthorized",
+			getKey:     func() (string, bool) { return "sk-bad", true },
+			status:     401,
+			body:       `{"code":401}`,
+			wantConf:   true,
+			wantErrSub: "unauthorized",
+		},
+		{
+			name:       "api error code",
+			getKey:     func() (string, bool) { return "sk-zai-test", true },
+			status:     200,
+			body:       `{"code":500,"msg":"fail","success":false,"data":{}}`,
+			wantConf:   true,
+			wantErrSub: "code 500",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var client *http.Client
+			if tt.getKey != nil && tt.status != 0 {
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if !strings.HasSuffix(r.URL.Path, "/api/monitor/usage/quota/limit") {
+						t.Errorf("unexpected path %s", r.URL.Path)
+					}
+					auth := r.Header.Get("Authorization")
+					if !strings.HasPrefix(auth, "Bearer ") {
+						t.Errorf("missing bearer auth")
+					}
+					w.WriteHeader(tt.status)
+					_, _ = w.Write([]byte(tt.body))
+				}))
+				defer ts.Close()
+				client = &http.Client{Transport: rewriteHost(ts.URL)}
+			}
+
+			got := fetchZaiBalance(client, tt.getKey)
+			if got.Configured != tt.wantConf {
+				t.Fatalf("configured=%v want %v (err=%q)", got.Configured, tt.wantConf, got.Error)
+			}
+			if tt.wantErrSub != "" {
+				if !strings.Contains(got.Error, tt.wantErrSub) {
+					t.Fatalf("error=%q want substring %q", got.Error, tt.wantErrSub)
+				}
+				return
+			}
+			if got.Error != "" {
+				t.Fatalf("unexpected error: %q", got.Error)
+			}
+			if tt.wantAmt != nil {
+				if got.Amount == nil || *got.Amount != *tt.wantAmt {
+					t.Fatalf("amount=%v want %v", got.Amount, tt.wantAmt)
+				}
+				if got.Currency != "credits" {
+					t.Fatalf("currency=%q want credits", got.Currency)
+				}
+			}
+			if tt.wantPct != nil {
+				if got.UsagePercent == nil || *got.UsagePercent != *tt.wantPct {
+					t.Fatalf("usage_percent=%v want %v", got.UsagePercent, tt.wantPct)
+				}
+			}
+		})
+	}
+}
+
+func TestCollectZaiCreditBuckets(t *testing.T) {
+	limits := []zaiCreditLimit{
+		{Type: "CREDIT_LIMIT", Unit: 3, Number: 5, Remaining: 1800, Percentage: 10, Usage: 2000},
+		{Type: "CREDIT_LIMIT", Unit: 6, Number: 1, Remaining: 7500, Percentage: 25, Usage: 10000},
+	}
+	got, ok := collectZaiCreditBuckets(limits)
+	if !ok {
+		t.Fatal("expected buckets")
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d buckets: %+v", len(got), got)
+	}
+	// Weekly is first because it has the larger allowance.
+	if got[0].Label != "Weekly" || got[0].Remaining != 7500 || got[0].Percentage != 25 {
+		t.Fatalf("weekly bucket wrong: %+v", got[0])
+	}
+	if got[1].Label != "5-Hour" || got[1].Remaining != 1800 {
+		t.Fatalf("5-hour bucket wrong: %+v", got[1])
 	}
 }
 

@@ -15,6 +15,8 @@
   <a href="https://api-docs.deepseek.com/"><img src=".github/img/deepseek.svg" alt="DeepSeek" height="35" valign="middle" /></a>
   &ensp;&middot;&ensp;
   <a href="https://thaura.ai/"><img src=".github/img/thaura.png" alt="Thaura AI" height="35" valign="middle" /></a>
+  &ensp;&middot;&ensp;
+  <a href="https://docs.z.ai/"><img src=".github/img/zai.svg" alt="Z.AI" height="35" valign="middle" /></a>
 </p>
 
 <h3 align="center">Written in <a href="https://go.dev/"><img src=".github/img/go.svg" alt="Go" height="28" valign="middle" /></a></h3>
@@ -65,6 +67,7 @@ On first run, the interactive wizard also prompts for:
 | Cloudflare tunnel token | ✅ Yes    | See [Setting up Cloudflare](#-setting-up-cloudflare) below |
 | Public HTTPS URL        | ✅ Yes    | Hostname from tunnel setup with `/v1` appended             |
 | Thaura AI API key       | No       | [thaura.ai](https://thaura.ai/api-platform)                |
+| Z.AI API key            | No       | [docs.z.ai](https://docs.z.ai/api-reference/introduction)  |
 
 ### 2. Start the gateway <!-- omit in toc -->
 
@@ -116,6 +119,8 @@ Change the model alias in Cursor's model picker — no restart needed:
 | `o1`          | DeepSeek | `deepseek-v4-pro`   | Harder execution                       |
 | `o3-mini`     | DeepSeek | `deepseek-v4-flash` | Cheap execution                        |
 | `gpt-5-nano`  | Thaura   | `thaura`            | Ethical AI; optional provider          |
+| `gpt-4.1-turbo` | Z.AI   | `glm-5.2`           | Planning; cheaper than K3              |
+| `gpt-4.1`       | Z.AI   | `glm-4.7`           | Cheap execution                        |
 
 
 
@@ -185,6 +190,7 @@ logs include an `effort` field on request/response/usage lines.
 | `kimi-k3`                               | `low`, `high`, `max` | `low` (API default is `max`; we default lower for cost)                                  |
 | `kimi-k2.6`                             | `off`, `on`          | `off` (maps to `thinking: disabled` / `enabled`)                                         |
 | `deepseek-v4-pro` / `deepseek-v4-flash` | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
+| `glm-5.2`                              | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
 
 - Lower effort usually means fewer thinking tokens and lower cost. `thaura` does not
 expose this control. 
@@ -280,6 +286,28 @@ and mission-aligned technology development.
 
 
 
+
+### 🪻 Z.AI <!-- omit in toc -->
+
+[Z.AI](https://docs.z.ai/) provides GLM-series models with
+thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
+(subscription, credits quota), which exposes the OpenAI-compatible base URL
+`https://api.z.ai/api/coding/paas/v4`.
+
+| API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                      |
+| ------------ | ---------------- | ------------ | ------------- | ----------------------------------------- |
+| `glm-5.2`    | $0.26            | $1.40        | $4.40         | Planning model; reasoning_effort + cache  |
+| `glm-4.7`    | $0.11            | $0.60        | $2.20         | Budget execution; thinking on/off         |
+
+- Pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing)
+- API docs: [https://docs.z.ai/api-reference/introduction](https://docs.z.ai/api-reference/introduction)
+- API key: [https://z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) (GLM Coding Plan key)
+
+| Parameter          | `glm-5.2`                                                     | `glm-4.7`                                    |
+| ------------------ | ------------------------------------------------------------- | -------------------------------------------- |
+| `thinking`         | `{type: "enabled"}` when reasoning; else `{type: "disabled"}` | `{type: "enabled"|"disabled"}`               |
+| `reasoning_effort` | Normalized → `none`/`high`/`max`                              | Deleted (not supported)                      |
+
 ## 🛠 Tech Stack
 
 
@@ -288,7 +316,7 @@ and mission-aligned technology development.
 | Language      | Go 1.26.5+                                                                                                 |
 | CLI framework | [Cobra](https://cobra.dev/)                                                                                |
 | Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) named tunnel |
-| Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura)                                          |
+| Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura + Z.AI)                                   |
 
 
 ---
@@ -332,7 +360,7 @@ All output is JSON on stdout. Pipe through `jq` for readability.
 | `discursive log-level [debug | info                                                                                                                                                                                                                          | warn | error]`      | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence. |
 | `discursive doctor`          | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                                        |
 | `discursive usage`           | Token + cost estimates per session/model.                                                                                                                                                                                     |
-| `discursive set`             | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key. |
+| `discursive set`             | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--zai-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key. |
 | `discursive completion [bash | zsh                                                                                                                                                                                                                           | fish | powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                 |
 | `discursive version`         | Print version.                                                                                                                                                                                                                |
 
@@ -416,7 +444,7 @@ Binaries are built via [GoReleaser](https://goreleaser.com/) and published at
 
 ## 🔒 Security
 
-- Upstream Moonshot, DeepSeek, and Thaura keys are **encrypted at rest** and never sent
+- Upstream Moonshot, DeepSeek, Thaura, and Z.AI keys are **encrypted at rest** and never sent
 to Cursor, never appear in logs
 - Cursor receives only the generated gateway key (`sk-...`)
 - Gateway key is **masked by default** in `status` / `rotate-gateway-key`;

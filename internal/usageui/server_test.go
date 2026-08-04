@@ -57,6 +57,7 @@ func newTestServer(t *testing.T) *Server {
 		HasMoonshotKey: true,
 		HasDeepSeekKey: true,
 		HasThauraKey:   true,
+		HasZaiKey:      true,
 		TunnelMode:     "quick",
 		PublicURL:      "https://example.trycloudflare.com/v1",
 		LocalPort:      4001,
@@ -206,6 +207,9 @@ func TestAPIHealth(t *testing.T) {
 	}
 	if !h.HasThauraKey {
 		t.Fatal("expected has_thaura_key")
+	}
+	if !h.HasZaiKey {
+		t.Fatal("expected has_zai_key")
 	}
 }
 

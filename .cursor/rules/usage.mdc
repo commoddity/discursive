@@ -22,6 +22,7 @@ Thaura AI: hardcoded `$0.50/$2.00` per MTok. Check `thaura.ai/api-platform` if a
 | Kimi K3 | https://platform.kimi.ai/docs/pricing/chat-k3.md |
 | Kimi K2.6 | https://platform.kimi.ai/docs/pricing/chat-k26.md |
 | Thaura AI | https://thaura.ai/api-platform |
+| Z.AI      | https://docs.z.ai/guides/overview/pricing |
 
 **Locations that must stay in sync:**
 1. `internal/usage/pricing.go` — Go maps
@@ -44,6 +45,17 @@ Sources: K3 https://platform.kimi.ai/docs/pricing/chat-k3.md, K2.6 https://platf
 ### Thaura AI (USD/MTok)
 
 Input $0.50/MTok, Output $2.00/MTok. No cached-token pricing. Hardcoded; check `thaura.ai/api-platform` if available.
+
+### Z.AI (USD/MTok)
+
+Source: https://docs.z.ai/guides/overview/pricing
+
+| Model     | Cache hit / MTok | Input / MTok | Output / MTok |
+| --------- | ---------------- | ------------ | ------------- |
+| `glm-5.2` | $0.26            | $1.40        | $4.40         |
+| `glm-4.7` | $0.11            | $0.60        | $2.20         |
+
+`glm-5.2` supports reasoning_effort + prompt caching; `glm-4.7` uses `thinking: {type: enabled|disabled}`.
 
 ## Usage UI (dashboard)
 
@@ -82,7 +94,7 @@ USD/EUR/CNY dropdown. Persisted in `localStorage` (`discursive_currency`). Rates
 
 Two half-width cards above Month-to-Date (`card-row`). Poll with `refreshAll` (15s).
 
-**Balances** (`GET /api/balances`): server-side proxy with stored upstream keys (never expose keys). Moonshot `GET {base}/users/me/balance` → `available_balance` USD. DeepSeek `GET {base}/user/balance` → prefer USD `total_balance`, else CNY÷FX→USD. Color thresholds always on USD: `<$5` red, `<$15` yellow, `<$100` green, `≥$100` blue. Display via `fmtMoney`.
+**Balances** (`GET /api/balances`): server-side proxy with stored upstream keys (never expose keys). Moonshot `GET {base}/users/me/balance` → `available_balance` USD. DeepSeek `GET {base}/user/balance` → prefer USD `total_balance`, else CNY÷FX→USD. Z.AI (GLM Coding Plan): `GET https://api.z.ai/api/monitor/usage/quota/limit` → `data.limits[]` array of `CREDIT_LIMIT` buckets with `remaining`/`percentage`. Parse all buckets (e.g., weekly and 5-hour quotas) and display them. Color thresholds always on USD: `<$5` red, `<$15` yellow, `<$100` green, `≥$100` blue. Display via `fmtMoney`.
 
 **Projection**: from MTD `est_usd`. `avgDaily = mtd / UTC dayOfMonth` (includes zero-spend days). `projected = avgDaily × daysInMonth`.
 
@@ -108,7 +120,7 @@ Two half-width cards above Month-to-Date (`card-row`). Poll with `refreshAll` (1
 
 ### Spend comparison badge
 
-Current periods (`today`/`this-week`/`this-month`) show +/-% badge vs same time point in previous period:
+Current periods (`today`/`this-week`/`this-month`) show +/-/% badge vs same time point in previous period:
 
 - **Today** vs yesterday same time-of-day
 - **This Week** vs last week same day/time
@@ -192,7 +204,7 @@ rows for live cost math.
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| `title`/`data-tip` with HTML (`<br>`, `<img>`) renders as literal text | Native tooltips are plain-text only — cannot render HTML | Inject positioned `<span>`/`<div>` on hover; remove on mouse leave. Never put HTML in `title`.
+| `title`/`data-tip` with HTML (`<br>`, `<img>`) renders as literal text | Native tooltips are plain-text only — cannot render HTML | Inject positioned `<span>`/`<div>` on hover; remove on mouse leave. Never put HTML in `title`. |
 
 ### `Frontend fetch to external API blocked by CORS`
 
@@ -222,7 +234,7 @@ rows for live cost math.
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| Chart.js `bodyFont.size` etc. not respected in rendered tooltip | CSS rules on `.chartjs-tooltip` or custom tooltip container override Chart.js internal styles | For `external` tooltip (callback controls DOM): set styles directly on custom element. For built-in: use callbacks; avoid broad CSS on `.chartjs-tooltip *`.
+| Chart.js `bodyFont.size` etc. not respected in rendered tooltip | CSS rules on `.chartjs-tooltip` or custom tooltip container override Chart.js internal styles | For `external` tooltip (callback controls DOM): set styles directly on custom element. For built-in: use callbacks; avoid broad CSS on `.chartjs-tooltip *`. |
 
 <!-- last-verified: 2026-07-23 -->
 
@@ -242,4 +254,12 @@ rows for live cost math.
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| Tooltip shows providers/models with $0 spend on that bucket day | Server pads all buckets with $0 entries per model; `bucketMap` has every model in every bucket. | Filter in tooltip: `(bucketMap[label] \|\| []).filter(it => +it.cost > 0)`. |
+| Tooltip shows providers/models with $0 spend on that bucket day | Server pads all buckets with $0 entries per model; `bucketMap` has every model in every bucket. | Filter in tooltip: `(bucketMap[label] || []).filter(it => +it.cost > 0)`. |
+
+### `Provider balance API has multiple quota buckets`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Provider balance shows only one value when multiple quotas exist (e.g., weekly and 5-hour limits), or shows wrong/dash value | Provider usage API returns proprietary data structure with multiple quota buckets in an array. Using only the first bucket or wrong field misses data. | Parse all buckets from the array (e.g., `data.limits[]`). Identify buckets by type or heuristic (e.g., `nextResetTime` indicates periodic). Display all relevant buckets with labels and individual color-coding. |
+
+<!-- last-verified: 2026-08 -->

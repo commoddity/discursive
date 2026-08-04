@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -69,6 +70,7 @@ is alive, uptime (if running), and log file path.
 				"has_moonshot_key": settings.HasMoonshotKey(),
 				"has_deepseek_key": settings.HasDeepSeekKey(),
 				"has_thaura_key":   settings.HasThauraKey(),
+				"has_zai_key":      settings.HasZaiKey(),
 				"tunnel_mode":      config.NormalizeTunnelMode(settings.TunnelMode),
 				"public_url":       settings.PublicBaseURL,
 				"local_port":       settings.LocalPort,
@@ -115,6 +117,7 @@ func processAlive(pid int) bool {
 	if err != nil {
 		return false
 	}
-	err = proc.Signal(os.Signal(nil))
+	// os.FindProcess always succeeds on Unix; send signal 0 to verify.
+	err = proc.Signal(syscall.Signal(0))
 	return err == nil
 }

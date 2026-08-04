@@ -16,6 +16,7 @@ Public reachability is via tunnel / BYO URL — see `tunnel.mdc`.
 | Moonshot / Kimi API key   | `moonshotKeyEncrypted` | App only → Authorization to Moonshot |
 | DeepSeek API key          | `deepseekKeyEncrypted` | App only → Authorization to DeepSeek |
 | Thaura AI API key         | `thauraKeyEncrypted`   | App only → Authorization to Thaura   |
+| Z.AI API key              | `zaiKeyEncrypted`      | App only → Authorization to Z.AI      |
 | Gateway key (`sk-{alnum}`) | `gatewayKey`           | Cursor as “OpenAI API Key”           |
 
 Never log or return upstream provider keys. Wrong gateway key → OpenAI-shaped 401.
@@ -31,6 +32,7 @@ Hardcoded defaults + optional env overrides live in
 | moonshot | `https://api.moonshot.ai/v1` |
 | deepseek | `https://api.deepseek.com`   |
 | thaura   | `https://backend.thaura.ai/v1` |
+| zai       | `https://api.z.ai/api/coding/paas/v4` |
 
 Use those helpers so Moonshot’s `/v1` and DeepSeek’s host root never produce
 `/v1/v1/...`. Do not scatter raw URL string literals in the gateway proxy.
@@ -55,11 +57,13 @@ and pricing row.
 
 | Cursor alias     | Provider | Real model          | Typical use         |
 | ---------------- | -------- | ------------------- | ------------------- |
-| `gpt-5-high`     | moonshot | `kimi-k3`           | Planning / flagship |
-| `gpt-5-codex`    | moonshot | `kimi-k2.6`         | Image-capable; thinking off by default |
-| `gpt-4o`         | deepseek | `deepseek-v4-pro`   | Harder execution    |
-| `gpt-4o-mini`    | deepseek | `deepseek-v4-flash` | Cheap execution     |
+| `gpt-4o`         | moonshot | `kimi-k3`           | Planning / flagship |
+| `gpt-4o-mini`    | moonshot | `kimi-k2.6`         | Image-capable; thinking off by default |
+| `o1`             | deepseek | `deepseek-v4-pro`   | Harder execution    |
+| `o3-mini`        | deepseek | `deepseek-v4-flash` | Cheap execution     |
 | `gpt-5-nano`     | thaura   | `thaura`            | Ethical AI; optional provider |
+| `gpt-4.1-turbo`  | zai      | `glm-5.2`           | Planning; cheaper than K3    |
+| `gpt-4.1`        | zai      | `glm-4.7`           | Cheap execution              |
 
 Set the alias manually in Cursor Settings → Models. The gateway maps it and
 picks the right base URL + API key. No auto-application to Cursor's state.vscdb

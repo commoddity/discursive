@@ -8,20 +8,24 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/commoddity/discursive/internal/cli/util"
 )
 
+const stopWaitTimeout = 12 * time.Second
+
 // NewCmd returns the stop subcommand.
 func NewCmd(portable func() bool) *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
-		Short: "🛑 Stop the running gateway (sends SIGTERM)",
-		Long: `🛑  Reads the PID file from the data directory and sends SIGTERM
-to the gateway process.  Falls back to scanning for "discursive start"
-processes when no PID file exists.`,
+		Short: "Stop the running gateway",
+		Long: `Writes a stop file that the background gateway polls, then waits for
+the process to exit.  Falls back to scanning for "discursive start"
+processes when no PID file exists.  Sends SIGKILL only if graceful stop
+times out.`,
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			util.SetupLogger()
@@ -30,92 +34,129 @@ processes when no PID file exists.`,
 				return err
 			}
 			pidPath := filepath.Join(dataRoot, "gateway.pid")
+			stopFile := filepath.Join(dataRoot, "gateway.stop")
 
-			raw, err := os.ReadFile(pidPath)
-			if err == nil {
-				pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-				if err == nil {
-					if killPID(pid) {
-						_ = os.Remove(pidPath)
-						return nil
-					}
-					// Process dead or not found — clean up stale pid file.
-					_ = os.Remove(pidPath)
-				}
+			if err := os.WriteFile(stopFile, []byte("stop"), 0o600); err != nil {
+				return err
 			}
+			slog.Info("stop request written", "path", stopFile)
 
-			// Fallback: no usable PID file — scan for "discursive start" processes.
-			if killed := killGatewayProcesses(); killed > 0 {
-				_ = os.Remove(pidPath)
+			pids := collectGatewayPIDs(pidPath)
+			if len(pids) == 0 {
+				slog.Info("gateway not running")
+				cleanupStopArtifacts(pidPath, stopFile)
 				return nil
 			}
 
-			slog.Info("gateway not running")
+			// SIGTERM is ignored by background gateways; stop-file is the real signal.
+			// Still send for foreground / legacy processes.
+			for _, pid := range pids {
+				signalPID(pid, syscall.SIGTERM)
+			}
+
+			stopped := 0
+			for _, pid := range pids {
+				if waitProcessExit(pid, stopWaitTimeout) {
+					stopped++
+					continue
+				}
+				slog.Warn("gateway did not exit gracefully, sending SIGKILL", "pid", pid)
+				if signalPID(pid, syscall.SIGKILL) {
+					if waitProcessExit(pid, 3*time.Second) {
+						stopped++
+					}
+				}
+			}
+
+			cleanupStopArtifacts(pidPath, stopFile)
+			if stopped > 0 {
+				slog.Info("gateway stopped", "count", stopped)
+			}
 			return nil
 		},
 	}
 }
 
-// killPID sends SIGTERM to the given PID. Returns true if the signal was sent.
-func killPID(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		slog.Warn("stop process lookup failed", "pid", pid, "err", err)
-		return false
-	}
-	if err := proc.Signal(syscall.SIGTERM); err != nil {
-		slog.Warn("stop signal failed (process may already be dead)", "pid", pid, "err", err)
-		return false
-	}
-	slog.Info("stop signal sent", "pid", pid)
-	return true
+func cleanupStopArtifacts(pidPath, stopFile string) {
+	_ = os.Remove(pidPath)
+	_ = os.Remove(stopFile)
 }
 
-// killGatewayProcesses scans for "discursive start" processes via pgrep,
-// sends SIGTERM to each, and returns the count of killed processes.
-//
-// Uses pgrep -f to match against the full command line (argv), not just the
-// kernel process name, so it works correctly with Go binaries on macOS/Linux.
-// Since we match for the substring "discursive" and then check the first
-// argument after the executable path, we won't accidentally match processes
-// like "discursive stop" or "go install".
-func killGatewayProcesses() int {
-	// pgrep -f matches against the full command line (argv).
-	// pgrep -x matches only against the kernel process name (16 chars on macOS) — skip it.
+func collectGatewayPIDs(pidPath string) []int {
+	seen := make(map[int]bool)
+	var pids []int
+
+	if raw, err := os.ReadFile(pidPath); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil && pid > 0 {
+			if processAlive(pid) {
+				seen[pid] = true
+				pids = append(pids, pid)
+			}
+		}
+	}
+
+	for _, pid := range scanGatewayPIDs() {
+		if !seen[pid] {
+			seen[pid] = true
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+func scanGatewayPIDs() []int {
 	cmd := exec.Command("pgrep", "-f", "discursive")
 	output, err := cmd.Output()
 	if err != nil {
-		// pgrep exits 1 when no processes match — not an error.
-		return 0
+		return nil
 	}
 
-	pids := strings.Fields(strings.TrimSpace(string(output)))
-	if len(pids) == 0 {
-		return 0
-	}
-
-	killed := 0
+	var pids []int
 	myPID := os.Getpid()
-	for _, pidStr := range pids {
+	for _, pidStr := range strings.Fields(strings.TrimSpace(string(output))) {
 		pid, err := strconv.Atoi(pidStr)
-		if err != nil {
-			continue
-		}
-		if pid == myPID {
+		if err != nil || pid == myPID {
 			continue
 		}
 		if !isGatewayStart(pid) {
 			continue
 		}
-		if killPID(pid) {
-			killed++
-		}
+		pids = append(pids, pid)
 	}
+	return pids
+}
 
-	if killed > 0 {
-		slog.Info("gateway stopped via process scan", "count", killed)
+func signalPID(pid int, sig syscall.Signal) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
 	}
-	return killed
+	if err := proc.Signal(sig); err != nil {
+		return false
+	}
+	if sig == syscall.SIGTERM {
+		slog.Info("stop signal sent", "pid", pid)
+	}
+	return true
+}
+
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+func waitProcessExit(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !processAlive(pid) {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return !processAlive(pid)
 }
 
 // isGatewayStart checks whether a process's command line contains " start " as

@@ -40,6 +40,7 @@ Mandatory protocol for EVERY task:
 | Moonshot/Kimi API (models, thinking, tools, errors) | `.cursor/rules/kimi.mdc` (+ `gateway.mdc` if proxying) |
 | DeepSeek API (v4-flash / v4-pro, thinking, tools, errors) | `.cursor/rules/deepseek.mdc` (+ `gateway.mdc` if proxying) |
 | Thaura AI API (models, pricing, sanitizer policy) | `.cursor/rules/thaura.mdc` (+ `gateway.mdc` if proxying) |
+| Z.AI API (models, pricing, sanitizer policy) | `.cursor/rules/zai.mdc` (+ `gateway.mdc` if proxying) |
 | Local gateway, sanitizer, OpenAI-compat surface, metrics | `.cursor/rules/gateway.mdc` |
 | Cursor settings DB / model alias reference | `.cursor/rules/cursor-settings.mdc` | |
 | cloudflared tunnel / public URL / process supervision | `.cursor/rules/tunnel.mdc` |
@@ -65,7 +66,7 @@ When a task spans multiple areas, read every applicable rule file before startin
   configured manually with the gateway API key (never upstream provider keys)
 - **Providers**: Moonshot (`kimi-k3`, `kimi-k2.6`) and
  DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`) and
- Thaura (`thaura`). Switching is **setting the
+ Thaura (`thaura`) and Z.AI (`glm-5.2`, `glm-4.7`). Switching is **setting the
  Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
 - **Runtime**: Go **1.26.5+**; host process — **not** Docker-primary, **not** Wails/Vue/Tauri
 - **CLI**: [Cobra](https://cobra.dev/) (`internal/cli/`); **no Viper** — config in `internal/config`
@@ -331,6 +332,7 @@ to the user. Never split without approval.
 | Kimi/Moonshot request/response quirks | `kimi.mdc` |
 | DeepSeek request/response quirks | `deepseek.mdc` |
 | Thaura AI request/response quirks | `thaura.mdc` |
+| Z.AI request/response quirks | `zai.mdc` |
 | Sanitizer / tool schema / stream / model alias policy | `gateway.mdc` |
 | Cursor settings reference / model alias map | `cursor-settings.mdc` | |
 | Tunnel flapping / cloudflared missing / ephemeral URL | `tunnel.mdc` |
@@ -362,11 +364,13 @@ details, and GitHub Actions deprecation guidance.
 
 | Skill | Path | Purpose |
 | ---- | --- | ---- |
+| `/add-model` | `.cursor/skills/add-model/SKILL.md` | Add a model within an existing provider (Moonshot/Kimi or DeepSeek) end-to-end |
+| `/add-provider` | `.cursor/skills/add-provider/SKILL.md` | Add an entire new AI provider end-to-end (superset of `/add-model`) |
 | `/dialectic-of-cognition` | `.cursor/skills/dialectic-of-cognition/SKILL.md` | Capture session learnings into `.cursor/rules/*.mdc` |
 | `/task-1-plan` | `.cursor/skills/task-1-plan/SKILL.md` | Plan/re-plan one `planning/TXX` task |
 | `/task-2-execute` | `.cursor/skills/task-2-execute/SKILL.md` | Execute one phase task until AC pass; hand off to `/task-3-complete` |
 | `/task-3-complete` | `.cursor/skills/task-3-complete/SKILL.md` | Verify + dialectic + INDEX `✅` + commit + push (default) + manual test + next `<stub-stem>` branch |
-| `/audit-rules` | `.cursor/skills/audit-rules/SKILL.md` | Read-only audit of rules + skills vs codebase |
+| `/audit-rules-and-docs` | `.cursor/skills/audit-rules-and-docs/SKILL.md` | Read-only audit of rules + skills + README vs codebase |
 
 ### Knowledge stores
 

@@ -21,6 +21,8 @@
   --deepseek-light: #60a5fa;
   --thaura: #059669;
   --thaura-light: #34d399;
+  --zai: #ec4899;
+  --zai-light: #f472b6;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 24px; max-width: 1100px; margin: 0 auto; }
@@ -92,6 +94,15 @@ h2 { font-size: 1.1rem; color: var(--text-muted); font-weight: 500; }
 .bal-stat-link .value { text-decoration: none; }
 #balances-summary .bal-stat-link .value { font-size: 1.25rem; margin-top: 2px; }
 .bal-stat-link .label { margin-bottom: 2px; }
+.credit-amount { font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.credit-sep { color: var(--text-muted); opacity: 0.5; font-weight: 400; }
+.credit-amount.gw-key-blur,
+.credit-sep.gw-key-blur {
+  color: transparent;
+  text-shadow: 0 0 6px var(--text-muted);
+  user-select: none;
+  cursor: default;
+}
 .bal-stat-link .provider-logo-btn {
   border: none;
   background: transparent;
@@ -109,6 +120,17 @@ h2 { font-size: 1.1rem; color: var(--text-muted); font-weight: 500; }
   font-variant-numeric: tabular-nums;
   min-height: 1.25em;
   display: inline-block;
+}
+/* Z.AI credits value container — reserve the exact same height as .bal-amount
+   so the Z.AI balance card matches Moonshot/DeepSeek cards exactly. */
+.bal-credit-value {
+  font-variant-numeric: tabular-nums;
+  min-height: 1.25em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 .bal-card-header { align-items: center; min-height: 0; }
 .bal-card-header h2 { margin: 0; line-height: 1.2; }
@@ -140,7 +162,7 @@ h2 { font-size: 1.1rem; color: var(--text-muted); font-weight: 500; }
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
 #projection-summary { grid-template-columns: repeat(3, 1fr); gap: 8px; }
 #projection-summary .value { font-size: 1.25rem; }
-#balances-summary { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+#balances-summary { grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .period-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .period-summary .stat { text-align: center; }
 .period-summary .label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -190,6 +212,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .moonshot { color: var(--moonshot); }
 .deepseek { color: var(--deepseek); }
 .thaura { color: var(--thaura); }
+.zai { color: var(--zai); }
 .usd { font-variant-numeric: tabular-nums; text-align: right !important; min-width: 90px; }
 .num { font-variant-numeric: tabular-nums; text-align: right !important; }
 .cmp-up { color: var(--danger); font-weight: 600; font-size: 0.85rem; }
@@ -230,7 +253,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .health-link:hover { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
 .effort-providers {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   align-items: stretch;
 }
@@ -307,6 +330,15 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .effort-save-btn.deepseek:hover:not(:disabled) {
   background: rgba(37, 99, 235, 0.22);
   border-color: rgba(37, 99, 235, 0.55);
+}
+.effort-save-btn.zai {
+  color: var(--zai-light);
+  border-color: rgba(236, 72, 153, 0.35);
+  background: rgba(236, 72, 153, 0.12);
+}
+.effort-save-btn.zai:hover:not(:disabled) {
+  background: rgba(236, 72, 153, 0.22);
+  border-color: rgba(236, 72, 153, 0.55);
 }
 .effort-save-btn:disabled {
   opacity: 0.4;
@@ -579,8 +611,8 @@ const fmtStartedAt = (iso) => {
   if (isNaN(d)) return '—';
   return d.toLocaleString(fmtLocale(), { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
 };
-const PROVIDER_COLORS = { moonshot: '#7c3aed', deepseek: '#2563eb', thaura: '#059669' };
-const PROVIDER_LIGHT = { moonshot: '#a78bfa', deepseek: '#60a5fa', thaura: '#34d399' };
+const PROVIDER_COLORS = { moonshot: '#7c3aed', deepseek: '#2563eb', thaura: '#059669', zai: '#ec4899' };
+const PROVIDER_LIGHT = { moonshot: '#a78bfa', deepseek: '#60a5fa', thaura: '#34d399', zai: '#f472b6' };
 function providerColor(p) { return PROVIDER_COLORS[p] || '#8b949e'; }
 function providerLight(p) { return PROVIDER_LIGHT[p] || '#c9d1d9'; }
 function providerClass(p) { return PROVIDER_COLORS[p] ? p : 'deepseek'; }
@@ -592,6 +624,8 @@ const MODEL_COLORS = {
   'moonshot::kimi-k3':           '#7c3aed', // deep purple
   'moonshot::kimi-k2.6':         '#e879f9', // hot pink / magenta
   'thaura::thaura':              '#059669', // emerald green
+  'zai::glm-5.2':                '#ec4899', // hot pink
+  'zai::glm-4.7':                '#f472b6', // light pink
 };
 function modelColor(provider, modelName) {
   const key = provider + '::' + modelName;
@@ -612,6 +646,7 @@ const LOGO_URLS = {
   moonshot: '/static/moonshot.svg',
   deepseek: '/static/deepseek.svg',
   thaura: '/static/thaura.png',
+  zai: '/static/zai.svg',
 };
 
 // Shared tooltip: shows cache hit & miss for the whole stacked bar with %.
@@ -692,7 +727,8 @@ function escapeHtml(s) {
 const PRICING_URLS = {
   moonshot: 'https://platform.kimi.ai/docs/pricing',
   deepseek: 'https://api-docs.deepseek.com/quick_start/pricing',
-  thaura: 'https://thaura.ai/pricing'
+  thaura: 'https://thaura.ai/pricing',
+  zai: 'https://docs.z.ai/guides/overview/pricing'
 };
 
 // Provider top-up / pay console URLs (balance panel logo links)
@@ -715,6 +751,10 @@ const PRICING = {
   },
   thaura: {
     'thaura': { input: 0.50, output: 2.00 },
+  },
+  zai: {
+    'glm-5.2': { cache_hit: 0.26, input: 1.40, output: 4.40 },
+    'glm-4.7': { input: 0.60, output: 2.20 },
   }
 };
 
@@ -902,6 +942,7 @@ async function loadHealth() {
     const provData = [
       { id: 'moonshot', name: 'Moonshot',  logo: '/static/moonshot.svg', ok: h.has_moonshot_key },
       { id: 'deepseek', name: 'DeepSeek',  logo: '/static/deepseek.svg', ok: h.has_deepseek_key },
+      { id: 'zai',      name: 'Z.AI',      logo: '/static/zai.svg',      ok: h.has_zai_key },
       { id: 'thaura',   name: 'Thaura',    logo: '/static/thaura.png',   ok: h.has_thaura_key },
     ];
     providers.innerHTML = provData.map(p =>
@@ -959,7 +1000,7 @@ function copyGatewayKey() {
 
 // --- Reasoning effort ---
 const LS_EFFORT_OPEN = 'discursive_usageui_effort_open';
-const PROVIDER_NAMES = { moonshot: 'Moonshot', deepseek: 'DeepSeek', thaura: 'Thaura' };
+const PROVIDER_NAMES = { moonshot: 'Moonshot', deepseek: 'DeepSeek', thaura: 'Thaura', zai: 'Z.AI' };
 const EFFORT_DOC_URLS = {
   moonshot: 'https://platform.kimi.ai/docs/guide/use-reasoning-effort',
   deepseek: 'https://api-docs.deepseek.com/guides/thinking_mode',
@@ -1165,6 +1206,20 @@ function balanceColorClass(usd) {
   return 'bal-blue';
 }
 
+// Credit quota coloring: percentage is consumed (0–100).
+function balanceColorClassFromUsage(usedPct) {
+  if (usedPct == null || isNaN(usedPct)) return '';
+  if (usedPct >= 80) return 'bal-red';
+  if (usedPct >= 50) return 'bal-yellow';
+  if (usedPct >= 20) return 'bal-green';
+  return 'bal-blue';
+}
+
+function fmtCredits(n) {
+  if (n == null || isNaN(n)) return '—';
+  return Math.round(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
 function balanceToUSD(b) {
   if (!b) return null;
   if (b.available_usd != null) return +b.available_usd;
@@ -1196,7 +1251,7 @@ function ensureBalancesHiddenDefault() {
 
 function applyBalancesVisibility() {
   const visible = getBalancesVisible();
-  document.querySelectorAll('.bal-amount').forEach(el => {
+  document.querySelectorAll('.bal-amount, .credit-amount, .credit-sep').forEach(el => {
     if (visible) el.classList.remove('gw-key-blur');
     else el.classList.add('gw-key-blur');
   });
@@ -1228,6 +1283,28 @@ function renderBalanceStat(provider, b) {
   if (b.error && b.available_usd == null && b.amount == null) {
     return wrap('<div class="label">' + label + '</div><div class="value bal-red" style="font-size:1.1rem">Error</div><div class="sub">' + escapeHtml(b.error) + '</div>');
   }
+  if (b.currency === 'credits' && b.amount != null) {
+    const buckets = (b.credits || []).filter(c => c && c.remaining != null);
+    if (buckets.length > 1) {
+      const weekly = buckets[0];
+      const secondary = buckets[1];
+      const clsW = balanceColorClassFromUsage(weekly.percentage);
+      const clsS = balanceColorClassFromUsage(secondary.percentage);
+      return wrap(
+        '<div class="label">' + label + '</div>' +
+        '<div class="value bal-credit-value">' +
+          '<span class="credit-amount ' + clsW + '">' + fmtCredits(weekly.remaining) + '</span>' +
+          '<span class="credit-sep"> / </span>' +
+          '<span class="credit-amount ' + clsS + '">' + fmtCredits(secondary.remaining) + '</span>' +
+        '</div>'
+      );
+    }
+    const cls = balanceColorClassFromUsage(b.usage_percent);
+    return wrap(
+      '<div class="label">' + label + '</div>' +
+      '<div class="value bal-amount' + blurCls + ' ' + cls + '">' + fmtCredits(b.amount) + '</div>'
+    );
+  }
   const usd = balanceToUSD(b);
   if (usd == null) {
     return wrap('<div class="label">' + label + '</div><div class="value" style="color:var(--text-muted);font-size:1.1rem">—</div>');
@@ -1245,7 +1322,8 @@ async function loadBalances() {
     div.style.display = 'grid';
     div.innerHTML =
       renderBalanceStat('moonshot', data.moonshot) +
-      renderBalanceStat('deepseek', data.deepseek);
+      renderBalanceStat('deepseek', data.deepseek) +
+      renderBalanceStat('zai', data.zai);
     applyBalancesVisibility();
   } catch(e) {
     document.getElementById('balances-loading').style.display = 'none';
