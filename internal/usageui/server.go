@@ -96,6 +96,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/exchange-rate", s.handleExchangeRate)
 	mux.HandleFunc("/api/balances", s.handleBalances)
 	mux.HandleFunc("/api/reasoning-effort", s.handleReasoningEffort)
+	mux.HandleFunc("/api/zai-flat-fee", s.handleZaiFlatFee)
 
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -467,4 +468,9 @@ func (s *Server) handleExchangeRate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+// handleZaiFlatFee returns the fixed monthly subscription fee for Z.AI.
+func (s *Server) handleZaiFlatFee(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]float64{"usd": usage.ZaiFlatFeeUSD})
 }

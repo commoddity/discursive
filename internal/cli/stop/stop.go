@@ -105,6 +105,13 @@ func collectGatewayPIDs(pidPath string) []int {
 }
 
 func scanGatewayPIDs() []int {
+	// When DISCURSIVE_TEST_STOP_SKIP_FALLBACK is set, skip the pgrep fallback
+	// that scans for all discursive processes on the system.  This protects
+	// the real running gateway during tests.
+	if os.Getenv("DISCURSIVE_TEST_STOP_SKIP_FALLBACK") == "1" {
+		return nil
+	}
+
 	cmd := exec.Command("pgrep", "-f", "discursive")
 	output, err := cmd.Output()
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 func TestStopCmd_NoPidFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("DISCURSIVE_TEST_STOP_SKIP_FALLBACK", "1")
 
 	cmd := NewRoot()
 	_ = cmd.Execute()
@@ -25,6 +26,7 @@ func TestStopCmd_NoPidFile(t *testing.T) {
 func TestStopCmd_DeadPidFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("DISCURSIVE_TEST_STOP_SKIP_FALLBACK", "1")
 
 	cmd := NewRoot()
 	_ = cmd.Execute()

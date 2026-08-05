@@ -12,6 +12,10 @@ temp/
 # Local planning (not product code)
 planning/
 
+# Local symlinks
+summarized-chats/
+summarized-chats
+
 # OS
 .DS_Store
 Thumbs.db

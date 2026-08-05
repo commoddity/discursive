@@ -19,6 +19,10 @@ import (
 
 var ErrUnknownModel = errors.New("unknown model for pricing")
 
+// ZaiFlatFeeUSD is the fixed monthly subscription cost for Z.AI GLM Coding Plan
+// (not token-based; USD 14.40/month). Used for month projections only.
+const ZaiFlatFeeUSD = 14.40
+
 // UsageTokens is token counts for a single request (real model id, post-alias).
 type UsageTokens struct {
 	PromptTokens     uint64
