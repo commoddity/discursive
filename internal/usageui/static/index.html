@@ -376,6 +376,19 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 #custom-tooltip .tt-logo-row img { width: 160px !important; height: auto !important; }
 #custom-tooltip .tt-row { padding-left: 0; }
 #custom-tooltip .tt-total { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); color: var(--text-muted); }
+/* Native-title tooltips are plain text only — Z.AI balance hover uses this
+   positioned element so it can render a live countdown + formatted timestamp. */
+#zai-balance-tip {
+  display: none; position: fixed; z-index: 110;
+  background: #1a1f2b; border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; font-size: 0.78rem; color: var(--text);
+  pointer-events: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5); line-height: 1.6; white-space: nowrap;
+}
+#zai-balance-tip .zt-title { font-weight: 600; font-size: 0.82rem; margin-bottom: 6px; }
+#zai-balance-tip .zt-row { display: flex; align-items: baseline; gap: 8px; }
+#zai-balance-tip .zt-abs { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+#zai-balance-tip .zt-cd { font-variant-numeric: tabular-nums; color: var(--accent); }
 </style>
 </head>
 <body>
@@ -403,6 +416,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     <div class="loading" id="balances-loading">Loading...</div>
     <div class="summary" id="balances-summary" style="display:none"></div>
     <div class="error" id="balances-error" style="display:none"></div>
+    <div id="zai-balance-tip"></div>
   </div>
   <div class="card" id="projection-card">
     <h2 style="margin-bottom:12px">📈 Month Projection</h2>
@@ -526,6 +540,8 @@ let eurRate = null; // null = loading, 0 = failed
 let cnyRate = null;
 let zaiFlatFeeUsd = null; // null = loading, 0 = failed (fetched from /api/zai-flat-fee)
 let zaiMtdUsage = null; // { requests, tokens_in, tokens_out } MTD stats for hover tooltips
+let zaiBalance = null;  // latest /api/balances zai payload, for the Z.AI card hover tooltip
+let zaiTipTimer = null; // 1s interval refreshing the weekly-reset countdown
 
 async function fetchZaiFlatFee() {
   try {
@@ -635,6 +651,28 @@ const fmtStartedAt = (iso) => {
   const d = new Date(iso);
   if (isNaN(d)) return '—';
   return d.toLocaleString(fmtLocale(), { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+};
+// Live countdown to an epoch-ms reset time. Always includes seconds so it ticks.
+// e.g. "2d 14:32:07" / "14:32:07" / "05:03" (last minute shows padded seconds).
+const fmtCountdown = (resetMs) => {
+  let s = Math.floor((resetMs - Date.now()) / 1000);
+  if (s < 0) s = 0;
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  if (d > 0) return d + 'd ' + pad(h) + ':' + pad(m) + ':' + pad(ss);
+  if (h > 0) return h + 'h ' + pad(m) + ':' + pad(ss);
+  return m + 'm ' + pad(ss) + 's';
+};
+const fmtAbsoluteLocale = (ms) => {
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString(fmtLocale(), {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  });
 };
 const PROVIDER_COLORS = { moonshot: '#7c3aed', deepseek: '#2563eb', thaura: '#059669', zai: '#ec4899' };
 const PROVIDER_LIGHT = { moonshot: '#a78bfa', deepseek: '#60a5fa', thaura: '#34d399', zai: '#f472b6' };
@@ -1298,23 +1336,21 @@ function renderBalanceStat(provider, b) {
   const href = TOPUP_URLS[provider] || '#';
   const name = provider.charAt(0).toUpperCase() + provider.slice(1);
   let label = balanceLabel(provider);
-  // Attach Z.AI MTD token usage as hover tooltip
-  const zaiTip = (provider === 'zai' && zaiMtdUsage) ?
-    ' title="Z.AI MTD: ' +
-    fmtNum(zaiMtdUsage.requests) + ' requests, ' +
-    (zaiMtdUsage.tokens_in >= 1e6 ? (zaiMtdUsage.tokens_in/1e6).toFixed(2)+'M' : fmtNum(zaiMtdUsage.tokens_in)) + ' tokens in, ' +
-    (zaiMtdUsage.tokens_out >= 1e6 ? (zaiMtdUsage.tokens_out/1e6).toFixed(2)+'M' : fmtNum(zaiMtdUsage.tokens_out)) + ' tokens out"' : '';
+  // Z.AI card shows a rich hover tooltip (MTD usage + weekly quota reset). The
+  // native `title` is plain-text only, so mark the card and position a custom
+  // element instead (see wireZaiBalanceTip).
+  const isZai = provider === 'zai';
   const blurCls = getBalancesVisible() ? '' : ' gw-key-blur';
   const wrap = (inner) =>
-    '<div class="stat"><a class="bal-stat-link" href="' + href + '" target="_blank" rel="noopener" title="Top up ' + name + '">' +
+    '<div class="stat"><a class="bal-stat-link' + (isZai ? ' zai-hover' : '') + '" href="' + href + '" target="_blank" rel="noopener"' + (isZai ? '' : ' title="Top up ' + name + '"') + '>' +
       inner +
     '</a></div>';
 
   if (!b || !b.configured) {
-    return wrap('<div class="label"' + zaiTip + '>' + label + '</div><div class="value" style="color:var(--text-muted);font-size:1.1rem">Not configured</div>');
+    return wrap('<div class="label">' + label + '</div><div class="value" style="color:var(--text-muted);font-size:1.1rem">Not configured</div>');
   }
   if (b.error && b.available_usd == null && b.amount == null) {
-    return wrap('<div class="label"' + zaiTip + '>' + label + '</div><div class="value bal-red" style="font-size:1.1rem">Error</div><div class="sub">' + escapeHtml(b.error) + '</div>');
+    return wrap('<div class="label">' + label + '</div><div class="value bal-red" style="font-size:1.1rem">Error</div><div class="sub">' + escapeHtml(b.error) + '</div>');
   }
   if (b.currency === 'credits' && b.amount != null) {
     const buckets = (b.credits || []).filter(c => c && c.remaining != null);
@@ -1324,7 +1360,7 @@ function renderBalanceStat(provider, b) {
       const clsW = balanceColorClassFromUsage(weekly.percentage);
       const clsS = balanceColorClassFromUsage(secondary.percentage);
       return wrap(
-        '<div class="label"' + zaiTip + '>' + label + '</div>' +
+        '<div class="label">' + label + '</div>' +
         '<div class="value bal-credit-value">' +
           '<span class="credit-amount ' + clsW + '">' + fmtCredits(weekly.remaining) + '</span>' +
           '<span class="credit-sep"> / </span>' +
@@ -1334,16 +1370,16 @@ function renderBalanceStat(provider, b) {
     }
     const cls = balanceColorClassFromUsage(b.usage_percent);
     return wrap(
-      '<div class="label"' + zaiTip + '>' + label + '</div>' +
+      '<div class="label">' + label + '</div>' +
       '<div class="value bal-amount' + blurCls + ' ' + cls + '">' + fmtCredits(b.amount) + '</div>'
     );
   }
   const usd = balanceToUSD(b);
   if (usd == null) {
-    return wrap('<div class="label"' + zaiTip + '>' + label + '</div><div class="value" style="color:var(--text-muted);font-size:1.1rem">—</div>');
+    return wrap('<div class="label">' + label + '</div><div class="value" style="color:var(--text-muted);font-size:1.1rem">—</div>');
   }
   const cls = balanceColorClass(usd);
-  return wrap('<div class="label"' + zaiTip + '>' + label + '</div><div class="value bal-amount' + blurCls + ' ' + cls + '">' + fmtMoney(usd) + '</div>');
+  return wrap('<div class="label">' + label + '</div><div class="value bal-amount' + blurCls + ' ' + cls + '">' + fmtMoney(usd) + '</div>');
 }
 
 async function loadBalances() {
@@ -1371,12 +1407,70 @@ async function loadBalances() {
       renderBalanceStat('moonshot', data.moonshot) +
       renderBalanceStat('deepseek', data.deepseek) +
       renderBalanceStat('zai', data.zai);
+    zaiBalance = data.zai;
     applyBalancesVisibility();
+    wireZaiBalanceTip();
   } catch(e) {
     document.getElementById('balances-loading').style.display = 'none';
     document.getElementById('balances-error').style.display = 'block';
     document.getElementById('balances-error').textContent = 'Error: ' + e.message;
   }
+}
+
+// Build the Z.AI balance card hover tooltip (MTD usage + weekly quota reset).
+// Rendered into #zai-balance-tip with a 1s ticking countdown.
+function zaiTipBody() {
+  const parts = [];
+  if (zaiMtdUsage) {
+    parts.push(
+      'MTD: ' + fmtNum(zaiMtdUsage.requests) + ' requests · ' +
+      (zaiMtdUsage.tokens_in >= 1e6 ? (zaiMtdUsage.tokens_in/1e6).toFixed(2)+'M' : fmtNum(zaiMtdUsage.tokens_in)) + ' in · ' +
+      (zaiMtdUsage.tokens_out >= 1e6 ? (zaiMtdUsage.tokens_out/1e6).toFixed(2)+'M' : fmtNum(zaiMtdUsage.tokens_out)) + ' out'
+    );
+  }
+  const weekly = (zaiBalance && zaiBalance.credits || []).find(c => c && c.label === 'Weekly');
+  if (weekly && weekly.next_reset_ms > 0) {
+    const cd = fmtCountdown(weekly.next_reset_ms);
+    const abs = fmtAbsoluteLocale(weekly.next_reset_ms);
+    parts.push('<div class="zt-row"><span class="zt-title" style="font-weight:500">Weekly quota resets</span></div>' +
+      '<div class="zt-row"><span>in</span><span class="zt-cd">' + cd + '</span></div>' +
+      '<div class="zt-row"><span>at</span><span class="zt-abs">' + abs + '</span></div>');
+  }
+  return parts.join('<div style="margin-top:6px"></div>');
+}
+
+function positionZaiTip(cardEl) {
+  const el = document.getElementById('zai-balance-tip');
+  const r = cardEl.getBoundingClientRect();
+  el.style.left = (r.left + r.width / 2) + 'px';
+  el.style.top = (r.top - 8) + 'px';
+}
+
+// Re-armed after each balances render. Hovering the Z.AI card shows a custom,
+// positioned tooltip because the native title attribute cannot render HTML.
+function wireZaiBalanceTip() {
+  hideZaiTip(); // clear any tooltip/timer left from a previous render's node
+  const card = document.querySelector('#balances-summary .bal-stat-link.zai-hover');
+  const tip = document.getElementById('zai-balance-tip');
+  if (!card || !tip) return;
+  card.addEventListener('mouseenter', (e) => {
+    if (zaiTipTimer) clearInterval(zaiTipTimer);
+    tip.innerHTML = zaiTipBody();
+    tip.style.display = 'block';
+    positionZaiTip(card);
+    zaiTipTimer = setInterval(() => {
+      tip.innerHTML = zaiTipBody();
+      positionZaiTip(card);
+    }, 1000);
+  });
+  card.addEventListener('mousemove', (e) => positionZaiTip(card));
+  card.addEventListener('mouseleave', () => hideZaiTip());
+}
+
+function hideZaiTip() {
+  if (zaiTipTimer) { clearInterval(zaiTipTimer); zaiTipTimer = null; }
+  const tip = document.getElementById('zai-balance-tip');
+  if (tip) tip.style.display = 'none';
 }
 
 async function renderProjection(mtdUsd, byModel) {

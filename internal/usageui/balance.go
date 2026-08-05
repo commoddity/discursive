@@ -40,10 +40,13 @@ type ProviderBalance struct {
 }
 
 // CreditBucket is one quota window (e.g. 5-hour vs weekly) for credit-based providers.
+// NextResetMs is the epoch-millisecond reset time when the provider exposes one
+// (Z.AI weekly bucket); zero when the bucket does not carry a reset time.
 type CreditBucket struct {
-	Label      string  `json:"label"`
-	Remaining  float64 `json:"remaining"`
-	Percentage float64 `json:"percentage"`
+	Label       string  `json:"label"`
+	Remaining   float64 `json:"remaining"`
+	Percentage  float64 `json:"percentage"`
+	NextResetMs int64   `json:"next_reset_ms,omitempty"`
 }
 
 // BalancesResponse is the /api/balances payload.
@@ -322,9 +325,10 @@ func collectZaiCreditBuckets(limits []zaiCreditLimit) ([]CreditBucket, bool) {
 			label = "Weekly"
 		}
 		buckets = append(buckets, CreditBucket{
-			Label:      label,
-			Remaining:  float64(l.Remaining),
-			Percentage: float64(l.Percentage),
+			Label:       label,
+			Remaining:   float64(l.Remaining),
+			Percentage:  float64(l.Percentage),
+			NextResetMs: l.NextResetTime,
 		})
 	}
 	if len(buckets) == 0 {

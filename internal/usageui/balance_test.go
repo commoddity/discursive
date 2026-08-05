@@ -192,14 +192,15 @@ func TestFetchZaiBalance(t *testing.T) {
 	zaiBody := `{"code":200,"msg":"Operation successful","success":true,"data":{"level":"lite","limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,"usage":2000,"remaining":1800,"percentage":10},{"type":"CREDIT_LIMIT","unit":6,"number":1,"usage":10000,"remaining":7500,"percentage":25,"nextResetTime":1786438400971}]}}`
 
 	tests := []struct {
-		name       string
-		getKey     func() (string, bool)
-		status     int
-		body       string
-		wantConf   bool
-		wantAmt    *float64
-		wantPct    *float64
-		wantErrSub string
+		name        string
+		getKey      func() (string, bool)
+		status      int
+		body        string
+		wantConf    bool
+		wantAmt     *float64
+		wantPct     *float64
+		wantResetMs int64
+		wantErrSub  string
 	}{
 		{
 			name:     "no key",
@@ -212,13 +213,14 @@ func TestFetchZaiBalance(t *testing.T) {
 			wantConf: false,
 		},
 		{
-			name:     "success weekly credits",
-			getKey:   func() (string, bool) { return "sk-zai-test", true },
-			status:   200,
-			body:     zaiBody,
-			wantConf: true,
-			wantAmt:  floatPtr(7500),
-			wantPct:  floatPtr(25),
+			name:        "success weekly credits",
+			getKey:      func() (string, bool) { return "sk-zai-test", true },
+			status:      200,
+			body:        zaiBody,
+			wantConf:    true,
+			wantAmt:     floatPtr(7500),
+			wantPct:     floatPtr(25),
+			wantResetMs: 1786438400971,
 		},
 		{
 			name:       "unauthorized",
@@ -283,6 +285,19 @@ func TestFetchZaiBalance(t *testing.T) {
 					t.Fatalf("usage_percent=%v want %v", got.UsagePercent, tt.wantPct)
 				}
 			}
+			if tt.wantResetMs != 0 {
+				// Weekly bucket carries the nextReseTime; verify it propagates.
+				found := false
+				for _, c := range got.Credits {
+					if c.Label == "Weekly" && c.NextResetMs == tt.wantResetMs {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("weekly bucket reset not propagated: %+v", got.Credits)
+				}
+			}
 		})
 	}
 }
@@ -290,7 +305,7 @@ func TestFetchZaiBalance(t *testing.T) {
 func TestCollectZaiCreditBuckets(t *testing.T) {
 	limits := []zaiCreditLimit{
 		{Type: "CREDIT_LIMIT", Unit: 3, Number: 5, Remaining: 1800, Percentage: 10, Usage: 2000},
-		{Type: "CREDIT_LIMIT", Unit: 6, Number: 1, Remaining: 7500, Percentage: 25, Usage: 10000},
+		{Type: "CREDIT_LIMIT", Unit: 6, Number: 1, Remaining: 7500, Percentage: 25, Usage: 10000, NextResetTime: 1786438400971},
 	}
 	got, ok := collectZaiCreditBuckets(limits)
 	if !ok {
@@ -303,8 +318,14 @@ func TestCollectZaiCreditBuckets(t *testing.T) {
 	if got[0].Label != "Weekly" || got[0].Remaining != 7500 || got[0].Percentage != 25 {
 		t.Fatalf("weekly bucket wrong: %+v", got[0])
 	}
+	if got[0].NextResetMs != 1786438400971 {
+		t.Fatalf("weekly reset=%d want 1786438400971", got[0].NextResetMs)
+	}
 	if got[1].Label != "5-Hour" || got[1].Remaining != 1800 {
 		t.Fatalf("5-hour bucket wrong: %+v", got[1])
+	}
+	if got[1].NextResetMs != 0 {
+		t.Fatalf("5-hour bucket should not carry a reset: %+v", got[1])
 	}
 }
 
