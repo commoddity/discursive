@@ -21,7 +21,7 @@ func TestSetModelPersists(t *testing.T) {
 	}{
 		{name: "deepseek alias", requested: "o3-mini", wantAlias: "o3-mini", wantReal: "deepseek-v4-flash"},
 		{name: "kimi alias", requested: "gpt-4o", wantAlias: "gpt-4o", wantReal: "kimi-k3"},
-		{name: "real k2.6", requested: "kimi-k2.6", wantAlias: "kimi-k2.6", wantReal: "kimi-k2.6"},
+		{name: "real k2.7", requested: "kimi-k2.7-code", wantAlias: "kimi-k2.7-code", wantReal: "kimi-k2.7-code"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

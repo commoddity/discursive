@@ -115,12 +115,13 @@ Change the model alias in Cursor's model picker — no restart needed:
 | Cursor alias  | Provider | Real model          | Use                                    |
 | ------------- | -------- | ------------------- | -------------------------------------- |
 | `gpt-4o`      | Moonshot | `kimi-k3`           | Planning / flagship                    |
-| `gpt-4o-mini` | Moonshot | `kimi-k2.6`         | Image-capable; thinking off by default |
+| `gpt-4o-mini` | Moonshot | `kimi-k2.7-code`  | Coding; always thinks                 |
 | `o1`          | DeepSeek | `deepseek-v4-pro`   | Harder execution                       |
 | `o3-mini`     | DeepSeek | `deepseek-v4-flash` | Cheap execution                        |
 | `gpt-5-nano`  | Thaura   | `thaura`            | Ethical AI; optional provider          |
 | `gpt-4.1-turbo` | Z.AI   | `glm-5.2`           | Planning; cheaper than K3              |
 | `gpt-4.1`       | Z.AI   | `glm-4.7`           | Cheap execution                        |
+| `gpt-4-turbo`   | Z.AI   | `glm-5.2`           | Compat alias (Cursor may rewrite `gpt-4.1-turbo` to this) |
 
 
 
@@ -179,7 +180,7 @@ process or configuration.
 
 ## 🪐 Providers
 
-Models that support configurable reasoning / thinking (`kimi-k3`, `kimi-k2.6`,
+Models that support configurable reasoning / thinking (`kimi-k3`,
 `deepseek-v4-pro`, `deepseek-v4-flash`) can be tuned from the Usage Dashboard
 (**Reasoning Effort** card at `http://127.0.0.1:4002`). Values are stored in app
 settings and applied to new gateway requests immediately (no restart). Gateway
@@ -188,13 +189,13 @@ logs include an `effort` field on request/response/usage lines.
 | Model                                   | Options              | Default                                                                                  |
 | --------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------- |
 | `kimi-k3`                               | `low`, `high`, `max` | `low` (API default is `max`; we default lower for cost)                                  |
-| `kimi-k2.6`                             | `off`, `on`          | `off` (maps to `thinking: disabled` / `enabled`)                                         |
 | `deepseek-v4-pro` / `deepseek-v4-flash` | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
 | `glm-5.2`                              | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
 
 - Lower effort usually means fewer thinking tokens and lower cost. `thaura` does not
-expose this control. 
-- Kimi K2.6 only supports thinking on/off: [Kimi K2.6](https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart)
+expose this control.
+- `kimi-k2.7-code` always thinks — thinking is always on and there is no effort
+selector: [Kimi K2.7 Code](https://www.kimi.com/resources/kimi-k2-7-code)
 - DeepSeek only documents `high`/`max` for effort: [DeepSeek Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)).
 
 ### 🌙 Moonshot (Kimi) <!-- omit in toc -->
@@ -205,8 +206,8 @@ windows and native reasoning capabilities.
 
 | API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                            |
 | ------------ | ---------------- | ------------ | ------------- | ----------------------------------------------- |
-| `kimi-k3`    | $0.30            | $3.00        | $15.00        | Flagship; 1M-token context, always thinks       |
-| `kimi-k2.6`  | $0.16            | $0.95        | $4.00         | Image-capable coding model; both thinking modes |
+| `kimi-k3`       | $0.30            | $3.00        | $15.00        | Flagship; 1M-token context, always thinks       |
+| `kimi-k2.7-code` | $0.19           | $0.95        | $4.00         | Coding model; always thinks                      |
 
 
 - Pricing: [https://platform.kimi.ai/docs/pricing/chat](https://platform.kimi.ai/docs/pricing/chat)
@@ -246,7 +247,7 @@ and mission-aligned technology development.
 
 | API model ID | Input / MTok | Output / MTok | Role                                         |
 | ------------ | ------------ | ------------- | -------------------------------------------- |
-| `thaura`     | $0.50        | $2.00         | OpenAI-compatible chat, vision, and tool use |
+| `thaura`     | $0.50        | $2.00         | OpenAI-compatible chat and tool use      |
 
 
 - Pricing: [https://thaura.ai/api-platform](https://thaura.ai/api-platform)
@@ -298,6 +299,14 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 | ------------ | ---------------- | ------------ | ------------- | ----------------------------------------- |
 | `glm-5.2`    | $0.26            | $1.40        | $4.40         | Planning model; reasoning_effort + cache  |
 | `glm-4.7`    | $0.11            | $0.60        | $2.20         | Budget execution; thinking on/off         |
+| `glm-4.6v`   | $0.05            | $0.30        | $0.90         | Vision worker — describes images for ALL providers (not user-selectable) |
+
+> **Image routing:** any request (any provider) that contains image content is
+> intercepted by the gateway and each image is described by Z.AI `glm-4.6v`
+> (coding-plan endpoint) before the selected text model is called. A Z.AI API
+> key is therefore required to send images. If it is missing or the vision
+> model rejects the image, the request **fails fast** with a clear `vision_error`
+> rather than silently dropping the image.
 
 - Pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing)
 - API docs: [https://docs.z.ai/api-reference/introduction](https://docs.z.ai/api-reference/introduction)
@@ -333,6 +342,7 @@ internal/
   config/                 # App settings, paths, upstream URL helpers
   crypto/                 # Encrypt upstream keys + gateway key gen
   gateway/                # HTTP server, sanitizer, optimizer, proxy, auth
+    gateway/vision/       # Image description via glm-4.6v (fail-fast, content-hash cache)
   tunnel/                 # cloudflared supervisor
   doctor/                 # Health checks
   usage/                  # Pricing tables, token/cost store, slog helpers

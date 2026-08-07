@@ -684,8 +684,8 @@ function providerClass(p) { return PROVIDER_COLORS[p] ? p : 'deepseek'; }
 const MODEL_COLORS = {
   'deepseek::deepseek-v4-pro':   '#2563eb', // deep blue
   'deepseek::deepseek-v4-flash': '#06b6d4', // cyan
-  'moonshot::kimi-k3':           '#7c3aed', // deep purple
-  'moonshot::kimi-k2.6':         '#e879f9', // hot pink / magenta
+  'moonshot::kimi-k3':          '#7c3aed', // deep purple
+  'moonshot::kimi-k2.7-code':   '#e879f9', // hot pink / magenta
   'thaura::thaura':              '#059669', // emerald green
   'zai::glm-5.2':                '#ec4899', // hot pink
   'zai::glm-4.7':                '#f472b6', // light pink
@@ -806,8 +806,8 @@ const TOPUP_URLS = {
 // Thaura has no cache tier.
 const PRICING = {
   moonshot: {
-    'kimi-k3':   { cache_hit: 0.30, input: 3.00, output: 15.00 },
-    'kimi-k2.6': { cache_hit: 0.16, input: 0.95, output: 4.00 },
+    'kimi-k3':        { cache_hit: 0.30, input: 3.00, output: 15.00 },
+    'kimi-k2.7-code': { cache_hit: 0.19, input: 0.95, output: 4.00 },
   },
   deepseek: {
     'deepseek-v4-flash': { cache_hit: 0.0028, input: 0.14, output: 0.28 },

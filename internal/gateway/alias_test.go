@@ -16,16 +16,17 @@ func TestResolveModel(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "kimi k3 alias", request: "gpt-4o", provider: config.ProviderMoonshot, model: "kimi-k3", policy: PolicyK3},
-		{name: "kimi k2.6 alias", request: "gpt-4o-mini", provider: config.ProviderMoonshot, model: "kimi-k2.6", policy: PolicyK2},
+		{name: "kimi k2.7 alias", request: "gpt-4o-mini", provider: config.ProviderMoonshot, model: "kimi-k2.7-code", policy: PolicyK27},
 		{name: "deepseek pro alias", request: "o1", provider: config.ProviderDeepSeek, model: "deepseek-v4-pro", policy: PolicyDeepSeek},
 		{name: "deepseek flash alias", request: "o3-mini", provider: config.ProviderDeepSeek, model: "deepseek-v4-flash", policy: PolicyDeepSeek},
 		{name: "real kimi-k3", request: "kimi-k3", provider: config.ProviderMoonshot, model: "kimi-k3", policy: PolicyK3},
-		{name: "real kimi-k2.6", request: "kimi-k2.6", provider: config.ProviderMoonshot, model: "kimi-k2.6", policy: PolicyK2},
+		{name: "real kimi-k2.7", request: "kimi-k2.7-code", provider: config.ProviderMoonshot, model: "kimi-k2.7-code", policy: PolicyK27},
 		{name: "real deepseek pro", request: "deepseek-v4-pro", provider: config.ProviderDeepSeek, model: "deepseek-v4-pro", policy: PolicyDeepSeek},
 		{name: "real deepseek flash", request: "deepseek-v4-flash", provider: config.ProviderDeepSeek, model: "deepseek-v4-flash", policy: PolicyDeepSeek},
 		{name: "thaura alias", request: "gpt-5-nano", provider: config.ProviderThaura, model: "thaura", policy: PolicyThaura},
 		{name: "real thaura", request: "thaura", provider: config.ProviderThaura, model: "thaura", policy: PolicyThaura},
 		{name: "zai glm-5.2 alias", request: "gpt-4.1-turbo", provider: config.ProviderZai, model: "glm-5.2", policy: PolicyZai},
+		{name: "zai gpt-4-turbo alias", request: "gpt-4-turbo", provider: config.ProviderZai, model: "glm-5.2", policy: PolicyZai},
 		{name: "zai glm-4.7 alias", request: "gpt-4.1", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
 		{name: "real glm-5.2", request: "glm-5.2", provider: config.ProviderZai, model: "glm-5.2", policy: PolicyZai},
 		{name: "real glm-4.7", request: "glm-4.7", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
@@ -52,8 +53,8 @@ func TestResolveModel(t *testing.T) {
 
 func TestListAdvertisedModels(t *testing.T) {
 	list := ListAdvertisedModels()
-	if len(list) != 7 {
-		t.Fatalf("len=%d want 7", len(list))
+	if len(list) != 15 {
+		t.Fatalf("len=%d want 15", len(list))
 	}
 	var sawMoonshot, sawDeepSeek, sawThaura, sawZai bool
 	for i, m := range list {

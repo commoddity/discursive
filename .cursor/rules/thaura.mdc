@@ -13,7 +13,7 @@ OpenAI-compatible API at `https://backend.thaura.ai/v1`.
 
 | Cursor alias    | Real model | Description                       |
 | --------------- | ---------- | --------------------------------- |
-| `gpt-5-nano`    | `thaura`   | OpenAI-compatible chat, vision    |
+| `gpt-5-nano`    | `thaura`   | OpenAI-compatible chat          |
 
 ## API key
 

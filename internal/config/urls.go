@@ -67,10 +67,11 @@ const (
 // Join chat/completions via ChatCompletionsURL so Moonshot’s /v1 and DeepSeek’s
 // host root never become /v1/v1/….
 const (
-	DefaultMoonshotBaseURL = "https://api.moonshot.ai/v1"
-	DefaultDeepSeekBaseURL = "https://api.deepseek.com"
-	DefaultThauraBaseURL   = "https://backend.thaura.ai/v1"
-	DefaultZaiBaseURL      = "https://api.z.ai/api/coding/paas/v4"
+	DefaultMoonshotBaseURL    = "https://api.moonshot.ai/v1"
+	DefaultDeepSeekBaseURL    = "https://api.deepseek.com"
+	DefaultThauraBaseURL      = "https://backend.thaura.ai/v1"
+	DefaultZaiBaseURL         = "https://api.z.ai/api/coding/paas/v4"
+	DefaultZaiOnDemandBaseURL = "https://api.z.ai/api/paas/v4"
 )
 
 // UpstreamBaseURL returns the OpenAI-compatible API root for provider.
@@ -96,6 +97,11 @@ func ChatCompletionsURL(provider Provider) (string, error) {
 		return "", err
 	}
 	return joinURLPath(base, "chat", "completions"), nil
+}
+
+// ZaiOnDemandChatURL returns the chat/completions URL for the Z.AI on-demand endpoint.
+func ZaiOnDemandChatURL() string {
+	return joinURLPath(DefaultZaiOnDemandBaseURL, "chat", "completions")
 }
 
 // ModelsURL returns {base}/models for provider (OpenAI list-models shape).

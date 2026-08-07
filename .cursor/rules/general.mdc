@@ -42,6 +42,7 @@ Mandatory protocol for EVERY task:
 | Thaura AI API (models, pricing, sanitizer policy) | `.cursor/rules/thaura.mdc` (+ `gateway.mdc` if proxying) |
 | Z.AI API (models, pricing, sanitizer policy) | `.cursor/rules/zai.mdc` (+ `gateway.mdc` if proxying) |
 | Local gateway, sanitizer, OpenAI-compat surface, metrics | `.cursor/rules/gateway.mdc` |
+| Image/vision handling (fail-fast, glm-4.6v worker, content-hash cache) | `.cursor/rules/gateway.mdc` (+ `zai.mdc` for the glm-4.6v model) |
 | Cursor settings DB / model alias reference | `.cursor/rules/cursor-settings.mdc` | |
 | cloudflared tunnel / public URL / process supervision | `.cursor/rules/tunnel.mdc` |
 | macOS/Linux packaging, secrets store, autostart | `.cursor/rules/unix-packaging.mdc` |
@@ -64,7 +65,7 @@ When a task spans multiple areas, read every applicable rule file before startin
   routes by **alias→provider→model** to **Moonshot Kimi** and/or **DeepSeek**,
   exposes a public HTTPS tunnel (Cursor cloud cannot hit localhost). Cursor is
   configured manually with the gateway API key (never upstream provider keys)
-- **Providers**: Moonshot (`kimi-k3`, `kimi-k2.6`) and
+- **Providers**: Moonshot (`kimi-k3`, `kimi-k2.7-code`) and
  DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`) and
  Thaura (`thaura`) and Z.AI (`glm-5.2`, `glm-4.7`). Switching is **setting the
  Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
@@ -81,6 +82,7 @@ internal/
   config/            # settings, paths, portable mode
   crypto/            # secrets + gateway key generation
   gateway/           # HTTP server, auth, sanitizer, responses adapter, optimizer
+  gateway/vision/    # image description worker (glm-4.6v); fail-fast image routing
   tunnel/            # cloudflared Quick Tunnel (+ BYO URL mode)
   usage/             # pricing table + per-session accounting
   doctor/            # health checks
@@ -221,7 +223,7 @@ NEVER do these without explicit user approval:
 | ----- | ---- | ----- |
 | Pre-commit hook runs `make verify` (or `go fmt`) but formatting changes appear as unstaged modifications after the commit, leaving the working tree dirty | Lefthook (and git hooks in general) do not automatically re-stage files modified by hook commands — the commit captures the pre-format version and the formatted version is left unstaged | Append `&& git add $(git diff --name-only --diff-filter=M)` to the hook command so any file modified by the formatter is re-staged before the commit completes |
 
-<!-- last-verified: 2026-07 -->
+<!-- last-verified: 2026-08 -->
 
 ### Package Managers
 

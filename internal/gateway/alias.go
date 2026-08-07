@@ -12,7 +12,7 @@ type ThinkingPolicy int
 
 const (
 	PolicyK3 ThinkingPolicy = iota
-	PolicyK2
+	PolicyK27
 	PolicyDeepSeek
 	PolicyThaura
 	PolicyZai
@@ -32,7 +32,7 @@ type AdvertisedModel struct {
 	Experimental bool // reserved for future use
 }
 
-// ListAdvertisedModels returns the canonical advertise list (aliases only).
+// ListAdvertisedModels returns the canonical advertise list (aliases + real ids).
 // Must stay aligned with ResolveModel cases.
 func ListAdvertisedModels() []AdvertisedModel {
 	return []AdvertisedModel{
@@ -43,6 +43,15 @@ func ListAdvertisedModels() []AdvertisedModel {
 		{ID: "gpt-5-nano", Provider: config.ProviderThaura},
 		{ID: "gpt-4.1-turbo", Provider: config.ProviderZai},
 		{ID: "gpt-4.1", Provider: config.ProviderZai},
+		{ID: "gpt-4-turbo", Provider: config.ProviderZai}, // Cursor sometimes rewrites gpt-4.1-turbo → gpt-4-turbo
+		// Real model IDs — also resolvable by ResolveModel.
+		{ID: "kimi-k3", Provider: config.ProviderMoonshot},
+		{ID: "kimi-k2.7-code", Provider: config.ProviderMoonshot},
+		{ID: "deepseek-v4-pro", Provider: config.ProviderDeepSeek},
+		{ID: "deepseek-v4-flash", Provider: config.ProviderDeepSeek},
+		{ID: "thaura", Provider: config.ProviderThaura},
+		{ID: "glm-5.2", Provider: config.ProviderZai},
+		{ID: "glm-4.7", Provider: config.ProviderZai},
 	}
 }
 
@@ -53,15 +62,15 @@ func ResolveModel(requested string) (Route, error) {
 	case "gpt-4o":
 		return Route{config.ProviderMoonshot, "kimi-k3", PolicyK3}, nil
 	case "gpt-4o-mini":
-		return Route{config.ProviderMoonshot, "kimi-k2.6", PolicyK2}, nil
+		return Route{config.ProviderMoonshot, "kimi-k2.7-code", PolicyK27}, nil
 	case "o1":
 		return Route{config.ProviderDeepSeek, "deepseek-v4-pro", PolicyDeepSeek}, nil
 	case "o3-mini":
 		return Route{config.ProviderDeepSeek, "deepseek-v4-flash", PolicyDeepSeek}, nil
 	case "kimi-k3":
 		return Route{config.ProviderMoonshot, "kimi-k3", PolicyK3}, nil
-	case "kimi-k2.6":
-		return Route{config.ProviderMoonshot, "kimi-k2.6", PolicyK2}, nil
+	case "kimi-k2.7-code":
+		return Route{config.ProviderMoonshot, "kimi-k2.7-code", PolicyK27}, nil
 	case "deepseek-v4-pro", "deepseek-v4-flash":
 		return Route{config.ProviderDeepSeek, requested, PolicyDeepSeek}, nil
 	case "gpt-5-nano":
@@ -69,6 +78,9 @@ func ResolveModel(requested string) (Route, error) {
 	case "thaura":
 		return Route{config.ProviderThaura, "thaura", PolicyThaura}, nil
 	case "gpt-4.1-turbo":
+		return Route{config.ProviderZai, "glm-5.2", PolicyZai}, nil
+	case "gpt-4-turbo":
+		// Cursor sometimes rewrites gpt-4.1-turbo → gpt-4-turbo.
 		return Route{config.ProviderZai, "glm-5.2", PolicyZai}, nil
 	case "gpt-4.1":
 		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil

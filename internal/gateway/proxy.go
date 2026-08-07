@@ -23,6 +23,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.UseNumber()
 	if err := dec.Decode(&body); err != nil {
+		logRequest(requestID, "status", http.StatusBadRequest, "error", "invalid JSON body")
 		writeJSONError(w, http.StatusBadRequest, "invalid JSON body", "invalid_request_error")
 		return
 	}
@@ -32,21 +33,34 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	scfg := s.sanitizeConfig()
 	sanitized, err := SanitizeRequest(body, scfg)
 	if err != nil {
+		logRequest(requestID, "status", http.StatusBadRequest, "error", err.Error())
 		writeJSONError(w, http.StatusBadRequest, err.Error(), "invalid_request_error")
 		return
 	}
 	restoreClientStream(sanitized.Body, wantsStream)
+
+	// Describe images via glm-4.6v for ALL providers before the text model
+	// sees them. Fail fast: if the vision key is missing or the vision model
+	// rejects the image, surface a clear error to the user instead of
+	// silently stripping or passing raw images through.
+	if _, err := s.vision.ReplaceImages(r.Context(), sanitized.Body); err != nil {
+		logRequest(requestID, "status", http.StatusBadRequest, "error", "vision", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
+		writeJSONError(w, http.StatusBadRequest, err.Error(), "vision_error")
+		return
+	}
 
 	// Apply cache-optimization pass after sanitization.
 	OptimizeRequest(sanitized, OptimizeConfig{PromptCacheKey: s.sessionID})
 
 	upstreamKey, err := s.upstreamKey(sanitized.Provider)
 	if err != nil {
+		logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
 		writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
 		return
 	}
 	chatURL, err := s.chatURL(sanitized.Provider)
 	if err != nil {
+		logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
 		writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
 		return
 	}
@@ -63,6 +77,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := s.doUpstream(r, chatURL, upstreamKey, sanitized.Body)
 	if err != nil {
+		logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("upstream request failed: %v", err), "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort)
 		writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("upstream request failed: %v", err), "upstream_error")
 		return
 	}
@@ -95,6 +110,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	respBody, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
+		logRequest(requestID, "status", http.StatusBadGateway, "error", "failed reading upstream body", "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort)
 		writeJSONError(w, http.StatusBadGateway, "failed reading upstream body", "upstream_error")
 		return
 	}
@@ -105,6 +121,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		logRequest(requestID, "retry", "tool_call_id", "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort)
 		resp2, err := s.doUpstream(r, chatURL, upstreamKey, retryBody)
 		if err != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("upstream retry failed: %v", err), "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort)
 			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("upstream retry failed: %v", err), "upstream_error")
 			return
 		}
@@ -138,6 +155,7 @@ func (s *Server) finishUpstream(w http.ResponseWriter, resp *http.Response, want
 	}
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		logRequest(requestID, "status", http.StatusBadGateway, "error", "failed reading retry upstream body", "provider", string(provider), "model", model, "effort", effort)
 		writeJSONError(w, http.StatusBadGateway, "failed reading upstream body", "upstream_error")
 		return
 	}

@@ -15,6 +15,11 @@ Models: GLM series with thinking support.
 | ---------------- | ---------- | ---------------------------------------------------- |
 | `gpt-4.1-turbo`  | `glm-5.2`  | Planning model; reasoning_effort + prompt caching    |
 | `gpt-4.1`        | `glm-4.7`  | Budget execution; thinking on/off only               |
+| (internal)       | `glm-4.6v` | **Vision worker** only — describes images for ALL providers. Not user-selectable; not in `/v1/models`. Runs on the coding-plan endpoint. |
+
+`glm-4.6v` has **no Cursor alias** (level 1–2: label "Vision worker"; level 3:
+model `glm-4.6v`). It is invoked by `vision.Describer` in the gateway; vision
+usage bills under `zai::glm-4.6v`.
 
 ## API key
 
@@ -37,7 +42,7 @@ Source: https://docs.z.ai/guides/overview/pricing
 | Model     | Parameter          | Action                                                                                         |
 | --------- | ------------------ | ---------------------------------------------------------------------------------------------- |
 | `glm-5.2` | `thinking`         | Set `{type: "enabled"}` when reasoning is requested, else `{type: "disabled"}`                 |
-| `glm-5.2` | `reasoning_effort` | Normalized via `normalizeZaiEffort()` → `none`/`minimal`/`low`↦off, `medium`↦high, `high`/`xhigh`↦max |
+| `glm-5.2` | `reasoning_effort` | Normalized via `normalizeZaiEffort()` → `off`↦off (thinking disabled), `low`/`medium`↦high, `high` pass-through, `xhigh`↦max |
 | `glm-4.7` | `thinking`         | Set `{type: "enabled"|"disabled"}`; no reasoning_effort support                                |
 | `glm-4.7` | `reasoning_effort` | Deleted                                                                                        |
 
@@ -45,15 +50,17 @@ Apply `PolicyZai` case in `applyThinkingPolicy()` and `stripUnsupportedParams()`
 
 ## Reasoning effort normalization (Z.AI-specific)
 
-Z.AI supports `reasoning_effort` values: `none`, `minimal`, `low`, `medium`, `high`, `max`.
-The gateway normalizes higher-level effort labels:
+Z.AI accepts `reasoning_effort` values: `none`, `minimal`, `low`, `medium`, `high`, `max`.
+The gateway normalizes higher-level effort labels **down to what the catalog
+advertises** via `normalizeZaiEffort()` (only `off`, `high`, `max` are ever sent):
 
-| UI label       | Z.AI value |
-| -------------- | ---------- |
-| Off / None     | `none`     |
-| Minimal / Low  | `minimal`  |
-| Medium         | `high`     |
-| High           | `max`      |
+| UI label        | Sent to Z.AI |
+| --------------- | ------------ |
+| Off / None      | `off` (thinking disabled) |
+| Low             | `high`  |
+| Medium          | `high`  |
+| High            | `high`  |
+| XHigh / Max     | `max`  |
 
 The `ReasoningEffortCatalog` entry for `glm-5.2` advertises: `Off`, `high`, `max`.
 `glm-4.7` does not appear in the catalog (no effort selection).
@@ -85,6 +92,12 @@ credits via the quota API:
 Also checkable manually at https://z.ai/manage-apikey/billing.
 
 ## Symptoms & fixes
+
+### `vision_call_failed with 429 "Insufficient balance"`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Vision describer logs `vision_call_failed` with status 429 and body `"Insufficient balance or no resource package. Please recharge."` | The vision describer is hitting the on-demand endpoint (`/api/paas/v4`) but the Z.AI key is a GLM Coding Plan key — these are separate billing buckets and the on-demand bucket has no balance | Use the coding-plan endpoint (`/api/coding/paas/v4`) for `glm-4.6v` vision calls. `glm-4.6v` is available on the Coding Plan (see https://docs.z.ai/devpack/overview under "Credit Calculation" → GLM-4.6V（Vision MCP）). The vision describer in `server.go` now uses `ChatCompletionsURL(config.ProviderZai)` which resolves to the coding-plan base URL. |
 
 ### `Z.AI request fails with Unauthorized`
 

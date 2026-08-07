@@ -15,9 +15,10 @@ func TestNormalizeReasoningEffort(t *testing.T) {
 		{name: "k3 max", model: ModelKimiK3, effort: "max", want: "max"},
 		{name: "k3 medium invalid", model: ModelKimiK3, effort: "medium", wantErr: true},
 		{name: "k3 off invalid", model: ModelKimiK3, effort: "off", wantErr: true},
-		{name: "k26 off", model: ModelKimiK26, effort: "off", want: "off"},
-		{name: "k26 on", model: ModelKimiK26, effort: "on", want: "on"},
-		{name: "k26 high invalid", model: ModelKimiK26, effort: "high", wantErr: true},
+		// Kimi K2.7 Code always thinks — no effort selector; any effort is invalid.
+		{name: "k27 off invalid", model: ModelKimiK27, effort: "off", wantErr: true},
+		{name: "k27 on invalid", model: ModelKimiK27, effort: "on", wantErr: true},
+		{name: "k27 low invalid", model: ModelKimiK27, effort: "low", wantErr: true},
 		{name: "ds off", model: ModelDeepSeekV4Pro, effort: "off", want: "off"},
 		{name: "ds high", model: ModelDeepSeekV4Pro, effort: "high", want: "high"},
 		{name: "ds max", model: ModelDeepSeekV4Flash, effort: "max", want: "max"},

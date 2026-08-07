@@ -12,18 +12,20 @@ import (
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/gateway/vision"
 	"github.com/commoddity/discursive/internal/usage"
 )
 
 // ServerConfig configures the local OpenAI-compatible gateway.
 type ServerConfig struct {
-	ListenAddr      string // e.g. "127.0.0.1:4001"
-	GatewayKey      string
-	DataRoot        string
-	Settings        *config.AppSettings
-	Live            *config.LiveSettings // optional; when set, drives per-model reasoning effort
-	HTTPClient      *http.Client
-	ChatURLOverride map[config.Provider]string // tests only
+	ListenAddr            string // e.g. "127.0.0.1:4001"
+	GatewayKey            string
+	DataRoot              string
+	Settings              *config.AppSettings
+	Live                  *config.LiveSettings // optional; when set, drives per-model reasoning effort
+	HTTPClient            *http.Client
+	ChatURLOverride       map[config.Provider]string // tests only
+	VisionChatURLOverride string                     // tests only
 }
 
 // Server is the loopback gateway HTTP server.
@@ -37,6 +39,7 @@ type Server struct {
 	sessionID string
 	settings  *config.AppSettings
 	live      *config.LiveSettings
+	vision    *vision.Describer
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -78,6 +81,22 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		settings:  cfg.Settings,
 		live:      cfg.Live,
 	}
+	// Wire vision describer when Z.AI settings are available (graceful nil
+	// when unset — images just fall through to existing strip behavior).
+	// Use the coding-plan endpoint (not on-demand) since the user's Z.AI key
+	// is a GLM Coding Plan key and glm-4.6v is available on that plan.
+	visionURL, _ := config.ChatCompletionsURL(config.ProviderZai)
+	if cfg.VisionChatURLOverride != "" {
+		visionURL = cfg.VisionChatURLOverride
+	}
+	zaiKeyFn := func() (string, bool) {
+		k, err := s.settings.GetZaiKey(s.cfg.DataRoot)
+		if err != nil || k == nil || *k == "" {
+			return "", false
+		}
+		return *k, true
+	}
+	s.vision = vision.NewDescriber(s.client, visionURL, zaiKeyFn)
 	s.routes()
 	return s, nil
 }

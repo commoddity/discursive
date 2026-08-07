@@ -20,7 +20,7 @@ Thaura AI: hardcoded `$0.50/$2.00` per MTok. Check `thaura.ai/api-platform` if a
 | ---- | --- |
 | DeepSeek | https://api-docs.deepseek.com/quick_start/pricing |
 | Kimi K3 | https://platform.kimi.ai/docs/pricing/chat-k3.md |
-| Kimi K2.6 | https://platform.kimi.ai/docs/pricing/chat-k26.md |
+| Kimi K2.7 Code | https://www.kimi.com/resources/kimi-k2-7-code |
 | Thaura AI | https://thaura.ai/api-platform |
 | Z.AI      | https://docs.z.ai/guides/overview/pricing |
 
@@ -40,7 +40,7 @@ DeepSeek responses expose `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
 
 ### Kimi/Moonshot (USD/MTok)
 
-Sources: K3 https://platform.kimi.ai/docs/pricing/chat-k3.md, K2.6 https://platform.kimi.ai/docs/pricing/chat-k26.md — verify live.
+Sources: K3 https://platform.kimi.ai/docs/pricing/chat-k3.md, K2.7 Code https://www.kimi.com/resources/kimi-k2-7-code — verify live.
 
 ### Thaura AI (USD/MTok)
 
@@ -236,7 +236,7 @@ rows for live cost math.
 | ----- | ---- | ----- |
 | Chart.js `bodyFont.size` etc. not respected in rendered tooltip | CSS rules on `.chartjs-tooltip` or custom tooltip container override Chart.js internal styles | For `external` tooltip (callback controls DOM): set styles directly on custom element. For built-in: use callbacks; avoid broad CSS on `.chartjs-tooltip *`. |
 
-<!-- last-verified: 2026-07-23 -->
+<!-- last-verified: 2026-08 -->
 
 ### `Chart.js tick callback breaks chart`
 

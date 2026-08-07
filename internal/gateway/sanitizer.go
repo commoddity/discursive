@@ -65,7 +65,11 @@ func SanitizeRequest(body map[string]any, cfg SanitizeConfig) (SanitizeResult, e
 		injectPlaceholder = false
 	}
 
-	stripImages := route.Provider == config.ProviderDeepSeek
+	// Images are no longer stripped by the sanitizer for any provider.
+	// The vision describer (called after sanitization) handles image_url parts
+	// for zai + deepseek by describing them via glm-4.6v. Moonshot models
+	// handle images natively.
+	const stripImages = false
 
 	applyThinkingPolicy(body, route, cfg)
 
@@ -125,14 +129,10 @@ func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
 			effort = "low"
 		}
 		body["reasoning_effort"] = effort
-	case PolicyK2:
+	case PolicyK27:
 		delete(body, "reasoning_effort")
-		// K2.6 uses thinking on/off only (not reasoning_effort). Config values: off|on.
-		if effort == "" || effort == config.EffortOff {
-			body["thinking"] = map[string]any{"type": "disabled"}
-		} else {
-			body["thinking"] = map[string]any{"type": "enabled"}
-		}
+		// K2.7 Code always thinks — no thinking off, no effort selector.
+		body["thinking"] = map[string]any{"type": "enabled"}
 	case PolicyDeepSeek:
 		if effort == "" || effort == config.EffortOff {
 			body["thinking"] = map[string]any{"type": "disabled"}
@@ -189,13 +189,9 @@ func effectiveEffort(body map[string]any, route Route) string {
 			return s
 		}
 		return "low"
-	case PolicyK2:
-		if thinking, ok := body["thinking"].(map[string]any); ok {
-			if thinking["type"] == "enabled" {
-				return config.EffortOn
-			}
-		}
-		return config.EffortOff
+	case PolicyK27:
+		// K2.7 Code always thinks.
+		return "on"
 	case PolicyDeepSeek:
 		if thinking, ok := body["thinking"].(map[string]any); ok {
 			if thinking["type"] == "disabled" {
@@ -232,7 +228,7 @@ func stripUnsupportedParams(body map[string]any, route Route) {
 		delete(body, k)
 	}
 	switch route.Policy {
-	case PolicyK2:
+	case PolicyK27:
 		delete(body, "reasoning_effort")
 	case PolicyDeepSeek:
 		if !isDeepSeekValidReasoningEffort(body["reasoning_effort"]) {

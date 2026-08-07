@@ -58,16 +58,23 @@ and pricing row.
 | Cursor alias     | Provider | Real model          | Typical use         |
 | ---------------- | -------- | ------------------- | ------------------- |
 | `gpt-4o`         | moonshot | `kimi-k3`           | Planning / flagship |
-| `gpt-4o-mini`    | moonshot | `kimi-k2.6`         | Image-capable; thinking off by default |
+| `gpt-4o-mini`    | moonshot | `kimi-k2.7-code`  | Coding; always thinks           |
 | `o1`             | deepseek | `deepseek-v4-pro`   | Harder execution    |
 | `o3-mini`        | deepseek | `deepseek-v4-flash` | Cheap execution     |
 | `gpt-5-nano`     | thaura   | `thaura`            | Ethical AI; optional provider |
 | `gpt-4.1-turbo`  | zai      | `glm-5.2`           | Planning; cheaper than K3    |
 | `gpt-4.1`        | zai      | `glm-4.7`           | Cheap execution              |
+| `gpt-4-turbo`    | zai      | `glm-5.2`           | **Compat alias** — Cursor sometimes rewrites `gpt-4.1-turbo` → `gpt-4-turbo` |
 
 Set the alias manually in Cursor Settings → Models. The gateway maps it and
 picks the right base URL + API key. No auto-application to Cursor's state.vscdb
 — operators configure Cursor by hand (see `cursor-settings.mdc`).
+
+### `Cursor rewrites a model ID (model picker ≠ sent model)`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.2`). Do not treat the rewritten name as a gateway bug. |
 
 ## Sanitizer order (preserve)
 
@@ -110,10 +117,26 @@ apply provider thinking policy **before** stripping `reasoning_effort` — K3 mu
 keep `reasoning_effort: "max"`; do not copy reference K2 “strip effort then
 inject thinking” blindly. K3: no `reasoning_content` placeholder injection.
 
-### `Unknown variant image_url / Upstream 400 on vision content`
+### `Image content in a request (all providers)`
 
-| Symptom                                                                                                                        | Cause                                                                                                                                                            | Fix                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Upstream returns 400 with `unknown variant image_url` or similar; occurs when Agent chat history includes screenshots / images | Cursor resends image content (`image_url`, `input_image`, `image_file`) in Agent message history; non-vision models (DeepSeek, some Moonshot) reject image parts | Strip `image_url`, `input_image`, and `image_file` content parts in both chat-completion messages (`sanitizeMessageContent`) and Responses-shaped input (`convertInputItems`, `normalizeContentParts`). Replace with `[image omitted]` text placeholder. Applies to both `/v1/chat/completions` and `/v1/responses` paths. |
+Cursor Agent resends screenshots / image content (`image_url`, `input_image`,
+`image_file`) in message history. The gateway no longer strips images — it
+describes every image via the vision worker.
 
-<!-- last-verified: 2026-07 -->
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| Image request fails with a clear `vision_error` before the text model is reached | Vision worker key not configured, or the vision model rejected the image upstream | This is **fail-fast by design**. Configure a Z.AI key (`discursive set --zai-key <key>`) and restart the gateway. The error message surfaced to the user states exactly what is wrong. |
+| Image request succeeds but the text model responds with an image description | Image content was translated to text by the vision worker (Z.AI `glm-4.6v`) before proxying | Expected. Vision applies to **all providers** (moonshot/deepseek/zai/thaura), even ones with native vision support. Text models never receive raw `image_url` parts. |
+| Remote `https://` image URLs | Fetch happens upstream-side by the vision model | Hashed by URL string for caching; data URIs are hashed by decoded bytes |
+| Repeated identical images | Content-hash cache (SHA-256, 10 min TTL, singleflight-deduped) | Second identical image within TTL is served from cache with no upstream call |
+
+`vision.Describer.ReplaceImages` is the single pre-proxy pass in
+`handleChatCompletions`, after `SanitizeRequest` and before `OptimizeRequest`.
+It is installed for every provider; there is **no** provider gate. On any hard
+failure it returns an error that the HTTP layer surfaces to the user as
+`vision_error` (HTTP 400) — images are never silently dropped.
+
+> **Do not** reintroduce the old strip-images behavior (`[image omitted]`
+> placeholder). Silent stripping is deprecated; fail-fast is the contract.
+
+<!-- last-verified: 2026-08 -->

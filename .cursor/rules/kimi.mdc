@@ -1,5 +1,5 @@
 ---
-description: Moonshot/Kimi API models, params, streaming, tools (k3 / k2.6)
+description: Moonshot/Kimi API models, params, streaming, tools (k3 / k2.7-code)
 globs: "**/kimi/**/*.go,**/gateway/**/*.go,**/usage/**/*.go"
 alwaysApply: false
 ---
@@ -11,22 +11,24 @@ Base URL default: `https://api.moonshot.ai/v1` — see `internal/config/urls.go`
 
 ## Supported models (MVP)
 
-| API model ID | Role |
+| API model ID      | Role |
 | ---- | --- |
-| `kimi-k3` | Default flagship; 1M context; always thinks |
-| `kimi-k2.6` | Image-capable coding model; both thinking modes |
+| `kimi-k3`         | Default flagship; 1M context; always thinks |
+| `kimi-k2.7-code`  | Coding model (`gpt-4o-mini`); always thinks (no non-thinking mode) |
 
 ## Per-model parameter matrix (do not cross-apply)
 
-| Concern | `kimi-k3` | `kimi-k2.6` |
+| Concern | `kimi-k3` | `kimi-k2.7-code` |
 | ---- | --- | --- |
-| Thinking | Top-level `reasoning_effort` (`"max"` only today). **Do not** send K2 `thinking` | Use K2 `thinking` object when needed; **do not** send `reasoning_effort` |
+| Thinking | Top-level `reasoning_effort` (`"low"|"high"|"max"`). **Do not** send `thinking` | **Always on** — send `thinking: {type:"enabled"}`; **do not** send `reasoning_effort` |
 | Sampling | Many fields fixed — **omit** temperature/top_p/penalties/n | Follow model reference; strip Cursor-only junk |
 | Tool loops | Return **complete** assistant message incl. `reasoning_content` | Preserve tool_call pairing; reasoning placeholder rules per gateway |
 | Streaming | Separate `reasoning_content` vs `content` deltas | Same OpenAI-compat SSE family |
+| Images | Native multimodal (MoonViT) | Native multimodal, but the gateway vision worker still describes images for every provider |
 
 Official docs: [K3 quickstart](https://platform.kimi.ai/docs/guide/kimi-k3-quickstart),
-[Model parameter reference](https://platform.kimi.ai/docs/api/models-overview).
+[Model parameter reference](https://platform.kimi.ai/docs/api/models-overview),
+[Kimi K2.7 Code](https://www.kimi.com/resources/kimi-k2-7-code).
 
 ## Out of MVP (document only)
 
@@ -67,4 +69,4 @@ do not hardcode Moonshot-only assumptions in shared sanitize code.
   DeepSeek's `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`). Our
   `parseUsageObject` derives hit/miss from it.
 
-<!-- last-verified: 2026-07 -->
+<!-- last-verified: 2026-08 -->

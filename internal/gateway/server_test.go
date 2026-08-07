@@ -205,7 +205,7 @@ func TestModelsListContent(t *testing.T) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Object != "list" || len(payload.Data) != 7 {
+	if payload.Object != "list" || len(payload.Data) != 15 {
 		t.Fatalf("payload: %+v", payload)
 	}
 	ids := map[string]bool{}
@@ -405,7 +405,7 @@ func TestStreamPassthrough(t *testing.T) {
 func TestStreamSynthesize(t *testing.T) {
 	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k2.6"))
+		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k2.7-code"))
 	})
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
 		"model":    "gpt-4o-mini",
@@ -433,7 +433,7 @@ func TestToolCallIDRetry(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k2.6"))
+		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k2.7-code"))
 	})
 
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{

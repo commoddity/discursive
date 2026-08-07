@@ -8,17 +8,15 @@ import (
 // Real model IDs that expose configurable thinking / reasoning_effort.
 const (
 	ModelKimiK3          = "kimi-k3"
-	ModelKimiK26         = "kimi-k2.6"
+	ModelKimiK27         = "kimi-k2.7-code"
 	ModelDeepSeekV4Pro   = "deepseek-v4-pro"
 	ModelDeepSeekV4Flash = "deepseek-v4-flash"
 	ModelZaiGLM52        = "glm-5.2"
 )
 
-// EffortOff disables thinking (K2.6 / DeepSeek). Not used for K3.
+// EffortOff disables thinking (DeepSeek / Z.AI). Not used for Kimi (K3 and
+// K2.7 Code always think).
 const EffortOff = "off"
-
-// EffortOn enables K2.6 thinking (maps to thinking.type=enabled).
-const EffortOn = "on"
 
 // ReasoningEffortSpec describes one model row for the usage UI / validation.
 type ReasoningEffortSpec struct {
@@ -37,6 +35,7 @@ type ReasoningEffortSpec struct {
 //
 // Kimi K3 options follow https://platform.kimi.ai/docs/guide/use-reasoning-effort :
 // low|high|max (API default is max; product default is low for cost).
+// Kimi K2.7 Code always thinks — no effort selector (not in this catalog).
 //
 // Z.AI glm-5.2 options follow https://docs.z.ai/guides/capabilities/thinking :
 // none|minimal|low|medium|high|xhigh|max. low|medium → high, xhigh → max
@@ -49,13 +48,6 @@ func ReasoningEffortCatalog() []ReasoningEffortSpec {
 			Label:    "Kimi K3",
 			Options:  []string{"low", "high", "max"},
 			Default:  "low",
-		},
-		{
-			Model:    ModelKimiK26,
-			Provider: ProviderMoonshot,
-			Label:    "Kimi K2.6",
-			Options:  []string{EffortOff, EffortOn},
-			Default:  EffortOff,
 		},
 		{
 			Model:    ModelDeepSeekV4Pro,

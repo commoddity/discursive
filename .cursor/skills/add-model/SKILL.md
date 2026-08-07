@@ -8,6 +8,7 @@ description: >-
   or net-new) — only models within existing Moonshot/DeepSeek providers.
   Manual-only — /add-model.
 disable-model-invocation: true
+allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---
 
 # /add-model — Add a new Moonshot or DeepSeek model
@@ -36,7 +37,8 @@ broken test/build.
 - [ ] Add model constant to `const` block (~line 10).
 - [ ] Add `ReasoningEffortSpec` entry in `ReasoningEffortCatalog()` (~line 39)
   with Model, Provider, Label, Options, Default. Match the existing shape
-  (K3 uses `low|high|max`; K2.6 uses `off|on`; DeepSeek uses `off|high|max`).
+  (K3 uses `low|high|max`; DeepSeek uses `off|high|max`; Z.AI uses `off|high|max`).
+  Kimi `kimi-k2.7-code` is NOT in the catalog — it always thinks.
 - [ ] If DeepSeek: add constant to `isDeepSeekModel()` chain (~line 118).
 
 **File:** `internal/config/reasoning_effort_test.go`
@@ -51,7 +53,7 @@ broken test/build.
 **File:** `internal/gateway/alias.go`
 
 - [ ] Add `ThinkingPolicy` constant if new policy shape needed. Usually a new
-  Kimi model reuses `PolicyK3` or `PolicyK2`; a new DeepSeek model reuses
+  Kimi model reuses `PolicyK3` or `PolicyK27`; a new DeepSeek model reuses
   `PolicyDeepSeek`.
 - [ ] Add to `ListAdvertisedModels()` (cursor alias line).
 - [ ] Add to `ResolveModel()` switch — both the cursor alias→route case **and**
@@ -65,7 +67,7 @@ broken test/build.
 
 - [ ] Add `case Policy*` block in `applyThinkingPolicy()` (~line 119). Follow
   the pattern of the policy you're reusing (e.g., `PolicyK3` uses top-level
-  `reasoning_effort`; `PolicyK2` uses `thinking: {type: enabled|disabled}`).
+  `reasoning_effort`; `PolicyK27` always sets `thinking: {type:"enabled"}`).
 - [ ] Add case in `effectiveEffort()` (~line 159) to extract the effort string
   for logs.
 - [ ] Add case in `stripUnsupportedParams()` (~line 198) if needed to delete

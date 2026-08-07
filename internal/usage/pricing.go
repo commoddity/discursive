@@ -38,8 +38,8 @@ type moonshotRates struct {
 }
 
 var moonshotPricing = map[string]moonshotRates{
-	"kimi-k3":   {0.30, 3.00, 15.00},
-	"kimi-k2.6": {0.16, 0.95, 4.00},
+	"kimi-k3":        {0.30, 3.00, 15.00},
+	"kimi-k2.7-code": {0.19, 0.95, 4.00},
 }
 
 // deepseekRates USD per 1M tokens (cache hit, cache miss input, output).
@@ -71,8 +71,9 @@ type zaiRates struct {
 }
 
 var zaiPricing = map[string]zaiRates{
-	"glm-5.2": {0.26, 1.40, 4.40},
-	"glm-4.7": {0.11, 0.60, 2.20},
+	"glm-5.2":  {0.26, 1.40, 4.40},
+	"glm-4.7":  {0.11, 0.60, 2.20},
+	"glm-4.6v": {0.05, 0.30, 0.90},
 }
 
 // cursorComparisonUSD is REFERENCE ONLY — never used by EstimateUSD.

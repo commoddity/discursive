@@ -78,3 +78,5 @@ keep data next to the executable when a marker is present.
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
 | After implementing stop file polling, `discursive stop` appears to not kill the process | Two issues: (1) stop command deletes the stop file immediately after writing, before polling gateway can detect it; (2) signal handling changes made background daemon ignore `SIGTERM` (for defense against external signals), but stop command still only sends `SIGTERM`. | Stop command must write stop file, wait for processes to exit (poll `processAlive` up to timeout), then fall back to `SIGKILL` if needed, and **only then** clean up stop file and PID artifacts. Background daemon must check for stop file immediately on startup, not just after initial delay. |
+
+<!-- last-verified: 2026-08 -->

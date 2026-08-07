@@ -55,9 +55,9 @@ func TestEstimateUSD(t *testing.T) {
 			want: perMillion(500_000, 0.30) + perMillion(500_000, 3.00) + perMillion(100_000, 15.00),
 		},
 		{
-			name:     "kimi_k26_code",
+			name:     "kimi_k27_code",
 			provider: config.ProviderMoonshot,
-			model:    "kimi-k2.6",
+			model:    "kimi-k2.7-code",
 			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
 			want:     0.95 + 4.00,
 		},
@@ -159,6 +159,31 @@ func TestEstimateUSD(t *testing.T) {
 			model:    "glm-unknown",
 			tokens:   UsageTokens{PromptTokens: 100},
 			wantErr:  true,
+		},
+		{
+			name:     "zai_glm46v_input_only",
+			provider: config.ProviderZai,
+			model:    "glm-4.6v",
+			tokens:   UsageTokens{PromptTokens: 1_000_000},
+			want:     0.30,
+		},
+		{
+			name:     "zai_glm46v_cache_hit_only",
+			provider: config.ProviderZai,
+			model:    "glm-4.6v",
+			tokens:   UsageTokens{CacheHitTokens: 1_000_000},
+			want:     0.05,
+		},
+		{
+			name:     "zai_glm46v_mixed",
+			provider: config.ProviderZai,
+			model:    "glm-4.6v",
+			tokens: UsageTokens{
+				CacheHitTokens:   1_000_000,
+				CacheMissTokens:  500_000,
+				CompletionTokens: 100_000,
+			},
+			want: perMillion(1_000_000, 0.05) + perMillion(500_000, 0.30) + perMillion(100_000, 0.90),
 		},
 	}
 

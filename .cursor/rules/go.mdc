@@ -14,6 +14,7 @@ internal/
 ├── config/         # AppSettings, paths, load/save
 ├── crypto/         # Moonshot + DeepSeek secret protect + gateway key gen
 ├── gateway/        # HTTP server, auth, sanitizer, optimizer, multi-provider proxy
+│   └── vision/     # image description via glm-4.6v (content-hash cache, singleflight dedup)
 ├── tunnel/         # cloudflared supervise + BYO public URL
 ├── usage/          # pricing table + per-session token/cost store
 └── doctor/         # health checks aggregating the above
@@ -69,6 +70,14 @@ internal/
 - Never copy `examples/use-kimi-on-cursor` into the product module path; port
   behavior.
 - Do not vendor `examples/openai-openapi/` into the binary.
+
+### `Repetitive remote-describer / enrichment calls (images, embeddings)`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Every incoming request re-invokes a remote model (e.g. image description) for the same payload; bursts of duplicates; nondeterministic cost/time | No memoization and no in-flight dedup for cross-provider enrichment | Cache by content hash (SHA-256 of bytes, TTL ~10 min); dedupe concurrent identical calls with `singleflight`; bound parallelism with a buffered-semaphore channel so the enrichment never saturates the gateway |
+
+<!-- last-verified: 2026-08 -->
 
 ### `slog secrets leak`
 

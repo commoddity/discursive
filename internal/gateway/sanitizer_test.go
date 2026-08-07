@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -134,50 +133,37 @@ func TestSanitizeRequest_K2Thinking(t *testing.T) {
 		t.Fatal(err)
 	}
 	thinking, ok := res.Body["thinking"].(map[string]any)
-	if !ok || thinking["type"] != "disabled" {
-		t.Fatalf("thinking: %v", res.Body["thinking"])
+	if !ok || thinking["type"] != "enabled" {
+		t.Fatalf("thinking: %v (K2.7 Code always thinks)", res.Body["thinking"])
 	}
 	if _, ok := res.Body["reasoning_effort"]; ok {
-		t.Fatal("reasoning_effort should be stripped for K2")
+		t.Fatal("reasoning_effort should be stripped for K2.7")
 	}
-	if res.Effort != "off" {
+	if res.Effort != "on" {
 		t.Fatalf("Effort: %q", res.Effort)
 	}
 }
 
 func TestSanitizeRequest_K2EffortFromConfig(t *testing.T) {
-	tests := []struct {
-		name      string
-		effort    string
-		wantThink string
-		logEffort string
-	}{
-		{name: "off", effort: "off", wantThink: "disabled", logEffort: "off"},
-		{name: "on", effort: "on", wantThink: "enabled", logEffort: "on"},
+	// Kimi K2.7 Code always thinks — the configured effort is ignored.
+	cfg := testConfig()
+	body := map[string]any{
+		"model":    "kimi-k2.7-code",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := testConfig()
-			cfg.EffortByModel = map[string]string{config.ModelKimiK26: tt.effort}
-			body := map[string]any{
-				"model":    "kimi-k2.6",
-				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
-			}
-			res, err := SanitizeRequest(body, cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			thinking, ok := res.Body["thinking"].(map[string]any)
-			if !ok || thinking["type"] != tt.wantThink {
-				t.Fatalf("thinking: %v", res.Body["thinking"])
-			}
-			if _, has := res.Body["reasoning_effort"]; has {
-				t.Fatal("reasoning_effort must not be sent for K2")
-			}
-			if res.Effort != tt.logEffort {
-				t.Fatalf("Effort: %q", res.Effort)
-			}
-		})
+	res, err := SanitizeRequest(body, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thinking, ok := res.Body["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "enabled" {
+		t.Fatalf("thinking: %v (K2.7 Code always thinks)", res.Body["thinking"])
+	}
+	if _, has := res.Body["reasoning_effort"]; has {
+		t.Fatal("reasoning_effort must not be sent for K2.7")
+	}
+	if res.Effort != "on" {
+		t.Fatalf("Effort: %q", res.Effort)
 	}
 }
 
@@ -333,14 +319,17 @@ func TestSanitizeRequest_DeepSeekPipeline(t *testing.T) {
 	}
 }
 
-func TestSanitizeRequest_StripsImages(t *testing.T) {
+func TestSanitizeRequest_PassesImagesForDeepSeekZai(t *testing.T) {
+	// Images are no longer stripped by the sanitizer — the vision describer
+	// (called later in handleChatCompletions) handles image_url parts for
+	// zai + deepseek by describing them via glm-4.6v.
 	tests := []struct {
 		name  string
 		body  map[string]any
 		check func(t *testing.T, res SanitizeResult)
 	}{
 		{
-			name: "chat image_url mixed with text",
+			name: "deepseek chat image_url passes through",
 			body: map[string]any{
 				"model": "o3-mini",
 				"messages": []any{
@@ -360,32 +349,30 @@ func TestSanitizeRequest_StripsImages(t *testing.T) {
 				if res.Provider != config.ProviderDeepSeek || res.Model != "deepseek-v4-flash" {
 					t.Fatalf("route: %s/%s", res.Provider, res.Model)
 				}
-				assertNoImageURL(t, res.Body["messages"])
+				// No system warning should be prepended (sanitizer no longer strips).
 				msgs := res.Body["messages"].([]any)
-				// first message should be the system warning
-				assertSystemWarning(t, msgs[0])
-				content := msgs[1].(map[string]any)["content"]
-				parts, ok := content.([]any)
-				if !ok {
-					t.Fatalf("expected content parts, got %T %v", content, content)
+				if len(msgs) != 1 {
+					t.Fatalf("expected 1 message, got %d", len(msgs))
 				}
+				// Verify image_url part is still present.
+				parts := msgs[0].(map[string]any)["content"].([]any)
 				found := false
 				for _, p := range parts {
 					m, ok := p.(map[string]any)
 					if !ok {
 						continue
 					}
-					if stringField(m, "text") == imageOmittedPlaceholder {
+					if stringField(m, "type") == "image_url" {
 						found = true
 					}
 				}
 				if !found {
-					t.Fatalf("missing placeholder in %v", content)
+					t.Fatalf("expected image_url to pass through sanitizer")
 				}
 			},
 		},
 		{
-			name: "responses input_image",
+			name: "deepseek responses input_image passes through",
 			body: map[string]any{
 				"model": "o3-mini",
 				"input": []any{
@@ -397,20 +384,38 @@ func TestSanitizeRequest_StripsImages(t *testing.T) {
 				},
 			},
 			check: func(t *testing.T, res SanitizeResult) {
-				assertNoImageURL(t, res.Body["messages"])
+				// No system warning — images pass through.
 				msgs := res.Body["messages"].([]any)
 				if len(msgs) < 2 {
-					t.Fatal("expected at least 2 messages")
+					t.Fatalf("expected at least 2 messages, got %d", len(msgs))
 				}
-				assertSystemWarning(t, msgs[0])
-				first := msgs[1].(map[string]any)
-				if first["content"] != imageOmittedPlaceholder {
-					t.Fatalf("first content: %v", first["content"])
+				// First message should be from input_image (may be a content array or single image_url part).
+				first := msgs[0].(map[string]any)
+				content := first["content"]
+				found := false
+				switch c := content.(type) {
+				case []any:
+					for _, p := range c {
+						m, ok := p.(map[string]any)
+						if !ok {
+							continue
+						}
+						if _, ok := m["image_url"]; ok {
+							found = true
+						}
+					}
+				case map[string]any:
+					if _, ok := c["image_url"]; ok {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("expected image_url in content: %T %v", content, content)
 				}
 			},
 		},
 		{
-			name: "responses content parts image_url",
+			name: "deepseek responses content parts image_url passes through",
 			body: map[string]any{
 				"model": "o1",
 				"input": []any{
@@ -430,17 +435,27 @@ func TestSanitizeRequest_StripsImages(t *testing.T) {
 				if res.Model != "deepseek-v4-pro" {
 					t.Fatalf("model: %s", res.Model)
 				}
-				assertNoImageURL(t, res.Body["messages"])
 				msgs := res.Body["messages"].([]any)
-				assertSystemWarning(t, msgs[0])
-				content := msgs[1].(map[string]any)["content"]
-				blob, _ := json.Marshal(content)
-				s := string(blob)
-				if !strings.Contains(s, imageOmittedPlaceholder) {
-					t.Fatalf("missing placeholder in %s", s)
+				if len(msgs) != 1 {
+					t.Fatalf("expected 1 message, got %d", len(msgs))
 				}
-				if !strings.Contains(s, "describe") {
-					t.Fatalf("missing text in %s", s)
+				content := msgs[0].(map[string]any)["content"]
+				parts, ok := content.([]any)
+				if !ok {
+					t.Fatalf("expected content parts, got %T", content)
+				}
+				found := false
+				for _, p := range parts {
+					m, ok := p.(map[string]any)
+					if !ok {
+						continue
+					}
+					if stringField(m, "type") == "image_url" {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("expected image_url in parts: %v", parts)
 				}
 			},
 		},
@@ -482,7 +497,7 @@ func TestSanitizeRequest_PassesImagesForKimi(t *testing.T) {
 			},
 		},
 		{
-			name:  "kimi k2.6 passes image_url through",
+			name:  "kimi k2.7 passes image_url through",
 			model: "gpt-4o-mini",
 			body: map[string]any{
 				"model": "gpt-4o-mini",
@@ -500,7 +515,7 @@ func TestSanitizeRequest_PassesImagesForKimi(t *testing.T) {
 			},
 		},
 		{
-			name:  "kimi k2.6 responses input_image passes through",
+			name:  "kimi k2.7 responses input_image passes through",
 			model: "gpt-4o-mini",
 			body: map[string]any{
 				"model": "gpt-4o-mini",
@@ -558,20 +573,6 @@ func TestSanitizeRequest_NoWarningForKimiWithImages(t *testing.T) {
 	}
 }
 
-func assertSystemWarning(t *testing.T, msg any) {
-	t.Helper()
-	m, ok := msg.(map[string]any)
-	if !ok {
-		t.Fatalf("expected map message, got %T", msg)
-	}
-	if stringField(m, "role") != "system" {
-		t.Fatal("expected system warning message")
-	}
-	if !strings.Contains(stringField(m, "content"), "does not support vision") {
-		t.Fatalf("missing vision warning in system message: %v", m)
-	}
-}
-
 func assertNoImageOmittedPlaceholder(t *testing.T, v any) {
 	t.Helper()
 	switch x := v.(type) {
@@ -585,26 +586,6 @@ func assertNoImageOmittedPlaceholder(t *testing.T, v any) {
 	case []any:
 		for _, child := range x {
 			assertNoImageOmittedPlaceholder(t, child)
-		}
-	}
-}
-
-func assertNoImageURL(t *testing.T, v any) {
-	t.Helper()
-	switch x := v.(type) {
-	case map[string]any:
-		if stringField(x, "type") == "image_url" {
-			t.Fatalf("found image_url part: %v", x)
-		}
-		if _, ok := x["image_url"]; ok && stringField(x, "type") != "text" {
-			t.Fatalf("found image_url field: %v", x)
-		}
-		for _, child := range x {
-			assertNoImageURL(t, child)
-		}
-	case []any:
-		for _, child := range x {
-			assertNoImageURL(t, child)
 		}
 	}
 }

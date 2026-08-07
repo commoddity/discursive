@@ -107,3 +107,11 @@ func TestModelsURL(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestZaiOnDemandChatURL(t *testing.T) {
+	got := ZaiOnDemandChatURL()
+	want := "https://api.z.ai/api/paas/v4/chat/completions"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}

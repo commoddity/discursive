@@ -8,6 +8,7 @@ description: >-
   effort labels, pricing table), rules files, README sections, and tests.
   Manual-only — /add-provider.
 disable-model-invocation: true
+allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---
 
 # /add-provider — Add a new AI provider
