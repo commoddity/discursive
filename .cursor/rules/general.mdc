@@ -43,7 +43,7 @@ Mandatory protocol for EVERY task:
 | Z.AI API (models, pricing, sanitizer policy) | `.cursor/rules/zai.mdc` (+ `gateway.mdc` if proxying) |
 | Local gateway, sanitizer, OpenAI-compat surface, metrics | `.cursor/rules/gateway.mdc` |
 | Image/vision handling (fail-fast, glm-4.6v worker, content-hash cache) | `.cursor/rules/gateway.mdc` (+ `zai.mdc` for the glm-4.6v model) |
-| Cursor settings DB / model alias reference | `.cursor/rules/cursor-settings.mdc` | |
+| Cursor settings DB / model alias reference | `.cursor/rules/cursor-settings.mdc` |
 | cloudflared tunnel / public URL / process supervision | `.cursor/rules/tunnel.mdc` |
 | macOS/Linux packaging, secrets store, autostart | `.cursor/rules/unix-packaging.mdc` |
 | Pricing table, per-session usage, cost estimates | `.cursor/rules/usage.mdc` |
@@ -77,14 +77,15 @@ When a task spans multiple areas, read every applicable rule file before startin
 
 ```
 main.go             # Cobra CLI entry (start/stop/status/doctor/usage/…)
-internal/cli/       # Cobra command tree (`root.go`, `start.go`, …)
+internal/cli/       # Cobra command tree (root.go + start/ stop/ status/ … subpackages)
 internal/
   config/            # settings, paths, portable mode
   crypto/            # secrets + gateway key generation
   gateway/           # HTTP server, auth, sanitizer, responses adapter, optimizer
   gateway/vision/    # image description worker (glm-4.6v); fail-fast image routing
-  tunnel/            # cloudflared Quick Tunnel (+ BYO URL mode)
+  tunnel/            # cloudflared named tunnel (default) + BYO URL mode
   usage/             # pricing table + per-session accounting
+  usageui/           # embedded usage dashboard (HTTP server + static assets)
   doctor/            # health checks
 examples/use-kimi-on-cursor/  # behavioral reference
 .cursor/rules/       # this tree
@@ -134,7 +135,7 @@ MVP (T01–T10) is complete. The build is:
 4. ✅ Sanitizer + Responses adapter + Optimizer
 5. ✅ Gateway HTTP + multi-provider proxy (alias→provider→model)
 6. ✅ Model / alias map (CLI + `/v1/models`; Kimi + DeepSeek)
-7. ✅ Tunnel (Quick Tunnel default; BYO URL mode)
+7. ✅ Tunnel (named tunnel default; BYO URL mode)
 8. ✅ CLI doctor + usage report
 9. ✅ E2E / live checks
 10. Thaura AI provider integration (this layer)
@@ -216,6 +217,10 @@ NEVER do these without explicit user approval:
 - Point Cursor Override Base URL at `127.0.0.1` / private IPs as a “fix”
 - Make Docker the default runtime
 - Run `docker`, `npm`, or `pnpm` unless the user explicitly requests
+- **Start, stop, restart, or install (`go install`) the Discursive binary.** The
+  user is always responsible for building/installing and starting/stopping the
+  gateway process. Running `go install` or `discursive start/stop` from the
+  agent interferes with the live gateway stream used by Cursor.
 
 ### `Pre-commit hook formatting not staged`
 
@@ -336,7 +341,7 @@ to the user. Never split without approval.
 | Thaura AI request/response quirks | `thaura.mdc` |
 | Z.AI request/response quirks | `zai.mdc` |
 | Sanitizer / tool schema / stream / model alias policy | `gateway.mdc` |
-| Cursor settings reference / model alias map | `cursor-settings.mdc` | |
+| Cursor settings reference / model alias map | `cursor-settings.mdc` |
 | Tunnel flapping / cloudflared missing / ephemeral URL | `tunnel.mdc` |
 | Secrets, data dirs, autostart (Unix) | `unix-packaging.mdc` |
 | Pricing, session usage, cost estimates | `usage.mdc` |

@@ -26,6 +26,8 @@ type ServerConfig struct {
 	HTTPClient            *http.Client
 	ChatURLOverride       map[config.Provider]string // tests only
 	VisionChatURLOverride string                     // tests only
+	SmartRouterEnabled    bool                       // default true in production (CLI --smart-router)
+	DiagnosticDumpEnabled bool                       // default false (CLI --diagnostic-dump)
 }
 
 // Server is the loopback gateway HTTP server.
@@ -40,6 +42,7 @@ type Server struct {
 	settings  *config.AppSettings
 	live      *config.LiveSettings
 	vision    *vision.Describer
+	router    *SmartRouter
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -97,6 +100,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		return *k, true
 	}
 	s.vision = vision.NewDescriber(s.client, visionURL, zaiKeyFn)
+	s.router = NewSmartRouter(RouterConfig{Enabled: cfg.SmartRouterEnabled, DiagnosticDump: cfg.DiagnosticDumpEnabled})
 	s.routes()
 	return s, nil
 }

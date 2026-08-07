@@ -16,16 +16,18 @@ import (
 	"github.com/commoddity/discursive/internal/usageui"
 )
 
-func serveGateway(version, dataRoot string, settings config.AppSettings) error {
+func serveGateway(version, dataRoot string, settings config.AppSettings, smartRouter, diagnosticDump bool) error {
 	live := config.NewLiveSettings(dataRoot, settings)
 	snap := live.Snapshot()
 	listen := fmt.Sprintf("127.0.0.1:%d", snap.LocalPort)
 	srv, err := gateway.NewServer(gateway.ServerConfig{
-		ListenAddr: listen,
-		GatewayKey: snap.GatewayKey,
-		DataRoot:   dataRoot,
-		Settings:   &snap,
-		Live:       live,
+		ListenAddr:            listen,
+		GatewayKey:            snap.GatewayKey,
+		DataRoot:              dataRoot,
+		Settings:              &snap,
+		Live:                  live,
+		SmartRouterEnabled:    smartRouter,
+		DiagnosticDumpEnabled: diagnosticDump,
 	})
 	if err != nil {
 		return err
@@ -47,6 +49,8 @@ func serveGateway(version, dataRoot string, settings config.AppSettings) error {
 		"session_id", srv.SessionID(),
 		"usage_ui_url", "http://127.0.0.1:4002",
 		"reasoning_effort", live.EffortMap(),
+		"smart_router", smartRouter,
+		"diagnostic_dump", diagnosticDump,
 	)
 
 	uiSrv := startUsageUI(version, srv, live, publicURL)
@@ -166,11 +170,11 @@ func writePIDFile(dataRoot string) (string, error) {
 // serveWithWatchdog runs serveGateway in a loop for background child processes.
 // Clean shutdown (via `discursive stop` stop-file) exits the loop. Crashes and
 // listen errors restart after a short delay.
-func serveWithWatchdog(version, dataRoot string, settings config.AppSettings) error {
+func serveWithWatchdog(version, dataRoot string, settings config.AppSettings, smartRouter, diagnosticDump bool) error {
 	const restartDelay = 2 * time.Second
 
 	for {
-		err := serveGateway(version, dataRoot, settings)
+		err := serveGateway(version, dataRoot, settings, smartRouter, diagnosticDump)
 		if err == nil {
 			slog.Info("gateway stopped cleanly")
 			return nil

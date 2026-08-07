@@ -52,6 +52,11 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Apply cache-optimization pass after sanitization.
 	OptimizeRequest(sanitized, OptimizeConfig{PromptCacheKey: s.sessionID})
 
+	// Classify request for subagent detection and downgrade to cheaper model.
+	if result := s.router.ClassifyAndOverride(sanitized.Body, requestID); result.OverrideApplied {
+		sanitized.Model = result.OverrideModel
+	}
+
 	upstreamKey, err := s.upstreamKey(sanitized.Provider)
 	if err != nil {
 		logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)

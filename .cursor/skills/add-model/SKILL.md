@@ -34,12 +34,12 @@ broken test/build.
 
 **File:** `internal/config/reasoning_effort.go`
 
-- [ ] Add model constant to `const` block (~line 10).
-- [ ] Add `ReasoningEffortSpec` entry in `ReasoningEffortCatalog()` (~line 39)
+- [ ] Add model constant to `const` block (~line 9).
+- [ ] Add `ReasoningEffortSpec` entry in `ReasoningEffortCatalog()` (~line 43)
   with Model, Provider, Label, Options, Default. Match the existing shape
   (K3 uses `low|high|max`; DeepSeek uses `off|high|max`; Z.AI uses `off|high|max`).
   Kimi `kimi-k2.7-code` is NOT in the catalog — it always thinks.
-- [ ] If DeepSeek: add constant to `isDeepSeekModel()` chain (~line 118).
+- [ ] If DeepSeek: add constant to `isDeepSeekModel()` chain (~line 125).
 
 **File:** `internal/config/reasoning_effort_test.go`
 
@@ -65,12 +65,12 @@ broken test/build.
 
 **File:** `internal/gateway/sanitizer.go`
 
-- [ ] Add `case Policy*` block in `applyThinkingPolicy()` (~line 119). Follow
+- [ ] Add `case Policy*` block in `applyThinkingPolicy()` (~line 123). Follow
   the pattern of the policy you're reusing (e.g., `PolicyK3` uses top-level
   `reasoning_effort`; `PolicyK27` always sets `thinking: {type:"enabled"}`).
-- [ ] Add case in `effectiveEffort()` (~line 159) to extract the effort string
+- [ ] Add case in `effectiveEffort()` (~line 185) to extract the effort string
   for logs.
-- [ ] Add case in `stripUnsupportedParams()` (~line 198) if needed to delete
+- [ ] Add case in `stripUnsupportedParams()` (~line 220) if needed to delete
   provider-incompatible thinking params.
 
 **Verify:** `go test ./internal/gateway/... -run TestSanitizeRequest`
@@ -84,8 +84,8 @@ broken test/build.
 
 **File:** `internal/usageui/static/index.html`
 
-- [ ] Add entry to `MODEL_COLORS` object (~line 589): `'provider::modelid': '#hex'`.
-- [ ] Add entry to `PRICING` object (~line 707) under the correct provider key.
+- [ ] Add entry to `MODEL_COLORS` object (line 684): `'provider::modelid': '#hex'`.
+- [ ] Add entry to `PRICING` object (line 807) under the correct provider key.
 
 **Verify:** `go test ./internal/usage/...`
 
