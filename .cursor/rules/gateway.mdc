@@ -139,4 +139,11 @@ failure it returns an error that the HTTP layer surfaces to the user as
 > **Do not** reintroduce the old strip-images behavior (`[image omitted]`
 > placeholder). Silent stripping is deprecated; fail-fast is the contract.
 
+### `Cursor masks the real user prompt in XML and structured tags`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Content-based request classification (e.g. `simple_lookup` vs `complex_reasoning`) never fires for main-agent traffic — all requests classify as `complex_reasoning`, `editing`, or `unknown`, and `stripped_len = 0` | Cursor sends each user message as an **array of content parts**: part 0 is a huge context block (`<open_and_recently_viewed_files>`, `<attached_files>`, `<code_selection>`, `<terminal_selection>`) and part 1 holds `<timestamp>` + the real prompt wrapped in `<user_query>...</user_query>`. Blanket XML stripping removes `<user_query>` including its content, leaving nothing to classify. A summary block (`[Previous conversation summary]…`) is also inserted when Cursor compacts long chats | Extract the prompt from `<user_query>` **before** stripping noise: 1. Concatenate all text parts. 2. If `<user_query>…</user_query>` exists, keep only its inner text (`regexp.MustCompile`(`(?s)<user_query>\s*(.*?)\s*</user_query>`)). 3. Then strip remaining XML blocks + the `[Previous conversation summary]` block. 4. If the result is empty, classify as `unknown` (conservative: keep the model). **Do not** walk backwards through older messages to find a non-empty one — that misclassifies on stale content |
+| Cursor subagents appear indistinguishable from main agent at the HTTP level — same system prompt length (~15k chars), same `has_tools=true`, same message structure | Cursor does not expose any HTTP-level signal (header, metadata, timestamp gap, model alias) that reliably identifies subagent traffic. The system prompt is the same for both subagent and main agent in current Cursor versions | Do not attempt heuristic subagent detection (message count, prompt length). Route all traffic through content-based classification — a subagent asking "find all test files" will correctly hit `code_search` and downgrade. Subagents send independent chat-completion requests, so their operation request is classified on its own |
+
 <!-- last-verified: 2026-08 -->

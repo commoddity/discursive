@@ -216,6 +216,10 @@ NEVER do these without explicit user approval:
 - Point Cursor Override Base URL at `127.0.0.1` / private IPs as a “fix”
 - Make Docker the default runtime
 - Run `docker`, `npm`, or `pnpm` unless the user explicitly requests
+- **Start, stop, restart, or install (`go install`) the Discursive binary.** The
+  user is always responsible for building/installing and starting/stopping the
+  gateway process. Running `go install` or `discursive start/stop` from the
+  agent interferes with the live gateway stream used by Cursor.
 
 ### `Pre-commit hook formatting not staged`
 
