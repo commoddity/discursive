@@ -1242,12 +1242,22 @@ async function loadMTD() {
     document.getElementById('mtd-loading').style.display = 'none';
     const div = document.getElementById('mtd-summary');
     div.style.display = 'grid';
+
+    // Compute MTD cost excluding Z.AI (subscription-based, not token-based).
+    // Z.AI flat monthly subscription is added only to the Month Projection.
+    let mtdCost = s.est_usd || 0;
+    if (s.by_model) {
+      for (const m of s.by_model) {
+        if (m.provider === 'zai') mtdCost -= m.est_usd || 0;
+      }
+    }
+
     div.innerHTML =
       '<div class="stat"><div class="label">Requests</div><div class="value">'+fmtNum(s.request_count)+'</div></div>'+
       '<div class="stat"><div class="label">Tokens In</div><div class="value">'+(s.tokens_in >= 1e6 ? (s.tokens_in/1e6).toFixed(2)+'M' : fmtNum(s.tokens_in))+'</div></div>'+
       '<div class="stat"><div class="label">Tokens Out</div><div class="value">'+(s.tokens_out >= 1e6 ? (s.tokens_out/1e6).toFixed(2)+'M' : fmtNum(s.tokens_out))+'</div></div>'+
       '<div class="stat"><div class="label">Cache Hits</div><div class="value">'+(s.cache_hit_tokens >= 1e6 ? (s.cache_hit_tokens/1e6).toFixed(2)+'M' : fmtNum(s.cache_hit_tokens))+'</div></div>'+
-      '<div class="stat"><div class="label">' + moneyLabel() + ' <span class="health-info" data-tip="Includes token-based costs for all providers. Z.AI flat monthly subscription ($' + (zaiFlatFeeUsd != null && zaiFlatFeeUsd > 0 ? zaiFlatFeeUsd : '14.40') + ' USD) is added only to the Month Projection, not here.">?</span></div><div class="value">' + fmtMoney(s.est_usd) + '</div></div>';
+      '<div class="stat"><div class="label">' + moneyLabel() + ' <span class="health-info" data-tip="Z.AI is subscription-based — its per-request token costs are excluded. Z.AI flat monthly subscription ($' + (zaiFlatFeeUsd != null && zaiFlatFeeUsd > 0 ? zaiFlatFeeUsd : '14.40') + ' USD) is added only to the Month Projection.">?</span></div><div class="value">' + fmtMoney(mtdCost) + '</div></div>';
 
     // Projection uses same MTD payload (zero-spend days included in avg).
     // Pass by_model so renderProjection can exclude Z.AI from daily average.

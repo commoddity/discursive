@@ -50,7 +50,7 @@ provider (e.g. `OpenAI` / `openai`).
 
 **File:** `internal/config/urls.go`
 
-- [ ] Add `Provider<Name> Provider = "<name>"` to the `const` block (~line 18).
+- [ ] Add `Provider<Name> Provider = "<name>"` to the `const` block (~line 13).
 - [ ] Add `Default<Name>BaseURL = "https://..."` constant (~line 51).
 - [ ] Add `case Provider<Name>:` to `UpstreamBaseURL()` (~line 54).
 
@@ -64,7 +64,7 @@ provider (e.g. `OpenAI` / `openai`).
 
 **File:** `internal/config/settings.go`
 
-- [ ] Add `<Name>KeyEncrypted *string` field to `AppSettings` struct (~line 22).
+- [ ] Add `<Name>KeyEncrypted *string` field to `AppSettings` struct (~line 15).
 - [ ] Add `Set<Name>Key`, `Get<Name>Key`, `Has<Name>Key` methods (follow
   Thaura/Moonshot pattern: `Protect`/`Unprotect` + nil-check + `Has`).
   ~40 lines total; copy-paste from Thaura and rename.
@@ -75,8 +75,8 @@ provider (e.g. `OpenAI` / `openai`).
 
 **File:** `internal/config/live.go`
 
-- [ ] Add `Has<Name>Key() bool` method (~line 97).
-- [ ] Add `Get<Name>Key() (*string, error)` method (~line 125).
+- [ ] Add `Has<Name>Key() bool` method (~line 105).
+- [ ] Add `Get<Name>Key() (*string, error)` method (~line 133).
 
 The `ReasoningEffort` path and `EffortMap` work off the catalog — no
 per-provider change needed unless this provider adds configurable models
@@ -88,10 +88,10 @@ per-provider change needed unless this provider adds configurable models
 
 **File:** `internal/gateway/alias.go`
 
-- [ ] Add a `Policy<Name> ThinkingPolicy` constant to the `const` block (~line 14).
-- [ ] Add entry to `ListAdvertisedModels()` (~line 36): every Cursor alias.
+- [ ] Add a `Policy<Name> ThinkingPolicy` constant to the `const` block (~line 13).
+- [ ] Add entry to `ListAdvertisedModels()` (~line 37): every Cursor alias.
 - [ ] Add `case` for each Cursor alias and each real model id in
-  `ResolveModel()` (~line 48).
+  `ResolveModel()` (~line 60).
 - [ ] If the provider needs custom reasoning_effort validation, add a
   `is<Name>ValidReasoningEffort()` helper function (see `isDeepSeekValidReasoningEffort`).
 
@@ -106,15 +106,15 @@ per-provider change needed unless this provider adds configurable models
 
 **File:** `internal/gateway/sanitizer.go`
 
-- [ ] Add `case Policy<Name>:` in `applyThinkingPolicy()` (~line 121). Decide:
+- [ ] Add `case Policy<Name>:` in `applyThinkingPolicy()` (~line 123). Decide:
   - If the provider uses `reasoning_effort` → like `PolicyK3`.
   - If the provider uses `thinking: {type: enabled|disabled}` → like
     `PolicyDeepSeek`.
   - If the provider doesn't support thinking at all → like
     `PolicyThaura` (delete both params).
-- [ ] Add `case Policy<Name>:` in `effectiveEffort()` (~line 159) for log
+- [ ] Add `case Policy<Name>:` in `effectiveEffort()` (~line 185) for log
   labels.
-- [ ] Add `case Policy<Name>:` in `stripUnsupportedParams()` (~line 198)
+- [ ] Add `case Policy<Name>:` in `stripUnsupportedParams()` (~line 220)
   to delete any params the provider doesn't accept.
 
 **File:** `internal/gateway/sanitizer_test.go`
@@ -127,7 +127,7 @@ per-provider change needed unless this provider adds configurable models
 
 **File:** `internal/gateway/server.go`
 
-- [ ] Add `case config.Provider<Name>:` to `upstreamKey()` (~line 168).
+- [ ] Add `case config.Provider<Name>:` to `upstreamKey()` (~line 190).
   Call `s.settings.Get<Name>Key(s.cfg.DataRoot)`.
 
 **File:** `internal/gateway/server_test.go`
@@ -140,8 +140,8 @@ per-provider change needed unless this provider adds configurable models
 
 **File:** `internal/config/reasoning_effort.go`
 
-- [ ] Add model constant(s) (~line 10).
-- [ ] Add `ReasoningEffortSpec` entry(s) in `ReasoningEffortCatalog()` (~line 39).
+- [ ] Add model constant(s) (~line 9).
+- [ ] Add `ReasoningEffortSpec` entry(s) in `ReasoningEffortCatalog()` (~line 43).
 - [ ] If the provider uses different normalization than DeepSeek, add an
   `is<Name>Model()` switch.
 
@@ -266,24 +266,24 @@ below and add the new provider entry.
 - [ ] **CSS variables** (~line 18): Add `--<name>: #<hex>;` and
   `--<name>-light: #<hex>;`. Choose a distinct color not used by
   moonshot (#7c3aed), deepseek (#2563eb), or thaura (#059669).
-- [ ] **Provider CSS classes** (~line 190): Add `.<name> { color: var(--<name>); }`.
-- [ ] **Effort provider border** (~line 247): Add `.effort-provider.<name> { border-color: ...; }`.
-- [ ] **Effort save button** (~line 293): Add `.effort-save-btn.<name>` +
+- [ ] **Provider CSS classes** (~line 224): Add `.<name> { color: var(--<name>); }`.
+- [ ] **Effort provider border** (~line 282): Add `.effort-provider.<name> { border-color: ...; }`.
+- [ ] **Effort save button** (~line 315): Add `.effort-save-btn.<name>` +
   `.effort-save-btn.<name>:hover:not(:disabled)` rules.
-- [ ] **PROVIDER_COLORS** (line 582): Add `<name>: '#<hex>'`.
-- [ ] **PROVIDER_LIGHT** (line 583): Add `<name>: '#<hex>'`.
-- [ ] **MODEL_COLORS** (line 589): Add `'<name>::<model-id>': '#<hex>'`
+- [ ] **PROVIDER_COLORS** (line 677): Add `<name>: '#<hex>'`.
+- [ ] **PROVIDER_LIGHT** (line 678): Add `<name>: '#<hex>'`.
+- [ ] **MODEL_COLORS** (line 684): Add `'<name>::<model-id>': '#<hex>'`
   for each model.
-- [ ] **Logo map** (line 612): Add `<name>: '/static/<name>.svg'` (or `png`).
-- [ ] **PRICING_URLS** (line 693): Add `<name>: 'https://...docs/pricing'`.
-- [ ] **TOPUP_URLS** (line 699): Add `<name>: 'https://...top-up'` if available.
-- [ ] **PRICING** object (line 707): Add `<name>:` block with model pricing
+- [ ] **Logo map** `LOGO_URLS` (line 708): Add `<name>: '/static/<name>.svg'` (or `png`).
+- [ ] **PRICING_URLS** (line 790): Add `<name>: 'https://...docs/pricing'`.
+- [ ] **TOPUP_URLS** (line 798): Add `<name>: 'https://...top-up'` if available.
+- [ ] **PRICING** object (line 807): Add `<name>:` block with model pricing
   entries (format matches the provider's token tiers).
-- [ ] **PROVIDER_NAMES** (line 962): Add `<name>: '<display-name>'`.
-- [ ] **EFFORT_DOCS_URLS** (line 964): Add `<name>: 'https://...docs/thinking'`
+- [ ] **PROVIDER_NAMES** (line 1067): Add `<name>: '<display-name>'`.
+- [ ] **EFFORT_DOC_URLS** (line 1068): Add `<name>: 'https://...docs/thinking'`
   if supported.
-- [ ] **Provider status grid** (line 903): Add `{ id: '<name>', name: '<Display>', logo: '/static/<name>.svg', ok: h.has_<name>_key }`.
-- [ ] **Balance stat rendering** (line 1247): Add `renderBalanceStat('<name>', data.<name>)`
+- [ ] **Provider status grid** (line 1007): Add `{ id: '<name>', name: '<Display>', logo: '/static/<name>.svg', ok: h.has_<name>_key }`.
+- [ ] **Balance stat rendering** (line 1345): Add `renderBalanceStat('<name>', data.<name>)`
   to the balances HTML builder.
 - [ ] **Health API fields**: The `HealthInfo` schema in JS expects
   `has_<name>_key` (snake_case). Ensure the JSON field matches what

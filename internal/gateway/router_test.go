@@ -294,7 +294,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 			wantOverride: "deepseek-v4-flash",
 		},
 		{
-			name: "editing: refactor → keep model",
+			name: "editing+complex: refactor + pipeline → keep model (complex beats editing)",
 			body: map[string]any{
 				"model": "deepseek-v4-pro",
 				"messages": []any{
@@ -302,7 +302,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 					map[string]any{"role": "user", "content": "Refactor the sanitizer to use a pipeline pattern"},
 				},
 			},
-			wantClass:    ClassEditing,
+			wantClass:    ClassComplexReasoning, // pipeline → complex beats refactor → editing
 			wantOverride: "",
 		},
 		{
@@ -348,6 +348,42 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				"messages": []any{
 					map[string]any{"role": "system", "content": longSystemPrompt},
 					map[string]any{"role": "user", "content": "What would be the best architecture for multi-provider failover?"},
+				},
+			},
+			wantClass:    ClassComplexReasoning,
+			wantOverride: "",
+		},
+		{
+			name: "complex reasoning: finish plan → keep model",
+			body: map[string]any{
+				"model": "deepseek-v4-pro",
+				"messages": []any{
+					map[string]any{"role": "system", "content": longSystemPrompt},
+					map[string]any{"role": "user", "content": "Finish plan"},
+				},
+			},
+			wantClass:    ClassComplexReasoning,
+			wantOverride: "",
+		},
+		{
+			name: "complex reasoning: plan keyword → keep model",
+			body: map[string]any{
+				"model": "deepseek-v4-pro",
+				"messages": []any{
+					map[string]any{"role": "system", "content": longSystemPrompt},
+					map[string]any{"role": "user", "content": "Create a plan for the database migration"},
+				},
+			},
+			wantClass:    ClassComplexReasoning,
+			wantOverride: "",
+		},
+		{
+			name: "complex reasoning: planning keyword → keep model",
+			body: map[string]any{
+				"model": "deepseek-v4-pro",
+				"messages": []any{
+					map[string]any{"role": "system", "content": longSystemPrompt},
+					map[string]any{"role": "user", "content": "I need help with planning the release"},
 				},
 			},
 			wantClass:    ClassComplexReasoning,
@@ -428,6 +464,16 @@ func TestContentClassification_OrderOfPrecedence(t *testing.T) {
 			name:      "pure automation: create PR → automation (no editing keywords)",
 			userMsg:   "Open a pull request for the current branch",
 			wantClass: ClassAutomation,
+		},
+		{
+			name:      "short planning message → complex reasoning (not simple lookup)",
+			userMsg:   "Finish plan",
+			wantClass: ClassComplexReasoning,
+		},
+		{
+			name:      "create a plan → complex reasoning (not simple lookup)",
+			userMsg:   "Create a plan for the release",
+			wantClass: ClassComplexReasoning,
 		},
 	}
 
@@ -822,7 +868,7 @@ func TestContentClassification_WithCursorXML(t *testing.T) {
 			wantOverride: "deepseek-v4-flash",
 		},
 		{
-			name: "editing wrapped in XML",
+			name: "editing+complex wrapped in XML",
 			body: map[string]any{
 				"model": "deepseek-v4-pro",
 				"messages": []any{
@@ -830,7 +876,7 @@ func TestContentClassification_WithCursorXML(t *testing.T) {
 					map[string]any{"role": "user", "content": "<open_and_recently_viewed_files>\n- router.go\n</open_and_recently_viewed_files>\nRefactor the classifyRequest function to use a pipeline pattern"},
 				},
 			},
-			wantClass:    ClassEditing,
+			wantClass:    ClassComplexReasoning, // pipeline → complex beats refactor → editing
 			wantOverride: "",
 		},
 		{

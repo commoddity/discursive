@@ -315,7 +315,7 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 | Parameter          | `glm-5.2`                                                     | `glm-4.7`                                    |
 | ------------------ | ------------------------------------------------------------- | -------------------------------------------- |
 | `thinking`         | `{type: "enabled"}` when reasoning; else `{type: "disabled"}` | `{type: "enabled"|"disabled"}`               |
-| `reasoning_effort` | Normalized → `none`/`high`/`max`                              | Deleted (not supported)                      |
+| `reasoning_effort` | Normalized → `off`/`high`/`max`                               | Deleted (not supported)                      |
 
 ## 🛠 Tech Stack
 
@@ -337,16 +337,18 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 ```
 main.go                   # Entry point
 internal/
-  cli/                    # Cobra command tree (start, stop, doctor, …)
+  cli/                    # Cobra command tree (start, stop, status, doctor, …)
+    start/                # Start gateway / background daemon / tunnel
+    setcmd/               # `set` command
     wizard/               # Interactive init wizard
   config/                 # App settings, paths, upstream URL helpers
   crypto/                 # Encrypt upstream keys + gateway key gen
   gateway/                # HTTP server, sanitizer, optimizer, proxy, auth
-    gateway/vision/       # Image description via glm-4.6v (fail-fast, content-hash cache)
+    vision/               # Image description via glm-4.6v (fail-fast, content-hash cache)
   tunnel/                 # cloudflared supervisor
   doctor/                 # Health checks
   usage/                  # Pricing tables, token/cost store, slog helpers
-  usageui/               # Embedded usage dashboard (HTTP, Chart.js)
+  usageui/                # Embedded usage dashboard (HTTP, Chart.js)
 .cursor/rules/            # Agent conventions
 .cursor/skills/           # Invocable workflows
 planning/          # MVP task sequence (T01–T10)
@@ -442,8 +444,8 @@ Verify: type `discursive`  then Tab — you should see subcommands.
 | Tag `v*` (e.g. `v0.1.0`) | Release (GoReleaser)         | Cross-compile + publish binaries to GitHub Releases  |
 
 
-The verify job must pass before release runs. Releases also require
-`secrets.GH_PAT` with write access to the repository.
+The verify job must pass before release runs. Releases use the built-in
+`secrets.GITHUB_TOKEN` (no custom PAT needed).
 
 Binaries are built via [GoReleaser](https://goreleaser.com/) and published at
 [https://github.com/commoddity/discursive/releases](https://github.com/commoddity/discursive/releases).

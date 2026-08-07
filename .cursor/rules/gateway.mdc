@@ -164,6 +164,25 @@ when the model has a mapped cheaper variant:
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
 | "fix linter errors in some files" stays on the expensive model instead of flash | `isStrongEditing` matches "fix" and blocks the `automation` downgrade | Let lint tasks classify as automation even with a strong-editing word present (`isLintTask` → bypass the `!isStrongEditing` guard) |
-| `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant; the router refuses to cross providers | Expected and safe. Override applies **only** to models with an explicit entry (e.g. `deepseek-v4-pro → deepseek-v4-flash`). To downgrade a new model, add its cheap variant to the override map — never fall back to a generic "flash" alias, because that switches provider and breaks base-URL + key + pricing-row selection |
+| `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultSubagentModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.2` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.2`), uncomment the entry in `modelOverrideMap` — it takes priority over the universal fallback. |
+
+<!-- last-verified: 2026-08 -->
+
+### `DiagnosticDump: gated message-array dumps for content-extraction analysis`
+
+The `--diagnostic-dump` flag (`RouterConfig.DiagnosticDump`) writes the full
+`messages` array to `/tmp/discursive-msgdump-<requestID>.json` whenever content
+extraction from the last user message returns empty (`stripped_len == 0`).
+This only happens when the last message is entirely Cursor XML boilerplate or
+the message role is not `user`/`developer` (e.g. tool-result rounds).
+
+| Aspect | Detail |
+| ------ | ------ |
+| Flag | `--diagnostic-dump` (CLI), `DiagnosticDump bool` (RouterConfig) |
+| Default | `false` (off) — must be explicitly enabled |
+| Trigger | `stripped_len == 0` (content extraction produced nothing) |
+| Output | `/tmp/discursive-msgdump-<requestID>.json` (full `messages` array, indented JSON) |
+| Cleanup | `/tmp/` is automatically cleaned on macOS reboot and by Linux `tmpfiles.d` |
+| Separation | Gated on `DiagnosticDump`, NOT on `Enabled`. Dumps can fire even when the smart router is disabled, and remain silent even when the router is enabled unless the diagnostic flag is also set. |
 
 <!-- last-verified: 2026-08 -->

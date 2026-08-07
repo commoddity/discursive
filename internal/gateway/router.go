@@ -45,6 +45,12 @@ const (
 type RouterConfig struct {
 	// Enabled gates the entire feature. When false, ClassifyAndOverride is a no-op.
 	Enabled bool
+	// DiagnosticDump controls whether the full messages array is written to
+	// /tmp/discursive-msgdump-<requestID>.json when content extraction fails
+	// (stripped_len == 0). Off by default and gated behind a separate CLI flag
+	// so it never fires accidentally in production. Files in /tmp/ are
+	// automatically cleaned on reboot (macOS) or by tmpfiles.d (Linux).
+	DiagnosticDump bool
 }
 
 // ClassifierResult contains the classification outcome for logging/shadowing.
@@ -138,7 +144,8 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 
 	// Dump the full messages array to a temp file when content extraction fails,
 	// so we can analyze Cursor's message structure and refine our extraction.
-	if r.cfg.Enabled && len(lastMsgStripped) == 0 {
+	// Gated behind the separate --diagnostic-dump flag.
+	if r.cfg.DiagnosticDump && len(lastMsgStripped) == 0 {
 		dumpMessages(body, requestID)
 	}
 
@@ -198,8 +205,10 @@ func shouldDowngrade(c RequestClass) bool {
 // infer the task type. Returns ClassUnknown when no clear signal is found.
 //
 // Order matters: structured extraction is checked first (independent of message
-// content), then intent-heavy classes (editing, complex reasoning, code search),
-// and finally simple lookup as the catch-all for short, low-signal messages.
+// content), then automation, then complex reasoning (planning/architecture/strategy
+// before editing so "create a plan" isn't caught by the broad "create" editing
+// keyword), then editing, then code search, and finally simple lookup as the
+// catch-all for short, low-signal messages.
 func classifyRequest(body map[string]any) RequestClass {
 	lastMsg := lastUserMessage(body)
 	// Strip Cursor-injected XML blocks (open_and_recently_viewed_files,
@@ -236,17 +245,19 @@ func classifyRequest(body map[string]any) RequestClass {
 		}
 	}
 
-	// Editing / refactoring: message mentions editing, modifying, refactoring.
-	// isEditing fires after automation so purely mechanical tasks (PRs, lint
-	// fixes) that matched automation don't get caught here.
-	if isEditing(lower) {
-		return ClassEditing
-	}
-
-	// Complex reasoning: long message with multiple requirements, architecture.
-	// Checked before simple lookup because "explain" can appear in both.
+	// Complex reasoning: long message with multiple requirements, architecture,
+	// planning, design strategy. Checked before editing so "create a plan" /
+	// "design the architecture" keep the model rather than being caught by the
+	// broad "create" / "design" editing keywords.
 	if isComplexReasoning(lower, stripped) {
 		return ClassComplexReasoning
+	}
+
+	// Editing / refactoring: message mentions editing, modifying, refactoring.
+	// isEditing fires after automation and complex reasoning so purely
+	// mechanical or planning tasks don't get caught here.
+	if isEditing(lower) {
+		return ClassEditing
 	}
 
 	// Code search / exploration: message mentions searching, finding, exploring.
@@ -404,6 +415,7 @@ func isComplexReasoning(lower string, msg string) bool {
 		"architecture", "design a", "design the", "system design",
 		"pipeline", "tradeoff", "trade-off", "approach", "strategy",
 		"pattern", "best practice", "recommend",
+		"plan", "planning",
 	}
 	for _, kw := range archKeywords {
 		if strings.Contains(lower, kw) {
@@ -615,11 +627,11 @@ func stripCursorNoise(s string) string {
 }
 
 // dumpMessages writes the full messages array from the request body to a temp
-// file for diagnostic analysis. Only called when the router is enabled and the
-// last user message is entirely Cursor boilerplate (stripped_len == 0).
+// file for diagnostic analysis. Only called when the diagnostic-dump flag is on
+// and the last user message is entirely Cursor boilerplate (stripped_len == 0).
 //
-// File is written to the system temp directory (e.g. /tmp/) as
-// discursive-msgdump-<requestID>.json.
+// Files are written to /tmp/ as discursive-msgdump-<requestID>.json so they are
+// automatically cleaned on reboot (macOS) or by tmpfiles.d (Linux).
 func dumpMessages(body map[string]any, requestID string) {
 	msgs, ok := body["messages"]
 	if !ok {
@@ -630,7 +642,7 @@ func dumpMessages(body map[string]any, requestID string) {
 		slog.Warn("router: dump_messages marshal failed", "request_id", requestID, "err", err)
 		return
 	}
-	filename := filepath.Join(os.TempDir(), "discursive-msgdump-"+requestID+".json")
+	filename := filepath.Join("/tmp", "discursive-msgdump-"+requestID+".json")
 	if err := os.WriteFile(filename, b, 0644); err != nil {
 		slog.Warn("router: dump_messages write failed", "request_id", requestID, "err", err)
 		return

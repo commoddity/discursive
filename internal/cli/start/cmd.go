@@ -16,6 +16,7 @@ func NewCmd(opts Options) *cobra.Command {
 	var tunnelFlag, publicURLFlag, logLevelFlag string
 	var backgroundFlag, bgChildFlag bool
 	var smartRouterFlag bool
+	var diagnosticDumpFlag bool
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "🚀 Start the gateway on 127.0.0.1 + launch the Cloudflare tunnel",
@@ -28,7 +29,7 @@ Use Ctrl-C to stop cleanly.
   --background    Detach and run in the background.  Logs go to
                   {dataRoot}/gateway.log — use 'discursive logs' to watch.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStart(cmd, opts, tunnelFlag, publicURLFlag, logLevelFlag, backgroundFlag, bgChildFlag, smartRouterFlag)
+			return runStart(cmd, opts, tunnelFlag, publicURLFlag, logLevelFlag, backgroundFlag, bgChildFlag, smartRouterFlag, diagnosticDumpFlag)
 		},
 	}
 	cmd.Flags().StringVar(&tunnelFlag, "tunnel", "", "tunnel mode: named, none, or quick (persists to config)")
@@ -37,6 +38,7 @@ Use Ctrl-C to stop cleanly.
 	cmd.Flags().BoolVar(&backgroundFlag, "background", false, "detach and run in the background")
 	cmd.Flags().BoolVar(&bgChildFlag, "_bg", false, "")
 	cmd.Flags().BoolVar(&smartRouterFlag, "smart-router", true, "detect subagent traffic and downgrade to cheaper models")
+	cmd.Flags().BoolVar(&diagnosticDumpFlag, "diagnostic-dump", false, "dump full messages arrays to /tmp/ when content extraction fails")
 	_ = cmd.Flags().MarkHidden("_bg")
 	_ = cmd.Flags().MarkHidden("_bg")
 	_ = cmd.RegisterFlagCompletionFunc("tunnel", cobra.FixedCompletions(
