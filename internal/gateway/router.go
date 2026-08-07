@@ -61,17 +61,17 @@ type ClassifierResult struct {
 	ClassificationAge string       `json:"classification_age,omitempty"`
 }
 
-// defaultSubagentModel is the fallback model for any detected subagent traffic.
-// Override map entries can redirect specific models to other targets; anything not
-// in the map (including models that aren't deepseek at all) falls back to this.
-const defaultSubagentModel = "deepseek-v4-flash"
-
-// modelOverrideMap maps expensive models to cheaper equivalents for subagent traffic.
-// Models not found in this map fall through to defaultSubagentModel.
-// Populated only with known expensive → cheap pairs for now.
+// modelOverrideMap maps expensive models to cheaper equivalents for classification-based downgrades.
+// Entries here take priority. Models not in this map fall back to defaultSubagentModel.
 var modelOverrideMap = map[string]string{
 	"deepseek-v4-pro": "deepseek-v4-flash",
+	// "glm-5.2":         "glm-4.7", // Uncomment to use glm-4.7 as flash for glm-5.2
 }
+
+// defaultSubagentModel is the fallback model for any traffic that triggers a
+// downgrade but whose original model isn't in modelOverrideMap. Anything not
+// in the map (including models that aren't DeepSeek at all) falls back to this.
+const defaultSubagentModel = "deepseek-v4-flash"
 
 // SmartRouter performs request classification and optional model override.
 type SmartRouter struct {
@@ -151,10 +151,10 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 		return result
 	}
 
-	// Apply model override: check the override map first, then fall back to
-	// the default cheap model.
-	override := modelOverrideMap[result.OriginalModel]
-	if override == "" {
+	// Apply model override: prefer an explicit map entry; fall back to the
+	// universal default (deepseek-v4-flash) for models not in the map.
+	override, ok := modelOverrideMap[result.OriginalModel]
+	if !ok {
 		override = defaultSubagentModel
 	}
 
@@ -228,11 +228,17 @@ func classifyRequest(body map[string]any) RequestClass {
 	// Checked before editing so "create a PR" routes to automation.
 	// When both automation AND strong-editing keywords are present, editing wins:
 	// "refactor and create a PR" needs pro for the refactoring part.
-	if isAutomation(lower) && !isStrongEditing(lower) {
-		return ClassAutomation
+	// Exception: lint/linter tasks are mechanical (remove unused code, rename) —
+	// even when the message contains "fix", flash handles them fine.
+	if isAutomation(lower) {
+		if isLintTask(lower) || !isStrongEditing(lower) {
+			return ClassAutomation
+		}
 	}
 
 	// Editing / refactoring: message mentions editing, modifying, refactoring.
+	// isEditing fires after automation so purely mechanical tasks (PRs, lint
+	// fixes) that matched automation don't get caught here.
 	if isEditing(lower) {
 		return ClassEditing
 	}
@@ -351,6 +357,13 @@ func isStrongEditing(lower string) bool {
 	return false
 }
 
+// isLintTask returns true when the message is about fixing linter warnings,
+// lint errors, or code-quality tool output — tasks that are deterministic
+// (remove unused, rename, fix formatting) and don't need pro reasoning.
+func isLintTask(lower string) bool {
+	return strings.Contains(lower, "linter") || strings.Contains(lower, "lint ")
+}
+
 // isAutomation returns true when the message describes a deterministic
 // tool-orchestration workflow: git operations, PR creation, shell scripting,
 // or other mechanical tasks that don't need deep reasoning. Skills like
@@ -367,6 +380,9 @@ func isAutomation(lower string) bool {
 		"git merge", "git rebase", "git stash", "git diff",
 		"gh pr", "gh issue", "gh repo",
 		"create pr", "submit pr", "make a pr",
+		"fix lint", "fix linter", "linter error", "linter issue",
+		"lint error", "lint issue", "lint warning",
+		"resolve lint", "resolve linter",
 	}
 	for _, kw := range automationKeywords {
 		if strings.Contains(lower, kw) {

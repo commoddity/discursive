@@ -482,15 +482,17 @@ func TestSmartRouter_ModelPreservedForMainAgent(t *testing.T) {
 	}
 }
 
-func TestSmartRouter_SubagentDefaultFallback(t *testing.T) {
-	models := []string{"kimi-k3", "kimi-k2.7-code", "thaura", "glm-5.2", "glm-4.7"}
+func TestSmartRouter_UnknownProviderDefaultFallback(t *testing.T) {
+	// Models not in the override map fall back to deepseek-v4-flash when
+	// classification triggers a downgrade.
+	models := []string{"kimi-k3", "kimi-k2.7-code", "thaura"}
 	for _, model := range models {
 		t.Run(model, func(t *testing.T) {
 			body := map[string]any{
 				"model": model,
 				"messages": []any{
 					map[string]any{"role": "system", "content": "short"},
-					map[string]any{"role": "user", "content": "hi"},
+					map[string]any{"role": "user", "content": "search for tests"},
 				},
 				"tools": []any{
 					map[string]any{"type": "function", "function": map[string]any{"name": "grep"}},
@@ -498,10 +500,35 @@ func TestSmartRouter_SubagentDefaultFallback(t *testing.T) {
 			}
 			r := NewSmartRouter(RouterConfig{Enabled: true})
 			result := r.ClassifyAndOverride(body, "req_test")
-			if stringField(body, "model") != "deepseek-v4-flash" {
-				t.Errorf("subagent on %q was not downgraded to flash, got %q (class=%q)", model, stringField(body, "model"), result.RequestClass)
+			if !result.OverrideApplied {
+				t.Errorf("%q should be overridden (not in map → fallback default), class=%q",
+					model, result.RequestClass)
+			}
+			if result.OverrideModel != defaultSubagentModel {
+				t.Errorf("%q override model = %q, want default %q",
+					model, result.OverrideModel, defaultSubagentModel)
 			}
 		})
+	}
+}
+
+func TestSmartRouter_Glm52ToFlashViaDefault(t *testing.T) {
+	// glm-5.2 is NOT in the override map (line is commented out), so it
+	// falls back to the universal default (deepseek-v4-flash).
+	body := map[string]any{
+		"model": "glm-5.2",
+		"messages": []any{
+			map[string]any{"role": "system", "content": longSystemPrompt},
+			map[string]any{"role": "user", "content": "search for all test files"},
+		},
+	}
+	r := NewSmartRouter(RouterConfig{Enabled: true})
+	result := r.ClassifyAndOverride(body, "req_test")
+	if !result.OverrideApplied {
+		t.Errorf("glm-5.2 should be overridden (not in map → default), got class=%q", result.RequestClass)
+	}
+	if stringField(body, "model") != defaultSubagentModel {
+		t.Errorf("expected default %q, got %q", defaultSubagentModel, stringField(body, "model"))
 	}
 }
 
