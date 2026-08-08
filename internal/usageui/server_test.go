@@ -111,193 +111,215 @@ func TestIndexPage(t *testing.T) {
 	}
 }
 
-func TestAPISummary(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/summary")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var ds usage.DailySummary
-	if err := json.Unmarshal(w.Body.Bytes(), &ds); err != nil {
-		t.Fatal(err)
-	}
-	if ds.RequestCount < 1 {
-		t.Fatalf("expected at least 1 request, got %d", ds.RequestCount)
-	}
+// apiTest describes a single table-driven API endpoint test. On success
+// (expected status code match), the response body is unmarshaled into a fresh
+// T and check is invoked with the decoded value. When check is nil only the
+// status code is asserted.
+type apiTest[T any] struct {
+	name           string
+	path           string
+	expectedStatus int
+	check          func(t *testing.T, got T)
 }
 
-func TestAPIByDay(t *testing.T) {
+// runAPITest executes one apiTest entry against a fresh test server.
+func runAPITest[T any](t *testing.T, tc apiTest[T]) {
+	t.Helper()
 	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/by-day")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
+	w := doJSON(t, srv, tc.path)
+	if w.Code != tc.expectedStatus {
+		t.Fatalf("status %d, want %d", w.Code, tc.expectedStatus)
 	}
-	var days []usage.DailySummary
-	if err := json.Unmarshal(w.Body.Bytes(), &days); err != nil {
+	if tc.check == nil {
+		return
+	}
+	var got T
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(days) < 1 {
-		t.Fatalf("expected at least 1 day, got %d", len(days))
-	}
+	tc.check(t, got)
 }
 
-func TestAPIByModel(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/by-model")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var models []usage.ModelBreakdown
-	if err := json.Unmarshal(w.Body.Bytes(), &models); err != nil {
-		t.Fatal(err)
-	}
-	if len(models) < 1 {
-		t.Fatalf("expected at least 1 model, got %d", len(models))
-	}
-}
+func TestAPIEndpoints(t *testing.T) {
+	// --- /api/summary ---
+	t.Run("TestAPISummary", func(t *testing.T) {
+		runAPITest(t, apiTest[usage.DailySummary]{
+			name:           "TestAPISummary",
+			path:           "/api/summary",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, ds usage.DailySummary) {
+				if ds.RequestCount < 1 {
+					t.Fatalf("expected at least 1 request, got %d", ds.RequestCount)
+				}
+			},
+		})
+	})
 
-func TestAPIByProvider(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/by-provider")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var provs []usage.ProviderBreakdown
-	if err := json.Unmarshal(w.Body.Bytes(), &provs); err != nil {
-		t.Fatal(err)
-	}
-	if len(provs) < 1 {
-		t.Fatalf("expected at least 1 provider, got %d", len(provs))
-	}
-}
+	// --- /api/by-day ---
+	t.Run("TestAPIByDay", func(t *testing.T) {
+		runAPITest(t, apiTest[[]usage.DailySummary]{
+			name:           "TestAPIByDay",
+			path:           "/api/by-day",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, days []usage.DailySummary) {
+				if len(days) < 1 {
+					t.Fatalf("expected at least 1 day, got %d", len(days))
+				}
+			},
+		})
+	})
 
-func TestAPISessions(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/sessions")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var sessions []usage.SessionInfo
-	if err := json.Unmarshal(w.Body.Bytes(), &sessions); err != nil {
-		t.Fatal(err)
-	}
-	if len(sessions) < 1 {
-		t.Fatalf("expected at least 1 session, got %d", len(sessions))
-	}
-}
+	// --- /api/by-model ---
+	t.Run("TestAPIByModel", func(t *testing.T) {
+		runAPITest(t, apiTest[[]usage.ModelBreakdown]{
+			name:           "TestAPIByModel",
+			path:           "/api/by-model",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, models []usage.ModelBreakdown) {
+				if len(models) < 1 {
+					t.Fatalf("expected at least 1 model, got %d", len(models))
+				}
+			},
+		})
+	})
 
-func TestAPIHealth(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/health")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var h HealthInfo
-	if err := json.Unmarshal(w.Body.Bytes(), &h); err != nil {
-		t.Fatal(err)
-	}
-	if h.Version != "0.0.0-test" {
-		t.Fatalf("version: %q", h.Version)
-	}
-	if h.TunnelMode != "quick" {
-		t.Fatalf("tunnel_mode: %q", h.TunnelMode)
-	}
-	if !h.HasMoonshotKey {
-		t.Fatal("expected has_moonshot_key")
-	}
-	if !h.HasThauraKey {
-		t.Fatal("expected has_thaura_key")
-	}
-	if !h.HasZaiKey {
-		t.Fatal("expected has_zai_key")
-	}
-}
+	// --- /api/by-provider ---
+	t.Run("TestAPIByProvider", func(t *testing.T) {
+		runAPITest(t, apiTest[[]usage.ProviderBreakdown]{
+			name:           "TestAPIByProvider",
+			path:           "/api/by-provider",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, provs []usage.ProviderBreakdown) {
+				if len(provs) < 1 {
+					t.Fatalf("expected at least 1 provider, got %d", len(provs))
+				}
+			},
+		})
+	})
 
-func TestAPISessionDetail(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/sessions?session_id=sess-test")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var ds usage.DailySummary
-	if err := json.Unmarshal(w.Body.Bytes(), &ds); err != nil {
-		t.Fatal(err)
-	}
-	if ds.RequestCount < 1 {
-		t.Fatalf("expected at least 1 request, got %d", ds.RequestCount)
-	}
-	if len(ds.ByModel) < 1 {
-		t.Fatalf("expected by_model breakdown, got %d", len(ds.ByModel))
-	}
-}
+	// --- /api/sessions ---
+	t.Run("TestAPISessions", func(t *testing.T) {
+		runAPITest(t, apiTest[[]usage.SessionInfo]{
+			name:           "TestAPISessions",
+			path:           "/api/sessions",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, sessions []usage.SessionInfo) {
+				if len(sessions) < 1 {
+					t.Fatalf("expected at least 1 session, got %d", len(sessions))
+				}
+			},
+		})
+	})
 
-func TestAPIByDaySince(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/by-day?since=2025-01-01T00:00:00Z")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var days []usage.DailySummary
-	if err := json.Unmarshal(w.Body.Bytes(), &days); err != nil {
-		t.Fatal(err)
-	}
-	// All seeded events are after 2025, so should produce at least 1 day.
-	if len(days) < 1 {
-		t.Fatalf("expected at least 1 day with since filter, got %d", len(days))
-	}
-}
+	// --- /api/health ---
+	t.Run("TestAPIHealth", func(t *testing.T) {
+		runAPITest(t, apiTest[HealthInfo]{
+			name:           "TestAPIHealth",
+			path:           "/api/health",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, h HealthInfo) {
+				if h.Version != "0.0.0-test" {
+					t.Fatalf("version: %q", h.Version)
+				}
+				if h.TunnelMode != "quick" {
+					t.Fatalf("tunnel_mode: %q", h.TunnelMode)
+				}
+				if !h.HasMoonshotKey {
+					t.Fatal("expected has_moonshot_key")
+				}
+				if !h.HasThauraKey {
+					t.Fatal("expected has_thaura_key")
+				}
+				if !h.HasZaiKey {
+					t.Fatal("expected has_zai_key")
+				}
+			},
+		})
+	})
 
-func TestAPIByModelSince(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/by-model?since=2025-01-01T00:00:00Z")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var models []usage.ModelBreakdown
-	if err := json.Unmarshal(w.Body.Bytes(), &models); err != nil {
-		t.Fatal(err)
-	}
-	if len(models) < 1 {
-		t.Fatalf("expected at least 1 model, got %d", len(models))
-	}
-}
+	// --- /api/sessions?session_id=sess-test ---
+	t.Run("TestAPISessionDetail", func(t *testing.T) {
+		runAPITest(t, apiTest[usage.DailySummary]{
+			name:           "TestAPISessionDetail",
+			path:           "/api/sessions?session_id=sess-test",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, ds usage.DailySummary) {
+				if ds.RequestCount < 1 {
+					t.Fatalf("expected at least 1 request, got %d", ds.RequestCount)
+				}
+				if len(ds.ByModel) < 1 {
+					t.Fatalf("expected by_model breakdown, got %d", len(ds.ByModel))
+				}
+			},
+		})
+	})
 
-func TestAPIByProviderSince(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/by-provider?since=2025-01-01T00:00:00Z")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var provs []usage.ProviderBreakdown
-	if err := json.Unmarshal(w.Body.Bytes(), &provs); err != nil {
-		t.Fatal(err)
-	}
-	if len(provs) < 1 {
-		t.Fatalf("expected at least 1 provider, got %d", len(provs))
-	}
-}
+	// --- /api/by-day?since=2025-01-01T00:00:00Z ---
+	t.Run("TestAPIByDaySince", func(t *testing.T) {
+		runAPITest(t, apiTest[[]usage.DailySummary]{
+			name:           "TestAPIByDaySince",
+			path:           "/api/by-day?since=2025-01-01T00:00:00Z",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, days []usage.DailySummary) {
+				// All seeded events are after 2025, so should produce at least 1 day.
+				if len(days) < 1 {
+					t.Fatalf("expected at least 1 day with since filter, got %d", len(days))
+				}
+			},
+		})
+	})
 
-func TestAPISessionsSince(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/sessions?since=2025-01-01T00:00:00Z")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d", w.Code)
-	}
-	var sessions []usage.SessionInfo
-	if err := json.Unmarshal(w.Body.Bytes(), &sessions); err != nil {
-		t.Fatal(err)
-	}
-	if len(sessions) < 1 {
-		t.Fatalf("expected at least 1 session, got %d", len(sessions))
-	}
-}
+	// --- /api/by-model?since=2025-01-01T00:00:00Z ---
+	t.Run("TestAPIByModelSince", func(t *testing.T) {
+		runAPITest(t, apiTest[[]usage.ModelBreakdown]{
+			name:           "TestAPIByModelSince",
+			path:           "/api/by-model?since=2025-01-01T00:00:00Z",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, models []usage.ModelBreakdown) {
+				if len(models) < 1 {
+					t.Fatalf("expected at least 1 model, got %d", len(models))
+				}
+			},
+		})
+	})
 
-func TestAPIBadSince(t *testing.T) {
-	srv := newTestServer(t)
-	w := doJSON(t, srv, "/api/by-day?since=not-a-date")
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for bad since, got %d", w.Code)
-	}
+	// --- /api/by-provider?since=2025-01-01T00:00:00Z ---
+	t.Run("TestAPIByProviderSince", func(t *testing.T) {
+		runAPITest(t, apiTest[[]usage.ProviderBreakdown]{
+			name:           "TestAPIByProviderSince",
+			path:           "/api/by-provider?since=2025-01-01T00:00:00Z",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, provs []usage.ProviderBreakdown) {
+				if len(provs) < 1 {
+					t.Fatalf("expected at least 1 provider, got %d", len(provs))
+				}
+			},
+		})
+	})
+
+	// --- /api/sessions?since=2025-01-01T00:00:00Z ---
+	t.Run("TestAPISessionsSince", func(t *testing.T) {
+		runAPITest(t, apiTest[[]usage.SessionInfo]{
+			name:           "TestAPISessionsSince",
+			path:           "/api/sessions?since=2025-01-01T00:00:00Z",
+			expectedStatus: http.StatusOK,
+			check: func(t *testing.T, sessions []usage.SessionInfo) {
+				if len(sessions) < 1 {
+					t.Fatalf("expected at least 1 session, got %d", len(sessions))
+				}
+			},
+		})
+	})
+
+	// --- /api/by-day?since=not-a-date (bad input → 400, no body check) ---
+	t.Run("TestAPIBadSince", func(t *testing.T) {
+		runAPITest(t, apiTest[json.RawMessage]{
+			name:           "TestAPIBadSince",
+			path:           "/api/by-day?since=not-a-date",
+			expectedStatus: http.StatusBadRequest,
+			check:          nil,
+		})
+	})
 }
 
 func TestAPIByDayModelEmptyPadsHourBuckets(t *testing.T) {

@@ -13,9 +13,6 @@ import (
 )
 
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	if !requireGatewayKey(w, r, s.cfg.GatewayKey) {
-		return
-	}
 	started := time.Now()
 	requestID := newRequestID()
 
@@ -55,6 +52,19 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Classify request for subagent detection and downgrade to cheaper model.
 	if result := s.router.ClassifyAndOverride(sanitized.Body, requestID); result.OverrideApplied {
 		sanitized.Model = result.OverrideModel
+		// The override may map to a different provider (e.g. kimi-k3 →
+		// deepseek-v4-flash via the default fallback). Re-resolve the
+		// provider from the overridden model so the request is sent to the
+		// correct upstream. If the override model is unknown, fall back to a
+		// best-effort client error — we must not send a model to the wrong
+		// provider's endpoint.
+		if route, err := ResolveModel(result.OverrideModel); err != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("override model %q not resolvable: %v", result.OverrideModel, err), "provider", string(sanitized.Provider), "model", result.OverrideModel)
+			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("override model %q not resolvable: %v", result.OverrideModel, err), "upstream_error")
+			return
+		} else {
+			sanitized.Provider = route.Provider
+		}
 	}
 
 	upstreamKey, err := s.upstreamKey(sanitized.Provider)
@@ -194,31 +204,28 @@ func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBo
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
+	// Always log the full upstream error body at ERROR level.
+	slog.Error("upstream_error",
+		"request_id", requestID,
+		"status", status,
+		"provider", string(provider),
+		"model", model,
+		"effort", effort,
+		"body", string(respBody),
+	)
+
+	// Surface provider errors verbatim. If the upstream body is valid JSON,
+	// pass it through untouched (preserves the provider's error shape). If
+	// it's not JSON, wrap the raw body in an OpenAI-shaped envelope so the
+	// actual provider message reaches Cursor instead of a generic placeholder.
 	var errObj map[string]any
 	if json.Unmarshal(respBody, &errObj) == nil {
 		_ = json.NewEncoder(w).Encode(errObj)
-
-		// Always log the full upstream error body at ERROR level.
-		slog.Error("upstream_error",
-			"request_id", requestID,
-			"status", status,
-			"provider", string(provider),
-			"model", model,
-			"effort", effort,
-			"body", string(respBody),
-		)
 	} else {
-		slog.Error("upstream_error",
-			"request_id", requestID,
-			"status", status,
-			"provider", string(provider),
-			"model", model,
-			"effort", effort,
-			"body", string(respBody),
-		)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"error": map[string]any{
-				"message": fmt.Sprintf("upstream status %d", status),
+				"message": fmt.Sprintf("upstream status %d: %s", status, string(respBody)),
 				"type":    "upstream_error",
 			},
 		})

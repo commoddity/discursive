@@ -9,8 +9,8 @@ alwaysApply: false
 ## Release Process
 
 - Version is tracked in `VERSION`.
-- `make release-patch` / `make release-minor` / `make release-major` bumps the
-  version in `VERSION`, commits, tags, and pushes.
+- `make release-patch` / `make release-minor` bumps the version in `VERSION`,
+  commits, tags, and pushes.
 - **Tag push triggers CI:** the `.github/workflows/release-binaries.yaml`
   workflow runs on push to `main`, pull requests to `main`, and pushes of tags
   matching `v*`.

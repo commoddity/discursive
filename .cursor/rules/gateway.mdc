@@ -164,9 +164,35 @@ when the model has a mapped cheaper variant:
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
 | "fix linter errors in some files" stays on the expensive model instead of flash | `isStrongEditing` matches "fix" and blocks the `automation` downgrade | Let lint tasks classify as automation even with a strong-editing word present (`isLintTask` → bypass the `!isStrongEditing` guard) |
-| `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultSubagentModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.2` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.2`), uncomment the entry in `modelOverrideMap` — it takes priority over the universal fallback. |
+| `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultFlashModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.2` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.2`), uncomment the entry in `modelOverrideMap` — it takes priority over the universal fallback. |
 
-<!-- last-verified: 2026-08 -->
+#### Per-turn routing tiers (`flash` / `pro` / `keep`)
+
+Within one multi-step agent flow, each tool-result request is routed by an
+`OverrideTier` decided from the **tool result size + the tool name** (not the
+content class). Real 71s GLM 5.2 refactor session: 7/10 turns went `flash`,
+2 decision-heavy `pro`, initial prompt + one large result stayed `glm-5.2`.
+
+| Signal | Tier | Model | Rationale |
+| ------ | ---- | ----- | --------- |
+| tool result, size `small` | flash | `deepseek-v4-flash` | short output → cheap interpretation |
+| tool result, size `medium`, read-only tool (`Read`/`Grep`/`Glob`/search) | flash | `deepseek-v4-flash` | just reading → no pro needed |
+| tool result, size `medium`, write/decision tool (`Shell`/`StrReplace`/tests/unknown) | pro | `deepseek-v4-pro` | may decide state changes → needs a reasoning model |
+| tool result, size `large` | keep | original | big output needs pro interpretation |
+| user prompt | keep | original | content classifier decides (see above) |
+
+Route on the resolved `tool_name` (matched from the last `tool_call_id` back to
+the assistant `tool_calls[].function.name`). Treat any non-read-only tool name —
+**including empty/unknown** — as write/decision → pro. A cheap tier is only safe
+when the result can be interpreted without deep reasoning.
+
+#### Flash verbosity cap (output token ceiling on cheap turns)
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Agent flow "takes too long / overthought a lot" for a simple change | On `flash` turn the model is over-confident and emits 4–16k output tokens (~20–106s) rather than a terse next step | Cap cheap tiers' `max_tokens` to `toolVerbosityCap` (1500) so flash turns stay terse. Apply the cap even when the model override is a no-op (flow already on flash). Cheap turns should land at 78–600 output tokens, not thousands |
+
+`<!-- last-verified: 2026-08 -->`
 
 ### `DiagnosticDump: gated message-array dumps for content-extraction analysis`
 

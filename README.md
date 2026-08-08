@@ -26,6 +26,7 @@
 ### Table of Contents <!-- omit in toc -->
 
 - [📦 Quickstart](#-quickstart)
+- [⚡ Smart Routing](#-smart-routing)
 - [☁️ Setting up Cloudflare](#️-setting-up-cloudflare)
 - [📊 Usage Dashboard](#-usage-dashboard)
 - [🪐 Providers](#-providers)
@@ -89,6 +90,14 @@ discursive status --show-key | jq
 Gateway keys are masked by default. Pass `--show-key` to print the full
 `gateway_key` for Cursor setup.
 
+> **💡 Smart routing is on by default.** The gateway's *smart router* inspects
+> every request and, when safe, routes simpler work (short lookups, code
+> search, structured extraction, and cheap per-turn tool results) to a cheaper
+> model — typically `deepseek-v4-flash` — to cut cost and latency. More complex
+> work (editing/refactoring, reasoning, large outputs) keeps the original model.
+> See [Smart Routing](#-smart-routing) below, or disable it with
+> `discursive start --smart-router=false`.
+
 ### 3. Configure Cursor <!-- omit in toc -->
 
 Open **Cursor Settings → Models** and enter:
@@ -112,16 +121,16 @@ Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 Change the model alias in Cursor's model picker — no restart needed:
 
 
-| Cursor alias  | Provider | Real model          | Use                                    |
-| ------------- | -------- | ------------------- | -------------------------------------- |
-| `gpt-4o`      | Moonshot | `kimi-k3`           | Planning / flagship                    |
-| `gpt-4o-mini` | Moonshot | `kimi-k2.7-code`  | Coding; always thinks                 |
-| `o1`          | DeepSeek | `deepseek-v4-pro`   | Harder execution                       |
-| `o3-mini`     | DeepSeek | `deepseek-v4-flash` | Cheap execution                        |
-| `gpt-5-nano`  | Thaura   | `thaura`            | Ethical AI; optional provider          |
-| `gpt-4.1-turbo` | Z.AI   | `glm-5.2`           | Planning; cheaper than K3              |
-| `gpt-4.1`       | Z.AI   | `glm-4.7`           | Cheap execution                        |
-| `gpt-4-turbo`   | Z.AI   | `glm-5.2`           | Compat alias (Cursor may rewrite `gpt-4.1-turbo` to this) |
+| Cursor alias    | Provider | Real model          | Use                                                       |
+| --------------- | -------- | ------------------- | --------------------------------------------------------- |
+| `gpt-4o`        | Moonshot | `kimi-k3`           | Planning / flagship                                       |
+| `gpt-4o-mini`   | Moonshot | `kimi-k2.7-code`    | Coding; always thinks                                     |
+| `o1`            | DeepSeek | `deepseek-v4-pro`   | Harder execution                                          |
+| `o3-mini`       | DeepSeek | `deepseek-v4-flash` | Cheap execution                                           |
+| `gpt-5-nano`    | Thaura   | `thaura`            | Ethical AI; optional provider                             |
+| `gpt-4.1-turbo` | Z.AI     | `glm-5.2`           | Planning; cheaper than K3                                 |
+| `gpt-4.1`       | Z.AI     | `glm-4.7`           | Cheap execution                                           |
+| `gpt-4-turbo`   | Z.AI     | `glm-5.2`           | Compat alias (Cursor may rewrite `gpt-4.1-turbo` to this) |
 
 
 
@@ -130,6 +139,81 @@ Change the model alias in Cursor's model picker — no restart needed:
 
 In Cursor Settings → Models: turn off "Override OpenAI API Key" and
 "Override OpenAI Base URL", then pick a Cursor-native model.
+
+---
+
+## ⚡ Smart Routing
+
+The gateway can **automatically downgrade individual requests** to a cheaper,
+faster model when the work is simple enough — cutting token cost and latency
+without changing what you pick in Cursor. Smart routing is **on by default** and
+requires no configuration, but every behavior is configurable via
+`discursive start` flags.
+
+> The router runs entirely **inside the gateway**. Cursor still sends every
+> request to the gateway under whatever model alias you chose; the gateway
+> inspects each request, may route it to a cheaper model, and proxies upstream.
+> Cursor's model picker is unaware of the routing.
+
+### What gets downgraded
+
+Each incoming request is classified and routed to one of three tiers
+(`keep` / `pro` / `flash`), based on the **content class** and, for per-turn
+tool results, the **result size + tool name**:
+
+| Request type                                                    | Tier  | Model                 |
+| --------------------------------------------------------------- | ----- | --------------------- |
+| Simple lookup / explanation                                     | flash | `deepseek-v4-flash`   |
+| Code search / exploration                                       | flash | `deepseek-v4-flash`   |
+| Structured extraction (`json_object` / `json_schema`)           | flash | `deepseek-v4-flash`   |
+| Automation / mechanical work (lint, git, scripts, PR)           | flash | `deepseek-v4-flash`   |
+| Tool result — small                                             | flash | `deepseek-v4-flash`   |
+| Tool result — medium, read-only (`Read`/`Grep`/`Glob`)          | flash | `deepseek-v4-flash`   |
+| Tool result — medium, write/decision (`Shell`/`StrReplace`)     | pro   | `deepseek-v4-pro`     |
+| Editing / refactoring                                           | keep  | original model        |
+| Complex reasoning / architecture                                | keep  | original model        |
+| Tool result — large                                             | keep  | original model        |
+
+Full details and rationale live in the agent rules (`.cursor/rules/gateway.mdc`,
+*Per-turn routing tiers*). In practice a real GLM 5.2 refactor session routed
+7 of 10 per-turn requests to `flash` and 2 decision-heavy ones to `pro`, keeping
+the original model for the initial prompt and the one large tool result.
+
+### Flash output cap
+
+Flash-tier requests are limited to **1,500 output tokens** (`max_tokens =
+1500`), so cheap turns stay terse instead of "overthinking" and emitting
+4–16k tokens. This is the main lever that keeps agent flows fast. The cap is
+applied even when the flow is already on `flash` (model override is a no-op).
+
+### `discursive start` flags
+
+| Flag                 | Default | Purpose                                                                                                                                                                                                                                        |
+| -------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--smart-router`     | `true`  | Enable the smart router (classification + downgrade + per-turn routing + flash cap). Set `--smart-router=false` to run the gateway with no automatic model changes.                                                                             |
+| `--diagnostic-dump`  | `false` | Debugging aid: write the raw `messages` array Cursor sent to `/tmp/discursive-msgdump-<requestID>.json` whenever content extraction from the last user message returns nothing (e.g. tool-result rounds). Independent of `--smart-router` — dumps can fire even when routing is off, or stay silent while it's on. |
+| `--log-level`        | `info`  | Log verbosity: `debug`, `info`, `warn`, `error`. Use `debug` to see the per-request `request_class`, `turn_type`, `tool_result_size`, `tool_name`, and `override_tier` lines from the router. Overrides `DISCURSIVE_LOG_LEVEL`.                |
+| `--background`       | `false` | Detach and run in the background. Logs to `{dataRoot}/gateway.log`.                                                                                                                                                                            |
+| `--tunnel`           | (config) | Tunnel mode: `named`, `none`, or `quick` (persists to config).                                                                                                                                                                                |
+| `--public-url`       | (config) | Public HTTPS base URL ending in `/v1` (persists to config).                                                                                                                                                                                    |
+
+Examples:
+
+```bash
+# Routing on (default) + debug logging
+discursive start --smart-router --log-level debug
+
+# Routing on + debug logging + message dumps for a debugging session
+discursive start --smart-router --log-level debug --diagnostic-dump
+
+# Disable routing entirely
+discursive start --smart-router=false
+```
+
+> **💡 Tip:** At `--log-level debug`, the router logs one line per request with
+> `request_class`, `turn_type`, `tool_result_size`, `tool_name`, and
+> `override_tier`. This is the easiest way to see exactly what the router is
+> doing and tune your expectations.
 
 ---
 
@@ -190,7 +274,7 @@ logs include an `effort` field on request/response/usage lines.
 | --------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------- |
 | `kimi-k3`                               | `low`, `high`, `max` | `low` (API default is `max`; we default lower for cost)                                  |
 | `deepseek-v4-pro` / `deepseek-v4-flash` | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
-| `glm-5.2`                              | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
+| `glm-5.2`                               | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
 
 - Lower effort usually means fewer thinking tokens and lower cost. `thaura` does not
 expose this control.
@@ -204,10 +288,10 @@ selector: [Kimi K2.7 Code](https://www.kimi.com/resources/kimi-k2-7-code)
 windows and native reasoning capabilities.
 
 
-| API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                            |
-| ------------ | ---------------- | ------------ | ------------- | ----------------------------------------------- |
-| `kimi-k3`       | $0.30            | $3.00        | $15.00        | Flagship; 1M-token context, always thinks       |
-| `kimi-k2.7-code` | $0.19           | $0.95        | $4.00         | Coding model; always thinks                      |
+| API model ID     | Cache hit / MTok | Input / MTok | Output / MTok | Role                                      |
+| ---------------- | ---------------- | ------------ | ------------- | ----------------------------------------- |
+| `kimi-k3`        | $0.30            | $3.00        | $15.00        | Flagship; 1M-token context, always thinks |
+| `kimi-k2.7-code` | $0.19            | $0.95        | $4.00         | Coding model; always thinks               |
 
 
 - Pricing: [https://platform.kimi.ai/docs/pricing/chat](https://platform.kimi.ai/docs/pricing/chat)
@@ -236,6 +320,37 @@ models at a fraction of the cost per token.
 
 ---
 
+### 🪻 Z.AI <!-- omit in toc -->
+
+[Z.AI](https://docs.z.ai/) provides GLM-series models with
+thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
+(subscription, credits quota), which exposes the OpenAI-compatible base URL
+`https://api.z.ai/api/coding/paas/v4`.
+
+| API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                                                     |
+| ------------ | ---------------- | ------------ | ------------- | ------------------------------------------------------------------------ |
+| `glm-5.2`    | $0.26            | $1.40        | $4.40         | Planning model; reasoning_effort + cache                                 |
+| `glm-4.7`    | $0.11            | $0.60        | $2.20         | Budget execution; thinking on/off                                        |
+| `glm-4.6v`   | $0.05            | $0.30        | $0.90         | Vision worker — describes images for ALL providers (not user-selectable) |
+
+> **Image routing:** any request (any provider) that contains image content is
+> intercepted by the gateway and each image is described by Z.AI `glm-4.6v`
+> (coding-plan endpoint) before the selected text model is called. A Z.AI API
+> key is therefore required to send images. If it is missing or the vision
+> model rejects the image, the request **fails fast** with a clear `vision_error`
+> rather than silently dropping the image.
+
+- Pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing)
+- API docs: [https://docs.z.ai/api-reference/introduction](https://docs.z.ai/api-reference/introduction)
+- API key: [https://z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) (GLM Coding Plan key)
+
+| Parameter          | `glm-5.2`                                                     | `glm-4.7`               |
+| ------------------ | ------------------------------------------------------------- | ----------------------- |
+| `thinking`         | `{type: "enabled"}` when reasoning; else `{type: "disabled"}` | `{type: "enabled"       | "disabled"}` |
+| `reasoning_effort` | Normalized → `off`/`high`/`max`                               | Deleted (not supported) |
+
+---
+
 
 
 ### 🐪 Thaura <!-- omit in toc -->
@@ -245,9 +360,9 @@ excellence with ethical principles, designed to support Palestinian liberation
 and mission-aligned technology development.
 
 
-| API model ID | Input / MTok | Output / MTok | Role                                         |
-| ------------ | ------------ | ------------- | -------------------------------------------- |
-| `thaura`     | $0.50        | $2.00         | OpenAI-compatible chat and tool use      |
+| API model ID | Input / MTok | Output / MTok | Role                                |
+| ------------ | ------------ | ------------- | ----------------------------------- |
+| `thaura`     | $0.50        | $2.00         | OpenAI-compatible chat and tool use |
 
 
 - Pricing: [https://thaura.ai/api-platform](https://thaura.ai/api-platform)
@@ -286,36 +401,8 @@ and mission-aligned technology development.
 >
 
 
+---
 
-
-### 🪻 Z.AI <!-- omit in toc -->
-
-[Z.AI](https://docs.z.ai/) provides GLM-series models with
-thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
-(subscription, credits quota), which exposes the OpenAI-compatible base URL
-`https://api.z.ai/api/coding/paas/v4`.
-
-| API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                      |
-| ------------ | ---------------- | ------------ | ------------- | ----------------------------------------- |
-| `glm-5.2`    | $0.26            | $1.40        | $4.40         | Planning model; reasoning_effort + cache  |
-| `glm-4.7`    | $0.11            | $0.60        | $2.20         | Budget execution; thinking on/off         |
-| `glm-4.6v`   | $0.05            | $0.30        | $0.90         | Vision worker — describes images for ALL providers (not user-selectable) |
-
-> **Image routing:** any request (any provider) that contains image content is
-> intercepted by the gateway and each image is described by Z.AI `glm-4.6v`
-> (coding-plan endpoint) before the selected text model is called. A Z.AI API
-> key is therefore required to send images. If it is missing or the vision
-> model rejects the image, the request **fails fast** with a clear `vision_error`
-> rather than silently dropping the image.
-
-- Pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing)
-- API docs: [https://docs.z.ai/api-reference/introduction](https://docs.z.ai/api-reference/introduction)
-- API key: [https://z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) (GLM Coding Plan key)
-
-| Parameter          | `glm-5.2`                                                     | `glm-4.7`                                    |
-| ------------------ | ------------------------------------------------------------- | -------------------------------------------- |
-| `thinking`         | `{type: "enabled"}` when reasoning; else `{type: "disabled"}` | `{type: "enabled"|"disabled"}`               |
-| `reasoning_effort` | Normalized → `off`/`high`/`max`                               | Deleted (not supported)                      |
 
 ## 🛠 Tech Stack
 
@@ -327,9 +414,7 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 | Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) named tunnel |
 | Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura + Z.AI)                                   |
 
-
 ---
-
 
 
 ## 📁 File Structure
@@ -363,18 +448,18 @@ planning/          # MVP task sequence (T01–T10)
 All output is JSON on stdout. Pipe through `jq` for readability.
 
 
-| Command                      | Description                                                                                                                                                                                                                   |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `discursive start`           | Start gateway on `localhost:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. Auto-invokes `init` if config is incomplete on first run.            |
-| `discursive stop`            | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                                              |
-| `discursive status`          | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                              |
-| `discursive logs`            | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail (uses fsnotify — no polling). `-n N` for last N lines. File auto-rotates at ~2 MB, keeps 2 backups.                                                                                                             |
-| `discursive log-level [debug | info                                                                                                                                                                                                                          | warn | error]`      | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence. |
-| `discursive doctor`          | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                                        |
-| `discursive usage`           | Token + cost estimates per session/model.                                                                                                                                                                                     |
+| Command                      | Description                                                                                                                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `discursive start`           | Start gateway on `localhost:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. `--smart-router` (on by default), `--diagnostic-dump` (off by default). Auto-invokes `init` if config is incomplete on first run. See [Smart Routing](#-smart-routing). |
+| `discursive stop`            | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                                                           |
+| `discursive status`          | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                                           |
+| `discursive logs`            | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail (uses fsnotify — no polling). `-n N` for last N lines. File auto-rotates at ~2 MB, keeps 2 backups.                                                |
+| `discursive log-level [debug | info                                                                                                                                                                                                                                       | warn | error]`      | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence. |
+| `discursive doctor`          | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                                                     |
+| `discursive usage`           | Token + cost estimates per session/model.                                                                                                                                                                                                  |
 | `discursive set`             | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--zai-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key. |
-| `discursive completion [bash | zsh                                                                                                                                                                                                                           | fish | powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                 |
-| `discursive version`         | Print version.                                                                                                                                                                                                                |
+| `discursive completion [bash | zsh                                                                                                                                                                                                                                        | fish | powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                 |
+| `discursive version`         | Print version.                                                                                                                                                                                                                             |
 
 
 JSON slog on **stdout**, interactive prompts on **stderr** — pipe-friendly.

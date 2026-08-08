@@ -341,3 +341,90 @@ func TestProxyImageWithoutVisionKeyFailsFast(t *testing.T) {
 		t.Fatalf("text model called %d times despite fail-fast", textCalled.Load())
 	}
 }
+
+// TestProxy_SmartRouterProviderSwitch verifies that when the smart router
+// downgrades a model to a model from a DIFFERENT provider, the gateway
+// re-resolves the upstream provider so the request is sent to the correct
+// endpoint. Regression for the "modelCode: does not exist" cross-provider
+// bug (e.g. gpt-4o→kimi-k3 downgraded to deepseek-v4-flash must reach the
+// DeepSeek endpoint, not the Moonshot endpoint).
+func TestProxy_SmartRouterProviderSwitch(t *testing.T) {
+	var moonshotCalled atomic.Int32
+	moonshotUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		moonshotCalled.Add(1)
+		t.Log("moonshot upstream hit (should not happen for downgraded request)")
+		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k3"))
+	}))
+	t.Cleanup(moonshotUp.Close)
+
+	var deepseekModel string
+	var deepseekCalled atomic.Int32
+	deepseekUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deepseekCalled.Add(1)
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		deepseekModel, _ = body["model"].(string)
+		_ = json.NewEncoder(w).Encode(mockCompletion(deepseekModel))
+	}))
+	t.Cleanup(deepseekUp.Close)
+
+	dataRoot := t.TempDir()
+	settings := config.DefaultSettings()
+	if err := settings.EnsureGatewayKey(); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.SetMoonshotKey(dataRoot, "sk-ms"); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(dataRoot, settings); err != nil {
+		t.Fatal(err)
+	}
+
+	srv, err := gateway.NewServer(gateway.ServerConfig{
+		ListenAddr:         "127.0.0.1:0",
+		GatewayKey:         settings.GatewayKey,
+		DataRoot:           dataRoot,
+		Settings:           &settings,
+		HTTPClient:         deepseekUp.Client(),
+		SmartRouterEnabled: true,
+		ChatURLOverride: map[config.Provider]string{
+			config.ProviderMoonshot: moonshotUp.URL + "/moonshot/chat/completions",
+			config.ProviderDeepSeek: deepseekUp.URL + "/deepseek/chat/completions",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { _ = srv.Shutdown(t.Context()) })
+
+	env := &testEnv{srv: srv, ts: ts, gatewayKey: settings.GatewayKey, dataRoot: dataRoot}
+
+	// gpt-4o resolves to kimi-k3 (Moonshot). It's a short, simple lookup —
+	// classified SimpleLookup → downgraded to defaultFlashModel
+	// (deepseek-v4-flash), which lives on DeepSeek. The request must reach the
+	// DeepSeek upstream with the overridden model.
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model": "gpt-4o",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "what is a goroutine?"},
+		},
+	})
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d body %s", res.StatusCode, body)
+	}
+
+	if deepseekCalled.Load() != 1 {
+		t.Fatalf("expected DeepSeek upstream to be called exactly once, got %d", deepseekCalled.Load())
+	}
+	if deepseekModel != "deepseek-v4-flash" {
+		t.Fatalf("expected overridden model deepseek-v4-flash sent to DeepSeek, got %q", deepseekModel)
+	}
+	if moonshotCalled.Load() != 0 {
+		t.Fatalf("Moonshot upstream was called %d times for a downgraded request, it must not be", moonshotCalled.Load())
+	}
+}

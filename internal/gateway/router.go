@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"hash/fnv"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -53,6 +54,63 @@ type RouterConfig struct {
 	DiagnosticDump bool
 }
 
+// TurnType classifies what kind of agent-loop turn a request represents,
+// based on the role of the last message in the messages array.
+type TurnType string
+
+const (
+	// TurnToolResult means the last message role is "tool" — the model just
+	// received a tool result and must decide the next step. These are the
+	// candidate turns for downgrade to a cheaper model.
+	TurnToolResult TurnType = "tool_result"
+	// TurnUserPrompt means the last message role is "user" or "developer" —
+	// a fresh human prompt. The content classifier (classifyRequest) handles
+	// these.
+	TurnUserPrompt TurnType = "user_prompt"
+	// TurnAgentContinue means the last message role is "assistant" —
+	// continuation or prefill scenario. Conservative: keep model.
+	TurnAgentContinue TurnType = "agent_continue"
+	// TurnUnknown means empty messages, system-only, or unparseable
+	// structure. Conservative: keep model.
+	TurnUnknown TurnType = "unknown"
+)
+
+// OverrideTier states how aggressively a request should be downgraded.
+// It replaces the old boolean "should downgrade" with a 3-way decision so the
+// router can route cheap turns to flash, decision-heavy cheap turns to pro,
+// and everything else to the original (kept) model.
+type OverrideTier string
+
+const (
+	// TierKeep means keep the original model — no override.
+	TierKeep OverrideTier = "keep"
+	// TierPro means downgrade to a mid-tier model that still reasons well
+	// (e.g. deepseek-v4-pro) — used for decision-heavy cheap tool results.
+	TierPro OverrideTier = "pro"
+	// TierFlash means downgrade to the cheapest model (e.g. deepseek-v4-flash)
+	// — used for read-only / low-risk tool results and simple content classes.
+	TierFlash OverrideTier = "flash"
+)
+
+// toolVerbosityCap is the max completion tokens we inject into cheap
+// (flash) tool-result turns. It exists so cheap turns cannot balloon into
+// multi-thousand-token streams (4–16k tokens / 20–106s latencies were observed
+// in real runs), which is the real cause of "the flow took too long". Keeping
+// cheap turns terse makes the whole agent loop faster at negligible cost.
+const toolVerbosityCap = 1500
+
+// Read-only tools never change state; their results only need cheap
+// interpretation. Write / decision tools (StrReplace, Shell, notebooks, etc.)
+// may warrant a mid-tier (pro) model when their results are non-trivial.
+var readOnlyToolNames = map[string]bool{
+	"Read":             true,
+	"Grep":             true,
+	"Glob":             true,
+	"WebSearch":        true,
+	"WebFetch":         true,
+	"FetchMcpResource": true,
+}
+
 // ClassifierResult contains the classification outcome for logging/shadowing.
 type ClassifierResult struct {
 	IsSubagent        bool         `json:"is_subagent"`
@@ -65,19 +123,64 @@ type ClassifierResult struct {
 	OverrideApplied   bool         `json:"override_applied"`
 	OverrideReason    string       `json:"override_reason,omitempty"`
 	ClassificationAge string       `json:"classification_age,omitempty"`
+	TurnType          TurnType     `json:"turn_type"`
+	ToolResultSize    string       `json:"tool_result_size,omitempty"`
+	ToolName          string       `json:"tool_name,omitempty"`
+	OverrideTier      OverrideTier `json:"override_tier,omitempty"`
+	MaxTokens         int          `json:"max_tokens,omitempty"`
 }
 
-// modelOverrideMap maps expensive models to cheaper equivalents for classification-based downgrades.
-// Entries here take priority. Models not in this map fall back to defaultSubagentModel.
+// modelOverrideMap maps expensive models to cheaper equivalents for flash-tier
+// downgrades. Entries take priority; models not in the map fall back to
+// defaultFlashModel.
 var modelOverrideMap = map[string]string{
 	"deepseek-v4-pro": "deepseek-v4-flash",
 	// "glm-5.2":         "glm-4.7", // Uncomment to use glm-4.7 as flash for glm-5.2
 }
 
-// defaultSubagentModel is the fallback model for any traffic that triggers a
-// downgrade but whose original model isn't in modelOverrideMap. Anything not
-// in the map (including models that aren't DeepSeek at all) falls back to this.
-const defaultSubagentModel = "deepseek-v4-flash"
+// proModelOverrideMap maps expensive models to a mid-tier pro equivalent for
+// decision-heavy downgrades (medium write/error tool results). Entries take
+// priority; models not in the map fall back to defaultProModel. Models that
+// are already pro-or-below (e.g. deepseek-v4-pro itself) have no entry, so a
+// pro-tier override is a no-op for them.
+var proModelOverrideMap = map[string]string{
+	"glm-5.2":         "deepseek-v4-pro",
+	"kimi-k3":         "deepseek-v4-pro",
+	"kimi-k2.7-code":  "deepseek-v4-pro",
+	"deepseek-v4":     "deepseek-v4-pro",
+	"deepseek-v4-pro": "deepseek-v4-pro",
+}
+
+// defaultFlashModel is the fallback model for any traffic that triggers a
+// cheap downgrade but whose original model isn't in modelOverrideMap. Anything
+// not in the map (including models that aren't DeepSeek at all) falls back to
+// this.
+const defaultFlashModel = "deepseek-v4-flash"
+
+// defaultProModel is the fallback model for pro-tier downgrades of originals
+// not present in proModelOverrideMap.
+const defaultProModel = "deepseek-v4-pro"
+
+// overrideModelForTier resolves the model to send for a downgrade of the given
+// tier. flash uses modelOverrideMap (fallback defaultFlashModel); pro uses
+// proModelOverrideMap (fallback defaultProModel). keep returns the original
+// model unchanged.
+func overrideModelForTier(original string, tier OverrideTier) string {
+	switch tier {
+	case TierPro:
+		if m, ok := proModelOverrideMap[original]; ok {
+			return m
+		}
+		return defaultProModel
+	case TierFlash:
+		if m, ok := modelOverrideMap[original]; ok {
+			return m
+		}
+		return defaultFlashModel
+	default:
+		return original
+	}
+}
 
 // SmartRouter performs request classification and optional model override.
 type SmartRouter struct {
@@ -123,8 +226,29 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 	// Instead, content-based classification handles all traffic uniformly.
 	result.IsSubagent = false
 
-	// Step 2: content-based classification.
+	// Step 2: turn type detection for per-turn routing instrumentation.
+	result.TurnType = detectTurnType(body)
+	result.ToolResultSize = toolResultSize(body)
+	result.ToolName = toolResultName(body)
+
+	// Step 3: content-based classification.
 	result.RequestClass = classifyRequest(body)
+
+	// Determine this turn's routing tier. Two independent signals contribute:
+	//   (a) content class — simple lookup, code search, structured extraction, ...
+	//   (b) per-turn — tool-result rounds within a multi-step agent flow.
+	// The per-turn signal is decision-aware: cheap (small / medium read-only)
+	// results route to flash, non-trivial write/error results route to pro,
+	// and large results keep the original model (big outputs may need
+	// pro-level interpretation).
+	tier := overrideTier(result, body)
+	result.OverrideTier = tier
+
+	// Verbosity cap: cheap (flash) tiers get a tight max_tokens so they cannot
+	// balloon into multi-thousand-token streams that stall the agent loop.
+	if tier == TierFlash {
+		result.MaxTokens = toolVerbosityCap
+	}
 
 	// Always log classification at DEBUG so operators can tune thresholds.
 	lastMsg := lastUserMessage(body)
@@ -132,6 +256,11 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 	slog.Debug("router: classify",
 		"request_id", requestID,
 		"request_class", result.RequestClass,
+		"turn_type", result.TurnType,
+		"tool_result_size", result.ToolResultSize,
+		"tool_name", result.ToolName,
+		"override_tier", result.OverrideTier,
+		"max_tokens", result.MaxTokens,
 		"sys_prompt_len", result.SysPromptLen,
 		"msg_count", result.MsgCount,
 		"has_tools", result.HasTools,
@@ -143,9 +272,20 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 	)
 
 	// Dump the full messages array to a temp file when content extraction fails,
-	// so we can analyze Cursor's message structure and refine our extraction.
-	// Gated behind the separate --diagnostic-dump flag.
-	if r.cfg.DiagnosticDump && len(lastMsgStripped) == 0 {
+	// so we can analyze Cursor's message structure and refine our extraction,
+	// and — during debugging sessions (--diagnostic-dump is always operator-gated
+	// and off by default) — when a classify event is otherwise not visible from
+	// the log lines alone. These are:
+	//   * stripped_len == 0            → extraction failed (original reason)
+	//   * tool-result turns            → validate size bucketing + tool schema
+	//   * overrides actually applied   → confirm the downgrade (model+provider)
+	//   * no-op extraction             → stripped_len == last_msg_len warns that
+	//                                    stripCursorNoise stripped nothing, so the
+	//                                    classifier may be missing structure
+	//   * 1% random sample             → catch unforeseen shapes current
+	//                                    heuristics can't predict
+	// Dump happens before routing so the raw message array is captured verbatim.
+	if r.cfg.DiagnosticDump && shouldDumpForDiagnostics(result.TurnType, result.ToolResultSize, tier != TierKeep, len(lastMsg), len(lastMsgStripped), requestID) {
 		dumpMessages(body, requestID)
 	}
 
@@ -153,30 +293,47 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 		return result
 	}
 
-	// Determine whether to downgrade based on request class.
-	if !shouldDowngrade(result.RequestClass) {
+	// No override when the tier says to keep the original model.
+	if tier == TierKeep {
 		return result
 	}
 
-	// Apply model override: prefer an explicit map entry; fall back to the
-	// universal default (deepseek-v4-flash) for models not in the map.
-	override, ok := modelOverrideMap[result.OriginalModel]
-	if !ok {
-		override = defaultSubagentModel
+	// Apply the verbosity cap first so it also applies when the effective tier
+	// is flash but the model override below is a no-op (e.g. the flow already
+	// runs on deepseek-v4-flash). Flash-tier turns are always kept terse to
+	// avoid multi-thousand-token streams that stall the agent loop. Applied
+	// before the model override so a no-op override still gets the cap.
+	if tier == TierFlash {
+		body["max_tokens"] = toolVerbosityCap
 	}
 
-	// No-op if the resolved override equals the current model.
+	// Resolve the override model for the chosen tier. Both maps fall back to a
+	// provider-agnostic default so models not explicitly mapped still downgrade.
+	override := overrideModelForTier(result.OriginalModel, tier)
+
+	// No-op if the resolved override equals the current model (e.g. a pro-tier
+	// request that is already on deepseek-v4-pro).
 	if override == result.OriginalModel {
 		return result
 	}
 
 	result.OverrideModel = override
 	result.OverrideApplied = true
-	result.OverrideReason = string(result.RequestClass) + " downgrade (" + result.OriginalModel + " → " + override + ")"
+
+	// Build a reason that identifies which signal triggered the downgrade.
+	result.OverrideReason = overrideReason(result, tier) + " downgrade (" + result.OriginalModel + " → " + override + ")"
+
+	// Apply the model override to the body (proxy re-resolves the provider).
 	body["model"] = override
+
 	slog.Info("router: model_overridden",
 		"request_id", requestID,
 		"request_class", result.RequestClass,
+		"turn_type", result.TurnType,
+		"tool_result_size", result.ToolResultSize,
+		"tool_name", result.ToolName,
+		"override_tier", result.OverrideTier,
+		"max_tokens", result.MaxTokens,
 		"from", result.OriginalModel,
 		"to", override,
 		"sys_prompt_len", result.SysPromptLen,
@@ -199,6 +356,82 @@ func shouldDowngrade(c RequestClass) bool {
 	default:
 		return false
 	}
+}
+
+// overrideTier decides the routing tier for a request. It combines the content
+// class (a) with the per-turn tool-result decision (b):
+//
+//	Content-driven downgrade triggered → TierFlash (cheap is fine for simple
+//	lookup / code search / structured extraction / automation).
+//
+//	Tool-result turn (last role == tool):
+//	    small                       → TierFlash (short outputs, low risk)
+//	    medium + read-only tool     → TierFlash (just reading: grep/read/search)
+//	    medium + write/error tool   → TierPro   (decision-heavy: shell, edits,
+//	                                              tests, failures — needs pro)
+//	    large                       → TierKeep  (big outputs need pro reasoning)
+//	    unknown / empty size        → TierKeep  (can't gauge risk → conservative)
+//
+//	Everything else → content-class result (shouldDowngrade) or TierKeep.
+func overrideTier(result ClassifierResult, body map[string]any) OverrideTier {
+	// Per-turn tool-result signal first — it is the primary driver of cheap
+	// turns within a multi-step agent flow.
+	if result.TurnType == TurnToolResult {
+		switch result.ToolResultSize {
+		case "small":
+			return TierFlash
+		case "medium":
+			if isWriteTool(result.ToolName) {
+				return TierPro
+			}
+			return TierFlash
+		case "large":
+			return TierKeep
+		default:
+			// Unknown/empty size: we can't gauge risk, so keep the original
+			// model (conservative).
+			return TierKeep
+		}
+	}
+
+	// Non-tool turns follow the content classifier.
+	if shouldDowngrade(result.RequestClass) {
+		return TierFlash
+	}
+	return TierKeep
+}
+
+// overrideReason builds a human-readable reason for the override log, naming
+// whichever signal(s) triggered the tier.
+func overrideReason(result ClassifierResult, tier OverrideTier) string {
+	var parts []string
+	if result.TurnType == TurnToolResult && result.ToolResultSize != "" {
+		parts = append(parts, string(result.TurnType)+"/"+result.ToolResultSize)
+		if result.ToolName != "" {
+			parts = append(parts, "tool="+result.ToolName)
+		}
+	} else if result.RequestClass != "" && result.RequestClass != ClassUnknown {
+		parts = append(parts, string(result.RequestClass))
+	}
+	if tier == TierPro {
+		parts = append(parts, "decision-heavy→pro")
+	}
+	if len(parts) == 0 {
+		return string(tier)
+	}
+	return strings.Join(parts, "+")
+}
+
+// isWriteTool returns true when a tool name represents a state-changing or
+// decision-heavy operation whose (non-small) result warrants a pro model.
+// Read-only tools (Read/Grep/Glob/search) → false. Everything unknown is
+// treated as a write/decision tool so we default to the more conservative
+// (pro) tier for medium results.
+func isWriteTool(name string) bool {
+	if name == "" {
+		return true
+	}
+	return !readOnlyToolNames[name]
 }
 
 // classifyRequest inspects the last user message and request structure to
@@ -497,6 +730,137 @@ func messageRoles(body map[string]any) string {
 	return strings.Join(roles, ", ")
 }
 
+// detectTurnType classifies the request by the role of its last message.
+// Tool-result rounds (last role == "tool") are the primary targets for
+// per-turn model downgrade within a multi-step agent flow.
+func detectTurnType(body map[string]any) TurnType {
+	msgs, ok := body["messages"].([]any)
+	if !ok || len(msgs) == 0 {
+		return TurnUnknown
+	}
+	last, ok := msgs[len(msgs)-1].(map[string]any)
+	if !ok {
+		return TurnUnknown
+	}
+	role, _ := last["role"].(string)
+	switch role {
+	case "tool":
+		return TurnToolResult
+	case "user", "developer":
+		return TurnUserPrompt
+	case "assistant":
+		return TurnAgentContinue
+	default:
+		return TurnUnknown
+	}
+}
+
+// toolResultSize buckets the content size of the last tool-result message.
+// Zero means the messages array is empty or the last message is not a tool.
+// Buckets help identify where token spend concentrates:
+//
+//	<=512 chars  → "small"  (quick shell command outputs)
+//	<=4096 chars → "medium" (diff outputs, file reads)
+//	>4096 chars  → "large"  (full logs, stack traces)
+func toolResultSize(body map[string]any) string {
+	msgs, ok := body["messages"].([]any)
+	if !ok || len(msgs) == 0 {
+		return ""
+	}
+	last, ok := msgs[len(msgs)-1].(map[string]any)
+	if !ok {
+		return ""
+	}
+	role, _ := last["role"].(string)
+	if role != "tool" {
+		return ""
+	}
+	content, _ := last["content"].(string)
+	n := len(content)
+	switch {
+	case n <= 512:
+		return "small"
+	case n <= 4096:
+		return "medium"
+	default:
+		return "large"
+	}
+}
+
+// toolResultName returns the tool's function name for the last tool-result
+// message, or "" when it can't be determined. It works by matching the last
+// tool message's tool_call_id against the preceding assistant message's
+// tool_calls[].id (or function call), returning the associated function name.
+// This lets the router distinguish read-only tools (Read/Grep/Glob/search)
+// from write/decision tools (Shell/StrReplace/notebook) to thread the
+// decision-aware pro tier.
+func toolResultName(body map[string]any) string {
+	msgs, ok := body["messages"].([]any)
+	if !ok || len(msgs) == 0 {
+		return ""
+	}
+
+	// Find the last tool message and its tool_call_id.
+	var callID string
+	lastIdx := -1
+	for i := len(msgs) - 1; i >= 0; i-- {
+		msg, ok := msgs[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := msg["role"].(string)
+		if role != "tool" {
+			continue
+		}
+		lastIdx = i
+		callID, _ = msg["tool_call_id"].(string)
+		break
+	}
+	if lastIdx < 0 {
+		return ""
+	}
+
+	// Walk backward from the tool message for the assistant message that
+	// issued the tool call with the matching id.
+	for i := lastIdx - 1; i >= 0; i-- {
+		msg, ok := msgs[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := msg["role"].(string)
+		if role != "assistant" {
+			continue
+		}
+		// Legacy shape: single function_call object.
+		if fc, ok := msg["function_call"].(map[string]any); ok {
+			name, _ := fc["name"].(string)
+			if name != "" {
+				return name
+			}
+		}
+		// Standard shape: tool_calls array.
+		tcs, ok := msg["tool_calls"].([]any)
+		if !ok {
+			continue
+		}
+		for _, tc := range tcs {
+			entry, ok := tc.(map[string]any)
+			if !ok {
+				continue
+			}
+			if id, _ := entry["id"].(string); id != "" && id != callID {
+				continue
+			}
+			if fn, ok := entry["function"].(map[string]any); ok {
+				if name, _ := fn["name"].(string); name != "" {
+					return name
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // systemPromptLength returns the length (in chars) of the first system or
 // developer message content, or 0 if none found.
 func systemPromptLength(body map[string]any) int {
@@ -648,4 +1012,49 @@ func dumpMessages(body map[string]any, requestID string) {
 		return
 	}
 	slog.Info("router: dump_messages written", "request_id", requestID, "file", filename, "size_bytes", len(b))
+}
+
+// dumpSampleRate is the denominator for the deterministic sample of classify
+// events we dump during a debugging session (1 in 100). It exists so a
+// long-running --diagnostic-dump session surfaces shapes the targeted triggers
+// can't predict, without writing a file per request.
+const dumpSampleRate uint32 = 100
+
+// shouldDumpForDiagnostics decides whether a classify event warrants a raw
+// message dump during a debugging session. Dumping is always operator-gated by
+// the --diagnostic-dump flag; this function only narrows which requests within
+// that session produce a file so we don't write one per request even when the
+// flag is on. It returns true when the event is otherwise invisible from the
+// log lines alone:
+//   - stripped_len == 0            extraction failed (always, original trigger)
+//   - tool-result turn             validate size bucketing + tool content schema
+//   - would_downgrade              confirm the model+provider downgrade
+//   - no-op extraction             stripCursorNoise removed nothing — the
+//     classifier may be missing structure
+//   - 1% deterministic sample      catch unforeseen shapes heuristics miss
+func shouldDumpForDiagnostics(turnType TurnType, toolResultSize string, wouldDowngrade bool, lastMsgLen, strippedLen int, requestID string) bool {
+	// Extraction failed — original diagnostic trigger, always dump.
+	if strippedLen == 0 {
+		return true
+	}
+	// Tool-result turns: validate size bucketing and tool content schema.
+	if turnType == TurnToolResult {
+		return true
+	}
+	// Overrides actually applied: confirm the downgrade sent the expected model
+	// and provider, and nothing was lost in provider re-resolution.
+	if wouldDowngrade {
+		return true
+	}
+	// No-op extraction: if stripping removed nothing, the classifier may be
+	// missing structure it should have seen.
+	if lastMsgLen > 0 && strippedLen == lastMsgLen {
+		return true
+	}
+	// Deterministic sample so long-running sessions surface unforeseen shapes.
+	// Hash the requestID (a random per-request string) and gate on a modulus;
+	// hashing avoids mutable per-process state and is reproducible.
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(requestID))
+	return h.Sum32()%dumpSampleRate == 0
 }
