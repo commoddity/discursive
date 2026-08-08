@@ -7,17 +7,26 @@ import (
 	"strings"
 )
 
+// bearerScheme is the OpenAI-compatible Authorization scheme used by Cursor.
+// It is matched case-insensitively so operators can send "Bearer", "bearer",
+// or any mixed-case variant and still authenticate.
+const bearerScheme = "Bearer"
+
+// apiKeyHeaders lists the fallback headers (after Authorization) that may
+// carry the gateway key, in priority order.
+var apiKeyHeaders = []string{"api-key", "x-api-key", "x-openai-api-key"}
+
 // ExtractAPIKey reads the gateway API key from common OpenAI-style headers.
+// The Authorization scheme is matched case-insensitively. If Authorization is
+// present with a non-Bearer scheme (or empty), control falls through to the
+// api-key fallback headers.
 func ExtractAPIKey(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
-		if rest, ok := strings.CutPrefix(auth, "Bearer "); ok {
-			return strings.TrimSpace(rest)
-		}
-		if rest, ok := strings.CutPrefix(auth, "bearer "); ok {
-			return strings.TrimSpace(rest)
+		if scheme, token, ok := strings.Cut(auth, " "); ok && strings.EqualFold(scheme, bearerScheme) {
+			return strings.TrimSpace(token)
 		}
 	}
-	for _, name := range []string{"api-key", "x-api-key", "x-openai-api-key"} {
+	for _, name := range apiKeyHeaders {
 		if v := strings.TrimSpace(r.Header.Get(name)); v != "" {
 			return v
 		}

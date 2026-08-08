@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -732,6 +733,67 @@ func TestShouldDowngradeTurn(t *testing.T) {
 				t.Errorf("shouldDowngradeTurn(%q, %q) = %v, want %v", tt.turnType, tt.toolResultSize, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestShouldDumpForDiagnostics validates the targeted diagnostic-dump triggers.
+// The full-message dump is always operator-gated by --diagnostic-dump; this
+// function only narrows which requests within that session produce a file.
+func TestShouldDumpForDiagnostics(t *testing.T) {
+	tests := []struct {
+		name           string
+		turnType       TurnType
+		toolResultSize string
+		wouldDowngrade bool
+		lastMsgLen     int
+		strippedLen    int
+		requestID      string
+		want           bool
+	}{
+		{"extraction failed (stripped_len 0) → dump", TurnUserPrompt, "", false, 100, 0, "req_a", true},
+		{"tool-result turn small → dump (schema validation)", TurnToolResult, "small", true, 100, 40, "req_b", true},
+		{"tool-result turn large → dump", TurnToolResult, "large", false, 100, 40, "req_c", true},
+		{"would downgrade → dump", TurnUserPrompt, "", true, 100, 40, "req_d", true},
+		{"no-op extraction (stripped==last, non-zero) → dump", TurnUserPrompt, "", false, 40, 40, "req_e", true},
+		// A user_prompt that extracted fine with no override hits only the 1%
+		// deterministic sample, which is not guaranteed true for a fixed ID, so
+		// we do not assert it here; see TestShouldDumpForDiagnostics_Sample.
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldDumpForDiagnostics(tt.turnType, tt.toolResultSize, tt.wouldDowngrade, tt.lastMsgLen, tt.strippedLen, tt.requestID); got != tt.want {
+				t.Errorf("shouldDumpForDiagnostics(%q, %q, %v, %d, %d, %q) = %v, want %v",
+					tt.turnType, tt.toolResultSize, tt.wouldDowngrade, tt.lastMsgLen, tt.strippedLen, tt.requestID, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestShouldDumpForDiagnostics_Sample verifies the deterministic 1%-sample
+// path: the same requestID always yields the same decision (tokenized by FNV,
+// not by a clock or counter), and at most 1-in-100 of distinct IDs dump on the
+// sample branch alone.
+func TestShouldDumpForDiagnostics_Sample(t *testing.T) {
+	// Same ID, twice → same result (deterministic, no per-process state).
+	id := "req_deterministic_sample"
+	a := shouldDumpForDiagnostics(TurnUserPrompt, "", false, 100, 40, id)
+	b := shouldDumpForDiagnostics(TurnUserPrompt, "", false, 100, 40, id)
+	if a != b {
+		t.Fatalf("sample decision not deterministic for same requestID: %v vs %v", a, b)
+	}
+
+	// Distinct IDs: count how many of 10k hit the sample branch only.
+	var sampled int
+	for i := 0; i < 10000; i++ {
+		if shouldDumpForDiagnostics(TurnUserPrompt, "", false, 100, 40, fmt.Sprintf("req_sample_%d", i)) {
+			sampled++
+		}
+	}
+	// Allow slack for the exact 1% boundary across the modulus; require it to be
+	// on the order of 1% (roughly 100 +/- 30), not 0 or 50%+.
+	if sampled < 70 || sampled > 130 {
+		t.Fatalf("deterministic sample rate off: got %d/10000 (~%0.2f%%), want ~1%%", sampled, float64(sampled)*0.01)
 	}
 }
 

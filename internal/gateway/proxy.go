@@ -52,6 +52,19 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Classify request for subagent detection and downgrade to cheaper model.
 	if result := s.router.ClassifyAndOverride(sanitized.Body, requestID); result.OverrideApplied {
 		sanitized.Model = result.OverrideModel
+		// The override may map to a different provider (e.g. kimi-k3 →
+		// deepseek-v4-flash via the default fallback). Re-resolve the
+		// provider from the overridden model so the request is sent to the
+		// correct upstream. If the override model is unknown, fall back to a
+		// best-effort client error — we must not send a model to the wrong
+		// provider's endpoint.
+		if route, err := ResolveModel(result.OverrideModel); err != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("override model %q not resolvable: %v", result.OverrideModel, err), "provider", string(sanitized.Provider), "model", result.OverrideModel)
+			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("override model %q not resolvable: %v", result.OverrideModel, err), "upstream_error")
+			return
+		} else {
+			sanitized.Provider = route.Provider
+		}
 	}
 
 	upstreamKey, err := s.upstreamKey(sanitized.Provider)

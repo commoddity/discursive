@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"hash/fnv"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -181,9 +182,20 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 	)
 
 	// Dump the full messages array to a temp file when content extraction fails,
-	// so we can analyze Cursor's message structure and refine our extraction.
-	// Gated behind the separate --diagnostic-dump flag.
-	if r.cfg.DiagnosticDump && len(lastMsgStripped) == 0 {
+	// so we can analyze Cursor's message structure and refine our extraction,
+	// and — during debugging sessions (--diagnostic-dump is always operator-gated
+	// and off by default) — when a classify event is otherwise not visible from
+	// the log lines alone. These are:
+	//   * stripped_len == 0            → extraction failed (original reason)
+	//   * tool-result turns            → validate size bucketing + tool schema
+	//   * overrides actually applied   → confirm the downgrade (model+provider)
+	//   * no-op extraction             → stripped_len == last_msg_len warns that
+	//                                    stripCursorNoise stripped nothing, so the
+	//                                    classifier may be missing structure
+	//   * 1% random sample             → catch unforeseen shapes current
+	//                                    heuristics can't predict
+	// Dump happens before routing so the raw message array is captured verbatim.
+	if r.cfg.DiagnosticDump && shouldDumpForDiagnostics(result.TurnType, result.ToolResultSize, wouldDowngrade, len(lastMsg), len(lastMsgStripped), requestID) {
 		dumpMessages(body, requestID)
 	}
 
@@ -771,4 +783,49 @@ func dumpMessages(body map[string]any, requestID string) {
 		return
 	}
 	slog.Info("router: dump_messages written", "request_id", requestID, "file", filename, "size_bytes", len(b))
+}
+
+// dumpSampleRate is the denominator for the deterministic sample of classify
+// events we dump during a debugging session (1 in 100). It exists so a
+// long-running --diagnostic-dump session surfaces shapes the targeted triggers
+// can't predict, without writing a file per request.
+const dumpSampleRate uint32 = 100
+
+// shouldDumpForDiagnostics decides whether a classify event warrants a raw
+// message dump during a debugging session. Dumping is always operator-gated by
+// the --diagnostic-dump flag; this function only narrows which requests within
+// that session produce a file so we don't write one per request even when the
+// flag is on. It returns true when the event is otherwise invisible from the
+// log lines alone:
+//   - stripped_len == 0            extraction failed (always, original trigger)
+//   - tool-result turn             validate size bucketing + tool content schema
+//   - would_downgrade              confirm the model+provider downgrade
+//   - no-op extraction             stripCursorNoise removed nothing — the
+//     classifier may be missing structure
+//   - 1% deterministic sample      catch unforeseen shapes heuristics miss
+func shouldDumpForDiagnostics(turnType TurnType, toolResultSize string, wouldDowngrade bool, lastMsgLen, strippedLen int, requestID string) bool {
+	// Extraction failed — original diagnostic trigger, always dump.
+	if strippedLen == 0 {
+		return true
+	}
+	// Tool-result turns: validate size bucketing and tool content schema.
+	if turnType == TurnToolResult {
+		return true
+	}
+	// Overrides actually applied: confirm the downgrade sent the expected model
+	// and provider, and nothing was lost in provider re-resolution.
+	if wouldDowngrade {
+		return true
+	}
+	// No-op extraction: if stripping removed nothing, the classifier may be
+	// missing structure it should have seen.
+	if lastMsgLen > 0 && strippedLen == lastMsgLen {
+		return true
+	}
+	// Deterministic sample so long-running sessions surface unforeseen shapes.
+	// Hash the requestID (a random per-request string) and gate on a modulus;
+	// hashing avoids mutable per-process state and is reproducible.
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(requestID))
+	return h.Sum32()%dumpSampleRate == 0
 }

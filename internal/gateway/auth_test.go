@@ -27,6 +27,21 @@ func TestExtractAPIKey(t *testing.T) {
 			want:    "sk-test-key-12345",
 		},
 		{
+			name:    "bearer uppercase scheme",
+			headers: map[string]string{"Authorization": "BEARER sk-test-key-12345"},
+			want:    "sk-test-key-12345",
+		},
+		{
+			name:    "bearer mixed-case scheme",
+			headers: map[string]string{"Authorization": "bEaReR sk-test-key-12345"},
+			want:    "sk-test-key-12345",
+		},
+		{
+			name:    "bearer separators between scheme and token",
+			headers: map[string]string{"Authorization": "Bearer   sk-test-key-12345  "},
+			want:    "sk-test-key-12345",
+		},
+		{
 			name:    "Bearer with extra whitespace",
 			headers: map[string]string{"Authorization": "Bearer   sk-test-key-12345  "},
 			want:    "sk-test-key-12345",
@@ -60,6 +75,11 @@ func TestExtractAPIKey(t *testing.T) {
 			name:    "Authorization without Bearer prefix",
 			headers: map[string]string{"Authorization": "Basic dXNlcjpwYXNz"},
 			want:    "",
+		},
+		{
+			name:    "non-Bearer scheme falls through to api-key header",
+			headers: map[string]string{"Authorization": "Basic dXNlcjpwYXNz", "x-api-key": "sk-fallback"},
+			want:    "sk-fallback",
 		},
 		{
 			name:    "empty Authorization falls through to x-api-key",
