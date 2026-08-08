@@ -53,4 +53,15 @@ Official first call: https://api-docs.deepseek.com/
 | ----- | ---- | ----- |
 | Upstream 401 after alias maps to DeepSeek | Only Moonshot key saved | Require `deepseekKeyEncrypted` when resolved provider is `deepseek` (doctor / set-key) |
 
-<!-- last-verified: 2026-07 -->
+### `Downgraded flash turns are nearly free via prompt cache`
+
+In a multi-turn agent flow, the conversation context grows monotonically, so
+every successive tool-result request re-sends nearly the whole prior context.
+DeepSeek auto-caches this prefix, making iterated cheap turns extraordinarily
+cheap.
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| `deepseek-v4-flash` tool-result turns log `est_usd ≈ 0.000` with ~99% `cache_hit_tokens` (e.g. 40,576 hit / 46 miss) while `tokens_in` climbs each turn | DeepSeek prompt caching keys on a matching prefix; because each turn appends one tool result to unchanged prior messages, the prefix (and thus the cache) is reused | Expected and desirable — do not treat near-zero flash-cost turns in a stable conversation as under-counting. It means the per-turn downgrade is already paying for itself; run medium write-turns on `pro` and small/read-only on `flash` without fear of cost blow-up |
+
+`<!-- last-verified: 2026-08 -->`
