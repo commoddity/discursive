@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -552,9 +553,9 @@ func TestSmartRouter_UnknownProviderDefaultFallback(t *testing.T) {
 				t.Errorf("%q should be overridden (not in map → fallback default), class=%q",
 					model, result.RequestClass)
 			}
-			if result.OverrideModel != defaultSubagentModel {
+			if result.OverrideModel != defaultFlashModel {
 				t.Errorf("%q override model = %q, want default %q",
-					model, result.OverrideModel, defaultSubagentModel)
+					model, result.OverrideModel, defaultFlashModel)
 			}
 		})
 	}
@@ -575,8 +576,8 @@ func TestSmartRouter_Glm52ToFlashViaDefault(t *testing.T) {
 	if !result.OverrideApplied {
 		t.Errorf("glm-5.2 should be overridden (not in map → default), got class=%q", result.RequestClass)
 	}
-	if stringField(body, "model") != defaultSubagentModel {
-		t.Errorf("expected default %q, got %q", defaultSubagentModel, stringField(body, "model"))
+	if stringField(body, "model") != defaultFlashModel {
+		t.Errorf("expected default %q, got %q", defaultFlashModel, stringField(body, "model"))
 	}
 }
 
@@ -685,6 +686,156 @@ func TestPerTurnDowngrade_ToolResultLargeKeptModel(t *testing.T) {
 	}
 }
 
+// TestPerTurnDowngrade_ToolResultMediumWriteToPro verifies the decision-aware
+// tier: a MEDIUM tool result from a write/decision tool (StrReplace) on an
+// expensive original model (glm-5.2) downgrades to deepseek-v4-pro (not flash),
+// and does NOT apply the flash verbosity cap.
+func TestPerTurnDowngrade_ToolResultMediumWriteToPro(t *testing.T) {
+	body := map[string]any{
+		"model": "glm-5.2",
+		"messages": []any{
+			map[string]any{"role": "system", "content": strings.Repeat("x", 15000)},
+			map[string]any{"role": "user", "content": "refactor the auth module"},
+			map[string]any{
+				"role":    "assistant",
+				"content": "",
+				"tool_calls": []any{
+					map[string]any{
+						"id":       "call_edit",
+						"type":     "function",
+						"function": map[string]any{"name": "StrReplace", "arguments": "{}"},
+					},
+				},
+			},
+			// Medium tool result: <4096 chars, write result
+			map[string]any{"role": "tool", "tool_call_id": "call_edit", "content": strings.Repeat("y", 2000)},
+		},
+	}
+	r := NewSmartRouter(RouterConfig{Enabled: true})
+	result := r.ClassifyAndOverride(body, "req_test")
+
+	if !result.OverrideApplied {
+		t.Fatalf("expected override for medium write tool-result turn (class=%q, turn=%q, size=%q, tool=%q)",
+			result.RequestClass, result.TurnType, result.ToolResultSize, result.ToolName)
+	}
+	if result.OverrideTier != TierPro {
+		t.Errorf("expected override_tier=pro, got %q", result.OverrideTier)
+	}
+	if result.OverrideModel != "deepseek-v4-pro" {
+		t.Errorf("expected deepseek-v4-pro for medium write tool result, got %q", result.OverrideModel)
+	}
+	if result.ToolName != "StrReplace" {
+		t.Errorf("expected tool_name=StrReplace, got %q", result.ToolName)
+	}
+	// Pro tier must NOT receive the flash verbosity cap.
+	switch v := body["max_tokens"].(type) {
+	case json.Number:
+		if n, _ := v.Int64(); n == toolVerbosityCap {
+			t.Errorf("pro tier must not cap max_tokens to %d, got %d", toolVerbosityCap, n)
+		}
+	case float64:
+		if int(v) == toolVerbosityCap {
+			t.Errorf("pro tier must not cap max_tokens to %d, got %v", toolVerbosityCap, v)
+		}
+	}
+}
+
+// TestPerTurnDowngrade_ToolResultMediumReadToFlash verifies a MEDIUM read-only
+// tool result (Read) downgrades to flash and gets the verbosity cap.
+func TestPerTurnDowngrade_ToolResultMediumReadToFlash(t *testing.T) {
+	body := map[string]any{
+		"model": "glm-5.2",
+		"messages": []any{
+			map[string]any{"role": "system", "content": strings.Repeat("x", 15000)},
+			map[string]any{"role": "user", "content": "refactor the auth module"},
+			map[string]any{
+				"role":    "assistant",
+				"content": "",
+				"tool_calls": []any{
+					map[string]any{
+						"id":       "call_read",
+						"type":     "function",
+						"function": map[string]any{"name": "Read", "arguments": "{}"},
+					},
+				},
+			},
+			map[string]any{"role": "tool", "tool_call_id": "call_read", "content": strings.Repeat("z", 2000)},
+		},
+	}
+	r := NewSmartRouter(RouterConfig{Enabled: true})
+	result := r.ClassifyAndOverride(body, "req_test")
+
+	if !result.OverrideApplied {
+		t.Fatalf("expected override for medium read tool-result turn (turn=%q, size=%q, tool=%q)",
+			result.TurnType, result.ToolResultSize, result.ToolName)
+	}
+	if result.OverrideTier != TierFlash {
+		t.Errorf("expected override_tier=flash, got %q", result.OverrideTier)
+	}
+	if result.OverrideModel != "deepseek-v4-flash" {
+		t.Errorf("expected deepseek-v4-flash for medium read tool result, got %q", result.OverrideModel)
+	}
+	// Flash tier must cap max_tokens on the body.
+	var capVal int
+	switch v := body["max_tokens"].(type) {
+	case int:
+		capVal = v
+	case json.Number:
+		n, _ := v.Int64()
+		capVal = int(n)
+	case float64:
+		capVal = int(v)
+	}
+	if capVal != toolVerbosityCap {
+		t.Errorf("expected body max_tokens capped to %d, got %d", toolVerbosityCap, capVal)
+	}
+}
+
+// TestPerTurnVerbosityCap_AppliedEvenWhenModelOverrideNoop verifies that when
+// the flow already runs on flash (so the model override is a no-op), a small
+// tool-result turn still receives the flash verbosity cap.
+func TestPerTurnVerbosityCap_AppliedEvenWhenModelOverrideNoop(t *testing.T) {
+	body := map[string]any{
+		"model": "deepseek-v4-flash",
+		"messages": []any{
+			map[string]any{"role": "system", "content": strings.Repeat("x", 15000)},
+			map[string]any{"role": "user", "content": "refactor the auth module"},
+			map[string]any{
+				"role":    "assistant",
+				"content": "",
+				"tool_calls": []any{
+					map[string]any{
+						"id":       "call_shell",
+						"type":     "function",
+						"function": map[string]any{"name": "Shell", "arguments": "{}"},
+					},
+				},
+			},
+			map[string]any{"role": "tool", "tool_call_id": "call_shell", "content": "ok"},
+		},
+	}
+	r := NewSmartRouter(RouterConfig{Enabled: true})
+	result := r.ClassifyAndOverride(body, "req_test")
+
+	// Override is a no-op (flash → flash) but the cap should still be applied.
+	if result.OverrideApplied {
+		t.Errorf("expected NO override (flash → flash no-op), got override to %q", result.OverrideModel)
+	}
+	var capVal int
+	switch v := body["max_tokens"].(type) {
+	case int:
+		capVal = v
+	case json.Number:
+		n, _ := v.Int64()
+		capVal = int(n)
+	case float64:
+		capVal = int(v)
+	}
+	if capVal != toolVerbosityCap {
+		t.Errorf("expected body max_tokens capped to %d on flash no-op turn, got %d", toolVerbosityCap, capVal)
+	}
+}
+
 func TestShouldDowngrade(t *testing.T) {
 	tests := []struct {
 		class RequestClass
@@ -710,27 +861,134 @@ func TestShouldDowngrade(t *testing.T) {
 	}
 }
 
-func TestShouldDowngradeTurn(t *testing.T) {
+// TestOverrideTier covers the decision-aware per-turn and content routing tier
+// logic. Tool-result turns route cheap (small / medium read-only) results to
+// flash, decision-heavy (medium write/error) results to pro, and large results
+// to keep. Non-tool turns follow the content classifier.
+func TestOverrideTier(t *testing.T) {
 	tests := []struct {
-		name           string
-		turnType       TurnType
-		toolResultSize string
-		want           bool
+		name   string
+		result ClassifierResult
+		body   map[string]any
+		want   OverrideTier
 	}{
-		{"tool_result small → downgrade", TurnToolResult, "small", true},
-		{"tool_result medium → downgrade", TurnToolResult, "medium", true},
-		{"tool_result large → keep (conservative)", TurnToolResult, "large", false},
-		{"tool_result empty size → keep", TurnToolResult, "", false},
-		{"tool_result bogus size → keep", TurnToolResult, "enormous", false},
-		{"user_prompt → keep", TurnUserPrompt, "", false},
-		{"agent_continue → keep", TurnAgentContinue, "", false},
-		{"unknown turn → keep", TurnUnknown, "", false},
+		{"tool small → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "small", ToolName: "Shell"}, nil, TierFlash},
+		{"tool medium read → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: "Read"}, nil, TierFlash},
+		{"tool medium grep → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: "Grep"}, nil, TierFlash},
+		{"tool medium glob → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: "Glob"}, nil, TierFlash},
+		{"tool medium write → pro", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: "StrReplace"}, nil, TierPro},
+		{"tool medium shell → pro", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: "Shell"}, nil, TierPro},
+		{"tool medium unknown tool → pro (write default)", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: "CustomThing"}, nil, TierPro},
+		{"tool medium empty tool name → pro (conservative default)", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: ""}, nil, TierPro},
+		{"tool large → keep", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "large", ToolName: "Shell"}, nil, TierKeep},
+		{"tool empty size → keep", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "", ToolName: "Read"}, nil, TierKeep},
+		{"content simple lookup → flash", ClassifierResult{TurnType: TurnUserPrompt, RequestClass: ClassSimpleLookup}, nil, TierFlash},
+		{"content code search → flash", ClassifierResult{TurnType: TurnUserPrompt, RequestClass: ClassCodeSearch}, nil, TierFlash},
+		{"content editing → keep", ClassifierResult{TurnType: TurnUserPrompt, RequestClass: ClassEditing}, nil, TierKeep},
+		{"content complex reasoning → keep", ClassifierResult{TurnType: TurnUserPrompt, RequestClass: ClassComplexReasoning}, nil, TierKeep},
+		{"content unknown → keep", ClassifierResult{TurnType: TurnUserPrompt, RequestClass: ClassUnknown}, nil, TierKeep},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := shouldDowngradeTurn(tt.turnType, tt.toolResultSize); got != tt.want {
-				t.Errorf("shouldDowngradeTurn(%q, %q) = %v, want %v", tt.turnType, tt.toolResultSize, got, tt.want)
+			// overrideTier uses result fields only; body is unused today but kept
+			// in the signature for future signals.
+			if got := overrideTier(tt.result, tt.body); got != tt.want {
+				t.Errorf("overrideTier(%+v) = %q, want %q", tt.result, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestIsWriteTool verifies the read-only vs write/decision tool classification.
+func TestIsWriteTool(t *testing.T) {
+	readOnly := []string{"Read", "Grep", "Glob", "WebSearch", "WebFetch", "FetchMcpResource"}
+	for _, name := range readOnly {
+		if isWriteTool(name) {
+			t.Errorf("isWriteTool(%q) = true, want false (read-only)", name)
+		}
+	}
+
+	writeTools := []string{"Shell", "StrReplace", "EditNotebook", "Write", "Delete", "", "CustomTool"}
+	for _, name := range writeTools {
+		if !isWriteTool(name) {
+			t.Errorf("isWriteTool(%q) = false, want true (write/decision/unknown)", name)
+		}
+	}
+}
+
+// TestToolResultName verifies we can resolve the function name for the last
+// tool-result message from the preceding assistant tool_calls entry.
+func TestToolResultName(t *testing.T) {
+	body := map[string]any{
+		"messages": []any{
+			map[string]any{"role": "system", "content": "sys"},
+			map[string]any{"role": "user", "content": "do the thing"},
+			map[string]any{
+				"role":    "assistant",
+				"content": "",
+				"tool_calls": []any{
+					map[string]any{
+						"id":   "call_read",
+						"type": "function",
+						"function": map[string]any{
+							"name":      "Read",
+							"arguments": "{}",
+						},
+					},
+					map[string]any{
+						"id":   "call_shell",
+						"type": "function",
+						"function": map[string]any{
+							"name":      "Shell",
+							"arguments": "{}",
+						},
+					},
+				},
+			},
+			map[string]any{"role": "tool", "tool_call_id": "call_shell", "content": "exit 0"},
+		},
+	}
+	if got := toolResultName(body); got != "Shell" {
+		t.Errorf("toolResultName() = %q, want Shell", got)
+	}
+
+	// Empty messages → "".
+	if got := toolResultName(map[string]any{"messages": []any{}}); got != "" {
+		t.Errorf("toolResultName(empty) = %q, want empty", got)
+	}
+
+	// Not a tool-result last message → "".
+	noTool := map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}
+	if got := toolResultName(noTool); got != "" {
+		t.Errorf("toolResultName(no tool) = %q, want empty", got)
+	}
+}
+
+// TestOverrideModelForTier verifies tier→model resolution across the maps and
+// default fallbacks, including the pro/no-op cases.
+func TestOverrideModelForTier(t *testing.T) {
+	tests := []struct {
+		name     string
+		original string
+		tier     OverrideTier
+		want     string
+	}{
+		{"flash deepseek-pro → flash", "deepseek-v4-pro", TierFlash, "deepseek-v4-flash"},
+		{"flash unknown → default flash", "kimi-k3", TierFlash, "deepseek-v4-flash"},
+		{"pro glm-5.2 → deepseek-pro", "glm-5.2", TierPro, "deepseek-v4-pro"},
+		{"pro kimi-k3 → deepseek-pro", "kimi-k3", TierPro, "deepseek-v4-pro"},
+		{"pro deepseek-pro → deepseek-pro (no-op)", "deepseek-v4-pro", TierPro, "deepseek-v4-pro"},
+		{"pro unknown → default pro", "thaura", TierPro, "deepseek-v4-pro"},
+		{"keep deepseek-pro → unchanged", "deepseek-v4-pro", TierKeep, "deepseek-v4-pro"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := overrideModelForTier(tt.original, tt.tier); got != tt.want {
+				t.Errorf("overrideModelForTier(%q, %q) = %q, want %q", tt.original, tt.tier, got, tt.want)
 			}
 		})
 	}

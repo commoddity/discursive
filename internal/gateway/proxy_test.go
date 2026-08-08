@@ -405,7 +405,7 @@ func TestProxy_SmartRouterProviderSwitch(t *testing.T) {
 	env := &testEnv{srv: srv, ts: ts, gatewayKey: settings.GatewayKey, dataRoot: dataRoot}
 
 	// gpt-4o resolves to kimi-k3 (Moonshot). It's a short, simple lookup —
-	// classified SimpleLookup → downgraded to defaultSubagentModel
+	// classified SimpleLookup → downgraded to defaultFlashModel
 	// (deepseek-v4-flash), which lives on DeepSeek. The request must reach the
 	// DeepSeek upstream with the overridden model.
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
