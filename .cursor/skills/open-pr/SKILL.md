@@ -10,70 +10,150 @@ allowed-tools: Bash, Read
 
 # /open-pr — Create a GitHub Pull Request
 
-**Canonical skill file:** `SKILL.md` (this file).
+## Call budget
 
-Read and follow that file in full. This entry exists so Cursor discovers the
-skill under `.cursor/skills/`.
+This skill MUST complete in **≤8 total tool calls**:
+- Step 0: 1 Bash — batch state gathering
+- Step 1: 1 AskQuestion
+- Step 2: 1 Bash — dump diff + stats
+- Step 3: 1 Read — read the dumped diff once (100ms, tiny)
+- Step 4: 2 Bash — `git push` then `gh pr create` (dependent; can't chain a
+  heredoc body onto a `&&` push safely)
+- Step 5: 1 Bash — cleanup `tmp/diff.diff`
+- Step 6: inline report
 
-## Repo context
+Every call beyond 8 (and any Bash call that isn't one of the above) is a bug.
+The prior session made ~15 redundant Shell calls (multiple `git status`/`git
+log`/`git branch`, per-file `git diff`, `git fetch`, `gh pr view`). None of
+those are allowed in this flow.
 
-This is the **Discursive** local gateway repo (Go). PRs for this repo are
-personal — they are not tied to a JIRA / ticket tracker, and there is no
-`[WIP]` prefix convention. Keep titles plain-descriptive. This repo's
-`/task-3-complete` skill does **not** open PRs (it commits and pushes only), so
-this skill is invoked standalone: **always ask the user which branch to target
-as the PR base. Never assume or default to a base branch without asking.**
+## Flow (strict)
 
-## PR title (required format)
+### Step 0: gather state (1 batch Bash call)
+
+With `working_directory` set to the repo root:
+
+```bash
+git branch -vv && git branch -r && git log -15 --oneline
+```
+
+From this output, identify:
+- Current branch name
+- Remote base branch options (pick `main`, plus any other active branches)
+- Recent commits (the branch's story)
+
+**Do NOT run `git status`, `git log`, or `git branch` separately.**
+
+### Step 1: ask base branch (AskQuestion)
+
+**Always** present a choice of base branches derived from step 0. Include `main`
+and any other visible active branches plus an "Other" option. Never default.
+
+### Step 2: dump functional diff + stats (1 Bash call)
+
+Dump to gitignored `./tmp/diff.diff`, plus `--shortstat` and `--stat`:
+
+```bash
+git diff <BASE>...HEAD -- ':(exclude)*.md' ':(exclude)*.mdc' ':(exclude)**/test/**' ':(exclude)**/*_test.go' ':(exclude)**/*.txt' ':(exclude).cursor/rules/**' ':(exclude).cursor/skills/**' ':(exclude)examples/**' ':(exclude)VERSION' > ./tmp/diff.diff && echo "---SHORTSTAT---" && git diff <BASE>...HEAD --shortstat -- ':(exclude)*.md' ':(exclude)*.mdc' ':(exclude)**/test/**' ':(exclude)**/*_test.go' ':(exclude)**/*.txt' ':(exclude).cursor/rules/**' ':(exclude).cursor/skills/**' ':(exclude)examples/**' ':(exclude)VERSION' && echo "---STAT---" && git diff <BASE>...HEAD --stat -- ':(exclude)*.md' ':(exclude)*.mdc' ':(exclude)**/test/**' ':(exclude)**/*_test.go' ':(exclude)**/*.txt' ':(exclude).cursor/rules/**' ':(exclude).cursor/skills/**' ':(exclude)examples/**' ':(exclude)VERSION' && echo "---NONFUNCSTAT---" && git diff <BASE>...HEAD --shortstat -- '*.md' '*.mdc' '.cursor/skills/**' '*.txt'
+```
+
+If the functional diff is empty (zero lines, or only binary `usage.db` type
+junk), fall back to the full diff (no pathspec) and treat as a rules/docs-only
+PR per that section below.
+
+### Step 3: read the diff ONCE (1 Read call)
+
+Read `./tmp/diff.diff` with the Read tool. Derive from it:
+
+- **Summary bullets (4–6):** what changed and why. Each 1–2 lines. Do not
+  enumerate markdown/rules/test file changes here.
+- **Key files to review:** pick 3–8 from the `--stat` in step 2 (largest first).
+
+Prefer this single Read over many per-file `git diff` calls.
+
+### Step 4: push then create PR (2 Bash calls)
+
+Push the branch:
+
+```bash
+git push -u origin HEAD
+```
+
+If the branch is already pushed (no-op), that's fine — `gh pr create` still
+works. If push fails for a non-obvious reason (not "Everything up-to-date"),
+surface the error and stop.
+
+Then create the PR (body assembled from step 3's read):
+
+```bash
+gh pr create --base <BASE> --title "<short imperative description>" --body "$(cat <<'EOF'
+**Functional lines changed:** <N> files, +<I> −<D>
+
+## Key files to review
+- `…` — …
+- `…` — …
+
+## Summary
+- **…**: …
+- **…**: …
+
+## Non-functional changes  # only if substantial rules/skills/README changes
+- `…` — …
+EOF
+)"
+```
+
+For draft PRs, add `--draft`. Capture the PR URL from the output. The
+`## Non-functional changes` section is included only when step 2's
+`---NONFUNCSTAT---` shows substantial changed files (e.g. README + rules large
+enough to matter to reviewers). Keep it brief.
+
+### Step 5: cleanup (1 Bash call)
+
+```bash
+rm -f ./tmp/diff.diff
+```
+
+### Step 6: report (inline, no call)
+
+Report the PR URL captured from step 4's `gh pr create` output. Done. Do not
+`gh pr view` after creation unless the PR appeared to fail.
+
+## PR body order (always)
+
+1. `**Functional lines changed:** …`
+2. `## Key files to review`
+3. Optional `## TODO_IN_THIS_PR`
+4. `## Summary`
+5. Optional `## Non-functional changes`
+
+## PR title format
 
 ```
-<description>
+<short imperative description>
 ```
 
-- `<description>` is a short imperative summary of the change (e.g. "Add smart
-  router with content-based model downgrade").
-- **No JIRA key, no `[WIP]` prefix** — this repo uses neither.
-- For draft PRs, use GitHub's native `draft` flag instead of any title prefix.
+No JIRA key, no `[WIP]` prefix. For draft PRs, use `--draft`.
 
 Examples:
-
 - `Add smart router with content-based model downgrade`
 - `Fix usage query time-window handling`
-- `Bump dependencies and clean up release config`
 
-## PR body order (required)
+## Rules-only / docs-only PRs (zero functional files)
 
-1. `**Functional lines changed:** …` — from functional diff with pathspec
-   `:(exclude)*.md` `:(exclude)*.mdc` `:(exclude)**/test/**`
-   `:(exclude)**/*_test.go` `:(exclude)**/*.txt` plus doc/rule exclusions
-   (this repo's docs live in `.cursor/rules/`, `.cursor/skills/`, and reference
-   code lives in `examples/`):
-   `:(exclude).cursor/rules/**` `:(exclude).cursor/skills/**`
-   `:(exclude)examples/**` `:(exclude)VERSION`
-2. `## Key files to review` — 3–8 curated paths from functional `--stat`
-3. Optional `## TODO_IN_THIS_PR`
-4. `## Summary` — short bullet-point list of what changed and why. Derive from
-   the functional diff (step 1). Keep each bullet to 1–2 lines. Do not
-   enumerate markdown, rules, or test file changes here. For a CLI/gateway
-   change the summary already covers the behavioral change; no separate
-   "what the user sees" section is needed.
-5. Optional `## Non-functional changes` — only when markdown, rules, or test
-   file changes are large enough to be worth highlighting. Keep it brief.
+When the functional diff is empty:
 
-### Rules-only / docs-only PRs (zero functional files)
+- `**Functional lines changed:**` → `0` explicitly.
+- `## Key files to review` → 3–8 paths from the **full** diff (largest first).
+- `## Summary` → describe the actual changed files.
 
-If (and only if) the functional diff is empty — e.g. the PR touches only
-`.md`/`.mdc`, rules, or test files:
+## Anti-patterns (do NOT do these)
 
-- `**Functional lines changed:**` → report `0` explicitly.
-- `## Key files to review` → fall back to the most relevant 3–8 paths from the
-  **full** diff (largest changed files first), since there is no functional
-  `--stat` to draw from.
-- The `## Summary` (and the `## Non-functional changes` section) must describe
-  the actual changed files, because there is no functional diff to summarize.
-  Keep bullets to 1–2 lines each.
-- The existing 3–8 functional-path requirement for `## Key files to review`
-  still applies in full whenever functional files are present.
-
-Do **not** apply this fallback when the functional diff is non-empty — keep the
-functional files as the source for Key files and Summary.
+- Do NOT read individual file diffs with `git diff -- <file>` — use the single
+  temp-file dump instead.
+- Do NOT run `git status` — the branch state is from step 0.
+- Do NOT run `git fetch` as a separate call — if needed, prepend to step 0.
+- Do NOT run `gh pr view` after creation unless step 4 output is suspicious.
+- Do NOT run more than one Bash call for independent commands — chain with `&&`.
+- Do NOT forget `working_directory` — every Bash call that touches the repo
+  needs it set explicitly.
