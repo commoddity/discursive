@@ -625,28 +625,41 @@ func TestSmartRouter_DisabledPreservesModelAndClassifies(t *testing.T) {
 	}
 }
 
-// TestPerTurnDowngrade_ToolResultSmall verifies that a tool-result turn with a
-// small result gets downgraded to flash EVEN when the content class is
-// "editing" (which would normally keep the model). This is the core per-turn
-// routing behavior: the model just received a tool result and needs to decide
-// the next step — a task flash can handle.
-func TestPerTurnDowngrade_ToolResultSmall(t *testing.T) {
+// TestPerTurnDowngrade_ToolResultSmallReadOnly verifies that a tool-result
+// turn with a small READ-ONLY tool result gets downgraded to flash EVEN when
+// the content class is "editing" (which would normally keep the model). This
+// is the core per-turn routing behavior: the model just received a grep/read
+// result and needs to decide the next step — a task flash can handle.
+//
+// Note: small WRITE-tool results (StrReplace/Shell) no longer downgrade to
+// flash — they route to pro because deciding the next step after a state
+// change needs pro reasoning (see TestPerTurnDowngrade_ToolResultSmallWritePro).
+func TestPerTurnDowngrade_ToolResultSmallReadOnly(t *testing.T) {
 	body := map[string]any{
 		"model": "deepseek-v4-pro",
 		"messages": []any{
 			map[string]any{"role": "system", "content": strings.Repeat("x", 15000)},
 			map[string]any{"role": "user", "content": "refactor the auth module and add tests"},
-			map[string]any{"role": "assistant", "content": "", "tool_calls": []any{}},
-			// Small tool result: "go test" output, ~30 chars
-			map[string]any{"role": "tool", "content": "ok\tinternal/gateway\t0.123s"},
+			map[string]any{"role": "assistant", "content": "", "tool_calls": []any{
+				map[string]any{
+					"id":   "call_1",
+					"type": "function",
+					"function": map[string]any{
+						"name":      "Grep",
+						"arguments": "{\"pattern\": \"auth\"}",
+					},
+				},
+			}},
+			// Small tool result: "grep found 3 matches", ~30 chars
+			map[string]any{"role": "tool", "tool_call_id": "call_1", "content": "auth.go:1:package auth\nauth.go:10:func Login()\nauth.go:20:func Logout()"},
 		},
 	}
 	r := NewSmartRouter(RouterConfig{Enabled: true})
 	result := r.ClassifyAndOverride(body, "req_test")
 
 	if !result.OverrideApplied {
-		t.Errorf("expected override applied for small tool-result turn, got none (class=%q, turn=%q, size=%q)",
-			result.RequestClass, result.TurnType, result.ToolResultSize)
+		t.Errorf("expected override applied for small read-only tool-result turn, got none (class=%q, turn=%q, size=%q, tool=%q)",
+			result.RequestClass, result.TurnType, result.ToolResultSize, result.ToolName)
 	}
 	if result.OverrideModel != "deepseek-v4-flash" {
 		t.Errorf("expected deepseek-v4-flash, got %q", result.OverrideModel)
@@ -656,6 +669,58 @@ func TestPerTurnDowngrade_ToolResultSmall(t *testing.T) {
 	}
 	if result.ToolResultSize != "small" {
 		t.Errorf("expected tool_result_size=small, got %q", result.ToolResultSize)
+	}
+	if result.ToolName != "Grep" {
+		t.Errorf("expected tool_name=Grep, got %q", result.ToolName)
+	}
+}
+
+// TestPerTurnDowngrade_ToolResultSmallWritePro verifies that a tool-result
+// turn with a small WRITE/decision tool result (StrReplace/Shell/etc.) routes
+// to pro, NOT flash. Deciding the next step after a state change (did the edit
+// apply correctly? what's the next file?) needs pro reasoning; downgrading to
+// flash here caused agent-loop flailing in real A/B runs (more calls, more
+// output, more time).
+func TestPerTurnDowngrade_ToolResultSmallWritePro(t *testing.T) {
+	body := map[string]any{
+		"model": "deepseek-v4-pro",
+		"messages": []any{
+			map[string]any{"role": "system", "content": strings.Repeat("x", 15000)},
+			map[string]any{"role": "user", "content": "refactor the auth module and add tests"},
+			map[string]any{"role": "assistant", "content": "", "tool_calls": []any{
+				map[string]any{
+					"id":   "call_1",
+					"type": "function",
+					"function": map[string]any{
+						"name":      "StrReplace",
+						"arguments": "{}",
+					},
+				},
+			}},
+			// Small tool result: "1 replacement made", ~24 chars
+			map[string]any{"role": "tool", "tool_call_id": "call_1", "content": "The file has been updated."},
+		},
+	}
+	r := NewSmartRouter(RouterConfig{Enabled: true})
+	result := r.ClassifyAndOverride(body, "req_test")
+
+	if result.TurnType != TurnToolResult {
+		t.Errorf("expected turn_type=tool_result, got %q", result.TurnType)
+	}
+	if result.ToolResultSize != "small" {
+		t.Errorf("expected tool_result_size=small, got %q", result.ToolResultSize)
+	}
+	if result.ToolName != "StrReplace" {
+		t.Errorf("expected tool_name=StrReplace, got %q", result.ToolName)
+	}
+	// Pro override is a no-op when the original model is already deepseek-v4-pro:
+	// overrideModelForTier resolves "deepseek-v4-pro" → "deepseek-v4-pro", so
+	// OverrideApplied stays false. What matters is that the tier is pro, not flash.
+	if result.OverrideTier != TierPro {
+		t.Errorf("expected override_tier=pro for small write-tool result, got %q", result.OverrideTier)
+	}
+	if result.OverrideModel == "deepseek-v4-flash" {
+		t.Errorf("small write-tool result must NOT downgrade to flash; got override_model=%q", result.OverrideModel)
 	}
 }
 
@@ -793,7 +858,7 @@ func TestPerTurnDowngrade_ToolResultMediumReadToFlash(t *testing.T) {
 
 // TestPerTurnVerbosityCap_AppliedEvenWhenModelOverrideNoop verifies that when
 // the flow already runs on flash (so the model override is a no-op), a small
-// tool-result turn still receives the flash verbosity cap.
+// read-only tool-result turn still receives the flash verbosity cap.
 func TestPerTurnVerbosityCap_AppliedEvenWhenModelOverrideNoop(t *testing.T) {
 	body := map[string]any{
 		"model": "deepseek-v4-flash",
@@ -805,13 +870,13 @@ func TestPerTurnVerbosityCap_AppliedEvenWhenModelOverrideNoop(t *testing.T) {
 				"content": "",
 				"tool_calls": []any{
 					map[string]any{
-						"id":       "call_shell",
+						"id":       "call_read",
 						"type":     "function",
-						"function": map[string]any{"name": "Shell", "arguments": "{}"},
+						"function": map[string]any{"name": "Read", "arguments": "{}"},
 					},
 				},
 			},
-			map[string]any{"role": "tool", "tool_call_id": "call_shell", "content": "ok"},
+			map[string]any{"role": "tool", "tool_call_id": "call_read", "content": "ok"},
 		},
 	}
 	r := NewSmartRouter(RouterConfig{Enabled: true})
@@ -863,8 +928,8 @@ func TestShouldDowngrade(t *testing.T) {
 
 // TestOverrideTier covers the decision-aware per-turn and content routing tier
 // logic. Tool-result turns route cheap (small / medium read-only) results to
-// flash, decision-heavy (medium write/error) results to pro, and large results
-// to keep. Non-tool turns follow the content classifier.
+// flash, decision-heavy (small / medium write/error) results to pro, and large
+// results to keep. Non-tool turns follow the content classifier.
 func TestOverrideTier(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -872,7 +937,13 @@ func TestOverrideTier(t *testing.T) {
 		body   map[string]any
 		want   OverrideTier
 	}{
-		{"tool small → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "small", ToolName: "Shell"}, nil, TierFlash},
+		{"tool small read → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "small", ToolName: "Read"}, nil, TierFlash},
+		{"tool small grep → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "small", ToolName: "Grep"}, nil, TierFlash},
+		{"tool small glob → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "small", ToolName: "Glob"}, nil, TierFlash},
+		{"tool small write → pro", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "small", ToolName: "StrReplace"}, nil, TierPro},
+		{"tool small shell → pro", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "small", ToolName: "Shell"}, nil, TierPro},
+		{"tool small unknown tool → pro (write default)", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "small", ToolName: "CustomThing"}, nil, TierPro},
+		{"tool small empty tool name → pro (conservative default)", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "small", ToolName: ""}, nil, TierPro},
 		{"tool medium read → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: "Read"}, nil, TierFlash},
 		{"tool medium grep → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: "Grep"}, nil, TierFlash},
 		{"tool medium glob → flash", ClassifierResult{TurnType: TurnToolResult, ToolResultSize: "medium", ToolName: "Glob"}, nil, TierFlash},

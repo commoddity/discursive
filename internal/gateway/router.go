@@ -365,23 +365,30 @@ func shouldDowngrade(c RequestClass) bool {
 //	lookup / code search / structured extraction / automation).
 //
 //	Tool-result turn (last role == tool):
-//	    small                       → TierFlash (short outputs, low risk)
-//	    medium + read-only tool     → TierFlash (just reading: grep/read/search)
-//	    medium + write/error tool   → TierPro   (decision-heavy: shell, edits,
-//	                                              tests, failures — needs pro)
-//	    large                       → TierKeep  (big outputs need pro reasoning)
-//	    unknown / empty size        → TierKeep  (can't gauge risk → conservative)
+//	    small + read-only tool     → TierFlash (short grep/read/glob output)
+//	    small + write/error tool   → TierPro   (deciding the next step after an
+//	                                            edit/shell/test needs pro reasoning;
+//	                                            flash here causes loop flailing)
+//	    medium + read-only tool    → TierFlash (just reading: grep/read/search)
+//	    medium + write/error tool  → TierPro   (decision-heavy: shell, edits,
+//	                                            tests, failures — needs pro)
+//	    large                      → TierKeep  (big outputs need pro reasoning)
+//	    unknown / empty size       → TierKeep  (can't gauge risk → conservative)
 //
 //	Everything else → content-class result (shouldDowngrade) or TierKeep.
 func overrideTier(result ClassifierResult, body map[string]any) OverrideTier {
 	// Per-turn tool-result signal first — it is the primary driver of cheap
 	// turns within a multi-step agent flow.
 	if result.TurnType == TurnToolResult {
+		write := isWriteTool(result.ToolName)
 		switch result.ToolResultSize {
 		case "small":
+			if write {
+				return TierPro
+			}
 			return TierFlash
 		case "medium":
-			if isWriteTool(result.ToolName) {
+			if write {
 				return TierPro
 			}
 			return TierFlash
