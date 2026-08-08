@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -24,12 +25,13 @@ func ExtractAPIKey(r *http.Request) string {
 	return ""
 }
 
-// GatewayKeyMatches reports whether provided equals expected (constant-ish compare).
+// GatewayKeyMatches reports whether provided equals expected using a
+// constant-time comparison.
 func GatewayKeyMatches(provided, expected string) bool {
 	if provided == "" || expected == "" {
 		return false
 	}
-	return provided == expected
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
 }
 
 // WriteUnauthorized writes an OpenAI-shaped 401 JSON body.
@@ -46,6 +48,7 @@ func WriteUnauthorized(w http.ResponseWriter) {
 	})
 }
 
+// writeJSONError writes a JSON error response.
 func writeJSONError(w http.ResponseWriter, status int, message, typ string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -57,10 +60,18 @@ func writeJSONError(w http.ResponseWriter, status int, message, typ string) {
 	})
 }
 
-func requireGatewayKey(w http.ResponseWriter, r *http.Request, expected string) bool {
-	if !GatewayKeyMatches(ExtractAPIKey(r), expected) {
-		WriteUnauthorized(w)
-		return false
+// AuthMiddleware returns an http.Handler that wraps next with gateway key
+// authentication. Requests that fail auth receive an OpenAI-shaped 401.
+// If expected is empty, auth is bypassed.
+func AuthMiddleware(next http.Handler, expected string) http.Handler {
+	if expected == "" {
+		return next
 	}
-	return true
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !GatewayKeyMatches(ExtractAPIKey(r), expected) {
+			WriteUnauthorized(w)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

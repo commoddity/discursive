@@ -13,9 +13,6 @@ import (
 )
 
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	if !requireGatewayKey(w, r, s.cfg.GatewayKey) {
-		return
-	}
 	started := time.Now()
 	requestID := newRequestID()
 
@@ -194,31 +191,28 @@ func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBo
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
+	// Always log the full upstream error body at ERROR level.
+	slog.Error("upstream_error",
+		"request_id", requestID,
+		"status", status,
+		"provider", string(provider),
+		"model", model,
+		"effort", effort,
+		"body", string(respBody),
+	)
+
+	// Surface provider errors verbatim. If the upstream body is valid JSON,
+	// pass it through untouched (preserves the provider's error shape). If
+	// it's not JSON, wrap the raw body in an OpenAI-shaped envelope so the
+	// actual provider message reaches Cursor instead of a generic placeholder.
 	var errObj map[string]any
 	if json.Unmarshal(respBody, &errObj) == nil {
 		_ = json.NewEncoder(w).Encode(errObj)
-
-		// Always log the full upstream error body at ERROR level.
-		slog.Error("upstream_error",
-			"request_id", requestID,
-			"status", status,
-			"provider", string(provider),
-			"model", model,
-			"effort", effort,
-			"body", string(respBody),
-		)
 	} else {
-		slog.Error("upstream_error",
-			"request_id", requestID,
-			"status", status,
-			"provider", string(provider),
-			"model", model,
-			"effort", effort,
-			"body", string(respBody),
-		)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"error": map[string]any{
-				"message": fmt.Sprintf("upstream status %d", status),
+				"message": fmt.Sprintf("upstream status %d: %s", status, string(respBody)),
 				"type":    "upstream_error",
 			},
 		})

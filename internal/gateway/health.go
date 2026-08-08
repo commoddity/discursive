@@ -15,9 +15,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	if !requireGatewayKey(w, r, s.cfg.GatewayKey) {
-		return
-	}
 	listed := ListAdvertisedModels()
 	data := make([]map[string]any, 0, len(listed))
 	for _, m := range listed {

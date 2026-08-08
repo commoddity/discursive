@@ -106,11 +106,15 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 }
 
 func (s *Server) routes() {
+	auth := func(h http.HandlerFunc) http.Handler {
+		return AuthMiddleware(h, s.cfg.GatewayKey)
+	}
+
 	s.mux.HandleFunc("GET /health", s.handleHealth)
-	s.mux.HandleFunc("GET /v1/models", s.handleModels)
-	s.mux.HandleFunc("POST /v1/models", s.handleModels)
-	s.mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
-	s.mux.HandleFunc("POST /v1/responses", s.handleChatCompletions)
+	s.mux.Handle("GET /v1/models", auth(s.handleModels))
+	s.mux.Handle("POST /v1/models", auth(s.handleModels))
+	s.mux.Handle("POST /v1/chat/completions", auth(s.handleChatCompletions))
+	s.mux.Handle("POST /v1/responses", auth(s.handleChatCompletions))
 }
 
 // Handler returns the HTTP handler for httptest tests.

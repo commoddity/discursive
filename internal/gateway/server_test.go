@@ -456,3 +456,76 @@ func TestToolCallIDRetry(t *testing.T) {
 		t.Fatalf("expected retry, calls=%d", calls.Load())
 	}
 }
+
+func TestUpstreamError_JSONErrorPassedVerbatim(t *testing.T) {
+	upstreamErr := `{"error":{"message":"rate limit exceeded","type":"rate_limit_error","code":"rate_limit_reached"}}`
+	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(upstreamErr))
+	})
+
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model":    "gpt-4o",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	if res.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusTooManyRequests)
+	}
+
+	var resp struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("invalid JSON body: %v\nbody: %s", err, body)
+	}
+	if resp.Error.Message != "rate limit exceeded" {
+		t.Fatalf("error.message = %q, want %q", resp.Error.Message, "rate limit exceeded")
+	}
+	if resp.Error.Type != "rate_limit_error" {
+		t.Fatalf("error.type = %q, want %q", resp.Error.Type, "rate_limit_error")
+	}
+	if resp.Error.Code != "rate_limit_reached" {
+		t.Fatalf("error.code = %q, want %q", resp.Error.Code, "rate_limit_reached")
+	}
+}
+
+func TestUpstreamError_NonJSONErrorWrappedWithRawBody(t *testing.T) {
+	rawErr := `<html><body>503 Service Unavailable</body></html>`
+	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(rawErr))
+	})
+
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model":    "gpt-4o",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusServiceUnavailable)
+	}
+
+	var resp struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("invalid JSON body: %v\nbody: %s", err, body)
+	}
+	if !strings.Contains(resp.Error.Message, rawErr) {
+		t.Fatalf("error.message should contain raw upstream body:\ngot: %q\nwant substring: %q", resp.Error.Message, rawErr)
+	}
+	if !strings.Contains(resp.Error.Message, "503") {
+		t.Fatalf("error.message should contain status code 503: %q", resp.Error.Message)
+	}
+	if resp.Error.Type != "upstream_error" {
+		t.Fatalf("error.type = %q, want %q", resp.Error.Type, "upstream_error")
+	}
+}
