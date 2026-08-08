@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -910,6 +911,190 @@ func TestContentClassification_WithCursorXML(t *testing.T) {
 				if result.OverrideApplied {
 					t.Errorf("OverrideApplied = true, want false (class=%q)", result.RequestClass)
 				}
+			}
+		})
+	}
+}
+
+func TestDetectTurnType(t *testing.T) {
+	tests := []struct {
+		name string
+		body map[string]any
+		want TurnType
+	}{
+		{
+			name: "tool result turn",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "system", "content": "You are a coding agent."},
+					map[string]any{"role": "user", "content": "Run the tests"},
+					map[string]any{"role": "assistant", "content": "", "tool_calls": []any{}},
+					map[string]any{"role": "tool", "content": "ok\tinternal/gateway\t0.123s"},
+				},
+			},
+			want: TurnToolResult,
+		},
+		{
+			name: "user prompt turn",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "system", "content": "You are a coding agent."},
+					map[string]any{"role": "user", "content": "What is a goroutine?"},
+				},
+			},
+			want: TurnUserPrompt,
+		},
+		{
+			name: "developer prompt turn",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "developer", "content": "You are a coding agent."},
+					map[string]any{"role": "user", "content": "Hello"},
+				},
+			},
+			want: TurnUserPrompt,
+		},
+		{
+			name: "assistant continuation turn",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "system", "content": "You are a coding agent."},
+					map[string]any{"role": "assistant", "content": "Let me think about the next step..."},
+				},
+			},
+			want: TurnAgentContinue,
+		},
+		{
+			name: "empty messages → unknown",
+			body: map[string]any{"messages": []any{}},
+			want: TurnUnknown,
+		},
+		{
+			name: "no messages key → unknown",
+			body: map[string]any{},
+			want: TurnUnknown,
+		},
+		{
+			name: "nil body → unknown",
+			body: nil,
+			want: TurnUnknown,
+		},
+		{
+			name: "unknown role → unknown",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "system", "content": "Hello"},
+					map[string]any{"role": "bogus", "content": "?"},
+				},
+			},
+			want: TurnUnknown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := detectTurnType(tt.body)
+			if got != tt.want {
+				t.Errorf("detectTurnType() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToolResultSize(t *testing.T) {
+	tests := []struct {
+		name string
+		body map[string]any
+		want string
+	}{
+		{
+			name: "small tool result (≤512)",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "system", "content": "Agent"},
+					map[string]any{"role": "tool", "content": "ok"},
+				},
+			},
+			want: "small",
+		},
+		{
+			name: "medium tool result (≤4096)",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "system", "content": "Agent"},
+					map[string]any{
+						"role":    "tool",
+						"content": strings.Repeat("x", 1024),
+					},
+				},
+			},
+			want: "medium",
+		},
+		{
+			name: "large tool result (>4096)",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "system", "content": "Agent"},
+					map[string]any{
+						"role":    "tool",
+						"content": strings.Repeat("x", 5000),
+					},
+				},
+			},
+			want: "large",
+		},
+		{
+			name: "boundary: exactly 512 → small",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "system", "content": "Agent"},
+					map[string]any{
+						"role":    "tool",
+						"content": strings.Repeat("x", 512),
+					},
+				},
+			},
+			want: "small",
+		},
+		{
+			name: "boundary: exactly 4096 → medium",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "system", "content": "Agent"},
+					map[string]any{
+						"role":    "tool",
+						"content": strings.Repeat("x", 4096),
+					},
+				},
+			},
+			want: "medium",
+		},
+		{
+			name: "not a tool turn → empty",
+			body: map[string]any{
+				"messages": []any{
+					map[string]any{"role": "user", "content": "Hello"},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "empty messages → empty",
+			body: map[string]any{"messages": []any{}},
+			want: "",
+		},
+		{
+			name: "nil body → empty",
+			body: nil,
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toolResultSize(tt.body)
+			if got != tt.want {
+				t.Errorf("toolResultSize() = %q, want %q", got, tt.want)
 			}
 		})
 	}

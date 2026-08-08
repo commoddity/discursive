@@ -53,6 +53,27 @@ type RouterConfig struct {
 	DiagnosticDump bool
 }
 
+// TurnType classifies what kind of agent-loop turn a request represents,
+// based on the role of the last message in the messages array.
+type TurnType string
+
+const (
+	// TurnToolResult means the last message role is "tool" — the model just
+	// received a tool result and must decide the next step. These are the
+	// candidate turns for downgrade to a cheaper model.
+	TurnToolResult TurnType = "tool_result"
+	// TurnUserPrompt means the last message role is "user" or "developer" —
+	// a fresh human prompt. The content classifier (classifyRequest) handles
+	// these.
+	TurnUserPrompt TurnType = "user_prompt"
+	// TurnAgentContinue means the last message role is "assistant" —
+	// continuation or prefill scenario. Conservative: keep model.
+	TurnAgentContinue TurnType = "agent_continue"
+	// TurnUnknown means empty messages, system-only, or unparseable
+	// structure. Conservative: keep model.
+	TurnUnknown TurnType = "unknown"
+)
+
 // ClassifierResult contains the classification outcome for logging/shadowing.
 type ClassifierResult struct {
 	IsSubagent        bool         `json:"is_subagent"`
@@ -65,6 +86,8 @@ type ClassifierResult struct {
 	OverrideApplied   bool         `json:"override_applied"`
 	OverrideReason    string       `json:"override_reason,omitempty"`
 	ClassificationAge string       `json:"classification_age,omitempty"`
+	TurnType          TurnType     `json:"turn_type"`
+	ToolResultSize    string       `json:"tool_result_size,omitempty"`
 }
 
 // modelOverrideMap maps expensive models to cheaper equivalents for classification-based downgrades.
@@ -123,8 +146,16 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 	// Instead, content-based classification handles all traffic uniformly.
 	result.IsSubagent = false
 
-	// Step 2: content-based classification.
+	// Step 2: turn type detection for per-turn routing instrumentation.
+	result.TurnType = detectTurnType(body)
+	result.ToolResultSize = toolResultSize(body)
+
+	// Step 3: content-based classification.
 	result.RequestClass = classifyRequest(body)
+
+	// Determine whether this turn would be downgraded (based on request class only).
+	// This is logged but NOT acted on — it's pure instrumentation to measure opportunity.
+	wouldDowngrade := shouldDowngrade(result.RequestClass)
 
 	// Always log classification at DEBUG so operators can tune thresholds.
 	lastMsg := lastUserMessage(body)
@@ -132,6 +163,9 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 	slog.Debug("router: classify",
 		"request_id", requestID,
 		"request_class", result.RequestClass,
+		"turn_type", result.TurnType,
+		"tool_result_size", result.ToolResultSize,
+		"would_downgrade", wouldDowngrade,
 		"sys_prompt_len", result.SysPromptLen,
 		"msg_count", result.MsgCount,
 		"has_tools", result.HasTools,
@@ -495,6 +529,63 @@ func messageRoles(body map[string]any) string {
 		roles = append(roles, role)
 	}
 	return strings.Join(roles, ", ")
+}
+
+// detectTurnType classifies the request by the role of its last message.
+// Tool-result rounds (last role == "tool") are the primary targets for
+// per-turn model downgrade within a multi-step agent flow.
+func detectTurnType(body map[string]any) TurnType {
+	msgs, ok := body["messages"].([]any)
+	if !ok || len(msgs) == 0 {
+		return TurnUnknown
+	}
+	last, ok := msgs[len(msgs)-1].(map[string]any)
+	if !ok {
+		return TurnUnknown
+	}
+	role, _ := last["role"].(string)
+	switch role {
+	case "tool":
+		return TurnToolResult
+	case "user", "developer":
+		return TurnUserPrompt
+	case "assistant":
+		return TurnAgentContinue
+	default:
+		return TurnUnknown
+	}
+}
+
+// toolResultSize buckets the content size of the last tool-result message.
+// Zero means the messages array is empty or the last message is not a tool.
+// Buckets help identify where token spend concentrates:
+//
+//	<=512 chars  → "small"  (quick shell command outputs)
+//	<=4096 chars → "medium" (diff outputs, file reads)
+//	>4096 chars  → "large"  (full logs, stack traces)
+func toolResultSize(body map[string]any) string {
+	msgs, ok := body["messages"].([]any)
+	if !ok || len(msgs) == 0 {
+		return ""
+	}
+	last, ok := msgs[len(msgs)-1].(map[string]any)
+	if !ok {
+		return ""
+	}
+	role, _ := last["role"].(string)
+	if role != "tool" {
+		return ""
+	}
+	content, _ := last["content"].(string)
+	n := len(content)
+	switch {
+	case n <= 512:
+		return "small"
+	case n <= 4096:
+		return "medium"
+	default:
+		return "large"
+	}
 }
 
 // systemPromptLength returns the length (in chars) of the first system or
