@@ -149,3 +149,48 @@ func splitPrompt(u UsageTokens) (hit, miss uint64) {
 func perMillion(tokens uint64, usdPerMTok float64) float64 {
 	return float64(tokens) / 1_000_000 * usdPerMTok
 }
+
+// ModelWeight holds the estimated cost for one model — used as a proportional
+// weight to distribute confirmed provider spend across models.
+type ModelWeight struct {
+	Model    string
+	Provider config.Provider
+	Weight   float64 // estimated USD via EstimateUSD (unrounded, purely proportional)
+}
+
+// AllocateByModel distributes a confirmed total provider spend (confirmedUSD)
+// across models proportionally to their estimated per-model cost.
+//
+// If no models are supplied or every model has zero weight, the total is
+// returned unallocated and allocatedUSD will be zero.
+//
+// The returned per-model values are rounded to 6 decimal places.
+// unallocatedUSD is the residual due to rounding; caller may add it to the
+// highest-weight model or discard it.
+func AllocateByModel(confirmedUSD float64, models []ModelWeight) (allocated []ModelWeight, unallocatedUSD float64) {
+	var totalWeight float64
+	for _, m := range models {
+		totalWeight += m.Weight
+	}
+	if totalWeight <= 0 || confirmedUSD <= 0 {
+		return append([]ModelWeight(nil), models...), confirmedUSD
+	}
+
+	allocated = make([]ModelWeight, len(models))
+	var sum float64
+	for i, m := range models {
+		share := (m.Weight / totalWeight) * confirmedUSD
+		share = RoundUSD(share)
+		allocated[i] = ModelWeight{
+			Model:    m.Model,
+			Provider: m.Provider,
+			Weight:   share,
+		}
+		sum += share
+	}
+	unallocatedUSD = RoundUSD(confirmedUSD - sum)
+	if unallocatedUSD < 0 {
+		unallocatedUSD = 0
+	}
+	return allocated, unallocatedUSD
+}

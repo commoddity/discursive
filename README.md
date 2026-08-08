@@ -90,13 +90,13 @@ discursive status --show-key | jq
 Gateway keys are masked by default. Pass `--show-key` to print the full
 `gateway_key` for Cursor setup.
 
-> **💡 Smart routing is on by default.** The gateway's *smart router* inspects
-> every request and, when safe, routes simpler work (short lookups, code
-> search, structured extraction, and cheap per-turn tool results) to a cheaper
-> model — typically `deepseek-v4-flash` — to cut cost and latency. More complex
-> work (editing/refactoring, reasoning, large outputs) keeps the original model.
-> See [Smart Routing](#-smart-routing) below, or disable it with
-> `discursive start --smart-router=false`.
+> **💡 Subagent routing is on by default.** The gateway inspects
+> every request and, when the content indicates simple, cheap work (short lookups,
+> code search, structured extraction, automation), routes it to a cheaper
+> model — typically `deepseek-v4-flash` — to cut cost. Complex work
+> (editing/refactoring, reasoning) keeps the original model.
+> See [Subagent Routing](#-subagent-routing) below, or disable it with
+> `discursive start --subagent-router=false`.
 
 ### 3. Configure Cursor <!-- omit in toc -->
 
@@ -142,13 +142,12 @@ In Cursor Settings → Models: turn off "Override OpenAI API Key" and
 
 ---
 
-## ⚡ Smart Routing
+## ⚡ Subagent Routing
 
 The gateway can **automatically downgrade individual requests** to a cheaper,
 faster model when the work is simple enough — cutting token cost and latency
-without changing what you pick in Cursor. Smart routing is **on by default** and
-requires no configuration, but every behavior is configurable via
-`discursive start` flags.
+without changing what you pick in Cursor. Subagent routing is **on by default**
+and requires no configuration.
 
 > The router runs entirely **inside the gateway**. Cursor still sends every
 > request to the gateway under whatever model alias you chose; the gateway
@@ -157,62 +156,41 @@ requires no configuration, but every behavior is configurable via
 
 ### What gets downgraded
 
-Each incoming request is classified and routed to one of three tiers
-(`keep` / `pro` / `flash`), based on the **content class** and, for per-turn
-tool results, the **result size + tool name**:
+Each incoming request is classified by its **content** — the last user message
+determines whether the task is cheap enough for a flash model:
 
-| Request type                                                    | Tier  | Model                 |
-| --------------------------------------------------------------- | ----- | --------------------- |
-| Simple lookup / explanation                                     | flash | `deepseek-v4-flash`   |
-| Code search / exploration                                       | flash | `deepseek-v4-flash`   |
-| Structured extraction (`json_object` / `json_schema`)           | flash | `deepseek-v4-flash`   |
-| Automation / mechanical work (lint, git, scripts, PR)           | flash | `deepseek-v4-flash`   |
-| Tool result — small                                             | flash | `deepseek-v4-flash`   |
-| Tool result — medium, read-only (`Read`/`Grep`/`Glob`)          | flash | `deepseek-v4-flash`   |
-| Tool result — medium, write/decision (`Shell`/`StrReplace`)     | pro   | `deepseek-v4-pro`     |
-| Editing / refactoring                                           | keep  | original model        |
-| Complex reasoning / architecture                                | keep  | original model        |
-| Tool result — large                                             | keep  | original model        |
-
-Full details and rationale live in the agent rules (`.cursor/rules/gateway.mdc`,
-*Per-turn routing tiers*). In practice a real GLM 5.2 refactor session routed
-7 of 10 per-turn requests to `flash` and 2 decision-heavy ones to `pro`, keeping
-the original model for the initial prompt and the one large tool result.
-
-### Flash output cap
-
-Flash-tier requests are limited to **1,500 output tokens** (`max_tokens =
-1500`), so cheap turns stay terse instead of "overthinking" and emitting
-4–16k tokens. This is the main lever that keeps agent flows fast. The cap is
-applied even when the flow is already on `flash` (model override is a no-op).
+| Request type                                                    | Action              | Model                 |
+| --------------------------------------------------------------- | ------------------- | --------------------- |
+| Simple lookup / explanation                                     | downgrade to flash  | `deepseek-v4-flash`   |
+| Code search / exploration                                       | downgrade to flash  | `deepseek-v4-flash`   |
+| Structured extraction (`json_object` / `json_schema`)           | downgrade to flash  | `deepseek-v4-flash`   |
+| Automation / mechanical work (lint, git, scripts, PR)           | downgrade to flash  | `deepseek-v4-flash`   |
+| Editing / refactoring                                           | keep model          | original model        |
+| Complex reasoning / architecture                                | keep model          | original model        |
+| Unknown / unclassified                                          | keep model          | original model        |
 
 ### `discursive start` flags
 
-| Flag                 | Default | Purpose                                                                                                                                                                                                                                        |
-| -------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--smart-router`     | `true`  | Enable the smart router (classification + downgrade + per-turn routing + flash cap). Set `--smart-router=false` to run the gateway with no automatic model changes.                                                                             |
-| `--diagnostic-dump`  | `false` | Debugging aid: write the raw `messages` array Cursor sent to `/tmp/discursive-msgdump-<requestID>.json` whenever content extraction from the last user message returns nothing (e.g. tool-result rounds). Independent of `--smart-router` — dumps can fire even when routing is off, or stay silent while it's on. |
-| `--log-level`        | `info`  | Log verbosity: `debug`, `info`, `warn`, `error`. Use `debug` to see the per-request `request_class`, `turn_type`, `tool_result_size`, `tool_name`, and `override_tier` lines from the router. Overrides `DISCURSIVE_LOG_LEVEL`.                |
-| `--background`       | `false` | Detach and run in the background. Logs to `{dataRoot}/gateway.log`.                                                                                                                                                                            |
-| `--tunnel`           | (config) | Tunnel mode: `named`, `none`, or `quick` (persists to config).                                                                                                                                                                                |
-| `--public-url`       | (config) | Public HTTPS base URL ending in `/v1` (persists to config).                                                                                                                                                                                    |
+| Flag                  | Default | Purpose                                                                                                                                                           |
+| --------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--subagent-router`   | `true`  | Enable the subagent router (content-based classification + flash downgrade). Set `--subagent-router=false` to run the gateway with no automatic model changes.    |
+| `--log-level`         | `info`  | Log verbosity: `debug`, `info`, `warn`, `error`. Use `debug` to see per-request `request_class` and override lines from the router. Overrides `DISCURSIVE_LOG_LEVEL`. |
+| `--background`        | `false` | Detach and run in the background. Logs to `{dataRoot}/gateway.log`.                                                                                              |
+| `--tunnel`            | (config)| Tunnel mode: `named`, `none`, or `quick` (persists to config).                                                                                                   |
+| `--public-url`        | (config)| Public HTTPS base URL ending in `/v1` (persists to config).                                                                                                       |
 
 Examples:
 
 ```bash
 # Routing on (default) + debug logging
-discursive start --smart-router --log-level debug
-
-# Routing on + debug logging + message dumps for a debugging session
-discursive start --smart-router --log-level debug --diagnostic-dump
+discursive start --subagent-router --log-level debug
 
 # Disable routing entirely
-discursive start --smart-router=false
+discursive start --subagent-router=false
 ```
 
 > **💡 Tip:** At `--log-level debug`, the router logs one line per request with
-> `request_class`, `turn_type`, `tool_result_size`, `tool_name`, and
-> `override_tier`. This is the easiest way to see exactly what the router is
+> `request_class`. This is the easiest way to see exactly what the router is
 > doing and tune your expectations.
 
 ---
@@ -450,7 +428,7 @@ All output is JSON on stdout. Pipe through `jq` for readability.
 
 | Command                      | Description                                                                                                                                                                                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `discursive start`           | Start gateway on `localhost:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. `--smart-router` (on by default), `--diagnostic-dump` (off by default). Auto-invokes `init` if config is incomplete on first run. See [Smart Routing](#-smart-routing). |
+| `discursive start`           | Start gateway on `localhost:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. `--subagent-router` (on by default). Auto-invokes `init` if config is incomplete on first run. See [Subagent Routing](#-subagent-routing). |
 | `discursive stop`            | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                                                           |
 | `discursive status`          | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                                           |
 | `discursive logs`            | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail (uses fsnotify — no polling). `-n N` for last N lines. File auto-rotates at ~2 MB, keeps 2 backups.                                                |

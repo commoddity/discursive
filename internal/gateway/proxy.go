@@ -49,7 +49,8 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Apply cache-optimization pass after sanitization.
 	OptimizeRequest(sanitized, OptimizeConfig{PromptCacheKey: s.sessionID})
 
-	// Classify request for subagent detection and downgrade to cheaper model.
+	// Classify request for subagent-like cheap work and optionally downgrade
+	// to a cheaper model (e.g. simple lookups, code search → flash).
 	if result := s.router.ClassifyAndOverride(sanitized.Body, requestID); result.OverrideApplied {
 		sanitized.Model = result.OverrideModel
 		// The override may map to a different provider (e.g. kimi-k3 →

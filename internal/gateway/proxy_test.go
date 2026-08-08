@@ -342,13 +342,13 @@ func TestProxyImageWithoutVisionKeyFailsFast(t *testing.T) {
 	}
 }
 
-// TestProxy_SmartRouterProviderSwitch verifies that when the smart router
+// TestProxy_SubAgentRouterProviderSwitch verifies that when the subagent router
 // downgrades a model to a model from a DIFFERENT provider, the gateway
 // re-resolves the upstream provider so the request is sent to the correct
 // endpoint. Regression for the "modelCode: does not exist" cross-provider
 // bug (e.g. gpt-4o→kimi-k3 downgraded to deepseek-v4-flash must reach the
 // DeepSeek endpoint, not the Moonshot endpoint).
-func TestProxy_SmartRouterProviderSwitch(t *testing.T) {
+func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 	var moonshotCalled atomic.Int32
 	moonshotUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		moonshotCalled.Add(1)
@@ -384,12 +384,12 @@ func TestProxy_SmartRouterProviderSwitch(t *testing.T) {
 	}
 
 	srv, err := gateway.NewServer(gateway.ServerConfig{
-		ListenAddr:         "127.0.0.1:0",
-		GatewayKey:         settings.GatewayKey,
-		DataRoot:           dataRoot,
-		Settings:           &settings,
-		HTTPClient:         deepseekUp.Client(),
-		SmartRouterEnabled: true,
+		ListenAddr:            "127.0.0.1:0",
+		GatewayKey:            settings.GatewayKey,
+		DataRoot:              dataRoot,
+		Settings:              &settings,
+		HTTPClient:            deepseekUp.Client(),
+		SubAgentRouterEnabled: true,
 		ChatURLOverride: map[config.Provider]string{
 			config.ProviderMoonshot: moonshotUp.URL + "/moonshot/chat/completions",
 			config.ProviderDeepSeek: deepseekUp.URL + "/deepseek/chat/completions",

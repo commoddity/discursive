@@ -108,6 +108,18 @@ func initSchema(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 	CREATE INDEX IF NOT EXISTS idx_events_session  ON events(session_id);
 	CREATE INDEX IF NOT EXISTS idx_events_prov_model ON events(provider, model);
+
+	CREATE TABLE IF NOT EXISTS balance_snapshots (
+		provider     TEXT NOT NULL,
+		basis        TEXT NOT NULL,
+		period_start TEXT NOT NULL,
+		captured_at  TEXT NOT NULL,
+		amount       REAL NOT NULL,
+		currency     TEXT NOT NULL DEFAULT '',
+		usd_amount   REAL NOT NULL DEFAULT 0,
+		PRIMARY KEY (provider, basis, period_start, captured_at)
+	);
+	CREATE INDEX IF NOT EXISTS idx_bal_snap_prov_cap ON balance_snapshots(provider, captured_at);
 	`
 	if _, err := db.Exec(ddl); err != nil {
 		return fmt.Errorf("init schema: %w", err)

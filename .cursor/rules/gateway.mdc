@@ -148,7 +148,7 @@ failure it returns an error that the HTTP layer surfaces to the user as
 
 ### `Classify-and-override: precedence decides whether a downgrade fires`
 
-Content-based classifier (`SmartRouter`) must pick the intent, then downgrade only
+Content-based classifier (`SubAgentRouter`) must pick the intent, then downgrade only
 when the model has a mapped cheaper variant:
 
 - Check order: structured output (`json_object`) → automation → editing → complex
@@ -166,26 +166,6 @@ when the model has a mapped cheaper variant:
 | "fix linter errors in some files" stays on the expensive model instead of flash | `isStrongEditing` matches "fix" and blocks the `automation` downgrade | Let lint tasks classify as automation even with a strong-editing word present (`isLintTask` → bypass the `!isStrongEditing` guard) |
 | `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultFlashModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.2` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.2`), uncomment the entry in `modelOverrideMap` — it takes priority over the universal fallback. |
 
-#### Per-turn routing tiers (`flash` / `pro` / `keep`)
-
-Within one multi-step agent flow, each tool-result request is routed by an
-`OverrideTier` decided from the **tool result size + the tool name** (not the
-content class). Real 71s GLM 5.2 refactor session: 7/10 turns went `flash`,
-2 decision-heavy `pro`, initial prompt + one large result stayed `glm-5.2`.
-
-| Signal | Tier | Model | Rationale |
-| ------ | ---- | ----- | --------- |
-| tool result, size `small` | flash | `deepseek-v4-flash` | short output → cheap interpretation |
-| tool result, size `medium`, read-only tool (`Read`/`Grep`/`Glob`/search) | flash | `deepseek-v4-flash` | just reading → no pro needed |
-| tool result, size `medium`, write/decision tool (`Shell`/`StrReplace`/tests/unknown) | pro | `deepseek-v4-pro` | may decide state changes → needs a reasoning model |
-| tool result, size `large` | keep | original | big output needs pro interpretation |
-| user prompt | keep | original | content classifier decides (see above) |
-
-Route on the resolved `tool_name` (matched from the last `tool_call_id` back to
-the assistant `tool_calls[].function.name`). Treat any non-read-only tool name —
-**including empty/unknown** — as write/decision → pro. A cheap tier is only safe
-when the result can be interpreted without deep reasoning.
-
 #### Flash verbosity cap (output token ceiling on cheap turns)
 
 | Symptom | Cause | Fix |
@@ -196,7 +176,7 @@ when the result can be interpreted without deep reasoning.
 
 ### `DiagnosticDump: gated message-array dumps for content-extraction analysis`
 
-The `--diagnostic-dump` flag (`RouterConfig.DiagnosticDump`) writes the full
+The `--diagnostic-dump` flag (`SubAgentRouterConfig.DiagnosticDump`) writes the full
 `messages` array to `/tmp/discursive-msgdump-<requestID>.json` whenever content
 extraction from the last user message returns empty (`stripped_len == 0`).
 This only happens when the last message is entirely Cursor XML boilerplate or
@@ -204,11 +184,11 @@ the message role is not `user`/`developer` (e.g. tool-result rounds).
 
 | Aspect | Detail |
 | ------ | ------ |
-| Flag | `--diagnostic-dump` (CLI), `DiagnosticDump bool` (RouterConfig) |
+| Flag | `--diagnostic-dump` (CLI), `DiagnosticDump bool` (SubAgentRouterConfig) |
 | Default | `false` (off) — must be explicitly enabled |
 | Trigger | `stripped_len == 0` (content extraction produced nothing) |
 | Output | `/tmp/discursive-msgdump-<requestID>.json` (full `messages` array, indented JSON) |
 | Cleanup | `/tmp/` is automatically cleaned on macOS reboot and by Linux `tmpfiles.d` |
-| Separation | Gated on `DiagnosticDump`, NOT on `Enabled`. Dumps can fire even when the smart router is disabled, and remain silent even when the router is enabled unless the diagnostic flag is also set. |
+| Separation | Gated on `DiagnosticDump`, NOT on `Enabled`. Dumps can fire even when the subagent router is disabled, and remain silent even when the router is enabled unless the diagnostic flag is also set. |
 
 <!-- last-verified: 2026-08 -->

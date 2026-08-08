@@ -389,6 +389,20 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 #zai-balance-tip .zt-row { display: flex; align-items: baseline; gap: 8px; }
 #zai-balance-tip .zt-abs { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 #zai-balance-tip .zt-cd { font-variant-numeric: tabular-nums; color: var(--accent); }
+/* Confirmed-spend balance-card tooltip (Moonshot/DeepSeek): shows actual spend
+   per day/week/month derived from balance deltas. */
+#bal-confirmed-tip {
+  display: none; position: fixed; z-index: 110;
+  background: #1a1f2b; border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; font-size: 0.78rem; color: var(--text);
+  pointer-events: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5); line-height: 1.6; white-space: nowrap;
+}
+#bal-confirmed-tip .ct-title { font-weight: 600; font-size: 0.82rem; margin-bottom: 6px; }
+#bal-confirmed-tip .ct-row { display: flex; justify-content: space-between; gap: 18px; }
+#bal-confirmed-tip .ct-row .ct-label { color: var(--text-muted); }
+#bal-confirmed-tip .ct-row .ct-value { font-variant-numeric: tabular-nums; color: var(--accent); }
+#bal-confirmed-tip .ct-empt { color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -417,6 +431,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     <div class="summary" id="balances-summary" style="display:none"></div>
     <div class="error" id="balances-error" style="display:none"></div>
     <div id="zai-balance-tip"></div>
+    <div id="bal-confirmed-tip"></div>
   </div>
   <div class="card" id="projection-card">
     <h2 style="margin-bottom:12px">📈 Month Projection</h2>
@@ -542,6 +557,7 @@ let zaiFlatFeeUsd = null; // null = loading, 0 = failed (fetched from /api/zai-f
 let zaiMtdUsage = null; // { requests, tokens_in, tokens_out } MTD stats for hover tooltips
 let zaiBalance = null;  // latest /api/balances zai payload, for the Z.AI card hover tooltip
 let zaiTipTimer = null; // 1s interval refreshing the weekly-reset countdown
+let balanceSpend = null; // latest /api/balance-spend payload, for confirmed-spend card tooltips
 
 async function fetchZaiFlatFee() {
   try {
@@ -607,10 +623,10 @@ function moneySymbol() {
 function moneyLabel() {
   const cur = getCurrency();
   let text;
-  if (cur === 'eur' && eurRate > 0) text = 'Est. EUR';
-  else if (cur === 'cny' && cnyRate > 0) text = 'Est. CNY';
-  else text = 'Est. USD';
-  return text + ' <span class="health-info" style="margin-left:4px" data-tip="Pricing is based on best estimates. Rates may have changed — check the provider\'s site for up-to-date pricing.">?</span>';
+  if (cur === 'eur' && eurRate > 0) text = 'EUR (allocated)';
+  else if (cur === 'cny' && cnyRate > 0) text = 'CNY (allocated)';
+  else text = 'USD (allocated)';
+  return text + ' <span class="health-info" style="margin-left:4px" data-tip="Per-model costs are allocated from confirmed balance deltas using token-based proportions.">?</span>';
 }
 
 function updateMoneyLabels() {
@@ -1012,9 +1028,8 @@ async function loadHealth() {
     providers.innerHTML = provData.map(p =>
       '<div class="provider-indicator' + (p.ok ? ' enabled' : '') + '">' +
         '<div class="dot ' + (p.ok ? 'dot-ok' : 'dot-err') + '"></div>' +
-        '<a class="provider-logo-btn" href="' + (PRICING_URLS[p.id] || '#') + '" target="_blank" rel="noopener" title="' + p.name + ' pricing">' +
+        '<a class="provider-logo-btn" href="' + (PRICING_URLS[p.id] || '#') + '" target="_blank" rel="noopener" title="Open ' + p.name + '">' +
           '<img src="' + p.logo + '" alt="' + p.name + '" />' +
-          '<span class="pricing-tip"><div>' + pricingTooltip(p.id) + '</div></span>' +
         '</a>' +
       '</div>'
     ).join('');
@@ -1350,9 +1365,11 @@ function renderBalanceStat(provider, b) {
   // native `title` is plain-text only, so mark the card and position a custom
   // element instead (see wireZaiBalanceTip).
   const isZai = provider === 'zai';
+  const isTipProv = provider === 'moonshot' || provider === 'deepseek'; // carriers with confirmed spend
   const blurCls = getBalancesVisible() ? '' : ' gw-key-blur';
+  const tipClass = isZai ? ' zai-hover' : (isTipProv ? ' bal-tip-hover' : '');
   const wrap = (inner) =>
-    '<div class="stat"><a class="bal-stat-link' + (isZai ? ' zai-hover' : '') + '" href="' + href + '" target="_blank" rel="noopener"' + (isZai ? '' : ' title="Top up ' + name + '"') + '>' +
+    '<div class="stat"><a class="bal-stat-link' + tipClass + '" href="' + href + '" target="_blank" rel="noopener" data-provider="' + provider + '"' + (isZai || isTipProv ? '' : ' title="Top up ' + name + '"') + '>' +
       inner +
     '</a></div>';
 
@@ -1395,6 +1412,10 @@ function renderBalanceStat(provider, b) {
 async function loadBalances() {
   try {
     const data = await api('/api/balances');
+    // Fetch confirmed spend (balance deltas) concurrently-ish for card tooltips.
+    try {
+      balanceSpend = await api('/api/balance-spend');
+    } catch (_) { balanceSpend = null; }
     // Fetch Z.AI MTD token usage for balance-card hover tooltips
     try {
       const mtd = await api('/api/summary');
@@ -1420,6 +1441,7 @@ async function loadBalances() {
     zaiBalance = data.zai;
     applyBalancesVisibility();
     wireZaiBalanceTip();
+    wireBalConfirmedTip();
   } catch(e) {
     document.getElementById('balances-loading').style.display = 'none';
     document.getElementById('balances-error').style.display = 'block';
@@ -1483,6 +1505,49 @@ function hideZaiTip() {
   if (tip) tip.style.display = 'none';
 }
 
+// Confirmed-spend tooltip for USD balance cards (Moonshot, DeepSeek).
+// Shows actual day/week/month spend derived from balance-snapshot deltas.
+function confirmedTipBody(provider) {
+  const s = balanceSpend && balanceSpend[provider];
+  if (!s) return '<div class="ct-title">' + (provider.charAt(0).toUpperCase() + provider.slice(1)) + '</div><div class="ct-empt">No confirmed spend data yet — collecting snapshots</div>';
+
+  const row = (label, v) => {
+    const val = v != null ? fmtMoney(v) : '—';
+    return '<div class="ct-row"><span class="ct-label">' + label + '</span><span class="ct-value">' + val + '</span></div>';
+  };
+  return '<div class="ct-title">' + (provider.charAt(0).toUpperCase() + provider.slice(1)) + ' confirmed spend</div>' +
+    row('Today', s.day) + row('This week', s.week) + row('This month', s.month);
+}
+
+function positionConfirmedTip(cardEl) {
+  const el = document.getElementById('bal-confirmed-tip');
+  const r = cardEl.getBoundingClientRect();
+  el.style.left = (r.left + r.width / 2) + 'px';
+  el.style.top = (r.top - 8) + 'px';
+}
+
+function wireBalConfirmedTip() {
+  hideConfirmedTip();
+  const cards = document.querySelectorAll('#balances-summary .bal-stat-link.bal-tip-hover');
+  const tip = document.getElementById('bal-confirmed-tip');
+  if (!tip) return;
+  cards.forEach(card => {
+    card.addEventListener('mouseenter', () => {
+      const prov = card.getAttribute('data-provider');
+      tip.innerHTML = confirmedTipBody(prov);
+      tip.style.display = 'block';
+      positionConfirmedTip(card);
+    });
+    card.addEventListener('mousemove', () => positionConfirmedTip(card));
+    card.addEventListener('mouseleave', () => hideConfirmedTip());
+  });
+}
+
+function hideConfirmedTip() {
+  const tip = document.getElementById('bal-confirmed-tip');
+  if (tip) tip.style.display = 'none';
+}
+
 async function renderProjection(mtdUsd, byModel) {
   document.getElementById('projection-loading').style.display = 'none';
   document.getElementById('projection-error').style.display = 'none';
@@ -1498,12 +1563,36 @@ async function renderProjection(mtdUsd, byModel) {
       if (m.provider === 'zai') zaiMtdUsd += m.est_usd || 0;
     }
   }
-  const nonZaiMtdUsd = Math.max(0, mtdUsd - zaiMtdUsd);
-  const avgDaily = nonZaiMtdUsd / dayOfMonth;
-
   // Z.AI flat monthly fee is added to projection only (not to daily average).
   const flatFee = (zaiFlatFeeUsd != null && zaiFlatFeeUsd > 0) ? zaiFlatFeeUsd : 0;
-  const projected = avgDaily * daysInMonth + flatFee;
+
+  // Confirmed spend from balance deltas (Moonshot + DeepSeek MTD) — used as the
+  // authoritative daily rate when available. Z.AI has no USD balance, so it is
+  // excluded from the confirmed average (its est-based cost + flat fee remain
+  // in the projection).
+  let confirmedMtd = null;
+  try {
+    const bs = await api('/api/balance-spend');
+    const moon = bs && bs.moonshot && bs.moonshot.month;
+    const ds = bs && bs.deepseek && bs.deepseek.month;
+    if ((moon != null) || (ds != null)) {
+      confirmedMtd = (moon || 0) + (ds || 0);
+    }
+  } catch (_) { /* fall back to estimates */ }
+
+  const nonZaiMtdUsd = Math.max(0, mtdUsd - zaiMtdUsd);
+
+  let avgDaily = nonZaiMtdUsd / dayOfMonth;
+
+  let projected, projectedFrom;
+  if (confirmedMtd != null) {
+    avgDaily = confirmedMtd / dayOfMonth;
+    projected = avgDaily * daysInMonth + flatFee + zaiMtdUsd;
+    projectedFrom = 'confirmed';
+  } else {
+    projected = nonZaiMtdUsd / dayOfMonth * daysInMonth + flatFee;
+    projectedFrom = 'estimated';
+  }
 
   // Previous calendar month total (excl. Z.AI) — "No Data" when no usage.
   let prevTotal = null;
@@ -1540,9 +1629,9 @@ async function renderProjection(mtdUsd, byModel) {
     '<div class="stat"><div class="label">Avg Daily Spend</div>' +
       '<div class="value">' + fmtMoney(avgDaily) + '</div>' +
       '<div class="sub">day ' + dayOfMonth + ' of ' + daysInMonth + '</div></div>' +
-    '<div class="stat"><div class="label">Projected Month <span class="health-info" data-tip="Avg Daily Spend excludes Z.AI token costs. Projection adds Z.AI flat subscription of ' + fmtMoney(flatFee) + ' for the full month.">?</span></div>' +
+    '<div class="stat"><div class="label">Projected Month <span class="health-info" data-tip="Based on ' + projectedFrom + ' balance deltas (Moonshot+DeepSeek) + Z.AI est. tokens + Z.AI flat subscription of ' + fmtMoney(flatFee) + '. Avg Daily Spend excludes Z.AI token costs.">?</span></div>' +
       '<div class="value">' + fmtMoney(projected) + '</div>' +
-      '<div class="sub">avg × ' + daysInMonth + ' days</div></div>' +
+      '<div class="sub">' + projectedFrom + ' rate × ' + daysInMonth + ' days</div></div>' +
     '<div class="stat"><div class="label">vs Last Month</div>' + vsHtml + '</div>';
 }
 

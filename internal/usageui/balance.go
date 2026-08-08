@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -92,6 +93,95 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 
 	writeJSON(w, BalancesResponse{Moonshot: moonshot, DeepSeek: deepseek, Zai: zai})
+}
+
+// ---- /api/balance-spend ----
+
+// PeriodSpend holds confirmed spend values for one provider across multiple
+// period lengths, derived from balance snapshots.
+type PeriodSpend struct {
+	Day   *float64 `json:"day"`
+	Week  *float64 `json:"week"`
+	Month *float64 `json:"month"`
+}
+
+// BalanceSpendResponse maps provider name to its period-level confirmed spend.
+// Only providers with USD-denominated balances are included; credit-based
+// providers (Z.AI) are omitted because credit spend is not convertible to USD.
+type BalanceSpendResponse struct {
+	Moonshot PeriodSpend `json:"moonshot"`
+	DeepSeek PeriodSpend `json:"deepseek"`
+}
+
+func (s *Server) handleBalanceSpend(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+
+	var resp BalanceSpendResponse
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		resp.Moonshot = s.confirmedPeriodSpend(config.ProviderMoonshot, now)
+	}()
+	go func() {
+		defer wg.Done()
+		resp.DeepSeek = s.confirmedPeriodSpend(config.ProviderDeepSeek, now)
+	}()
+	wg.Wait()
+
+	writeJSON(w, resp)
+}
+
+func (s *Server) confirmedPeriodSpend(prov config.Provider, now time.Time) PeriodSpend {
+	var ps PeriodSpend
+	for _, b := range basesForTime(now) {
+		rng := periodRange(b.basis, b.periodStart)
+		spend, err := s.store.ConfirmedSpend(prov, b.basis, rng.after, rng.before)
+		if err != nil {
+			slog.Warn("confirmed spend query failed", "provider", prov, "basis", b.basis, "err", err)
+			continue
+		}
+		if spend < 0 {
+			continue
+		}
+		v := spend
+		switch b.basis {
+		case "day":
+			ps.Day = &v
+		case "week":
+			ps.Week = &v
+		case "month":
+			ps.Month = &v
+		}
+	}
+	return ps
+}
+
+type periodBounds struct{ after, before time.Time }
+
+// periodRange returns the snapshot search window for a period basis starting at
+// periodStart. after is the first moment of the period, before the last.
+// Disambiguation relies on the basis label because day/week/month starts can
+// coincide (e.g. the 1st landing on a Monday).
+func periodRange(basis string, periodStart time.Time) periodBounds {
+	y, m, _ := periodStart.Date()
+	var end time.Time
+	switch basis {
+	case "week":
+		end = periodStart.AddDate(0, 0, 7)
+	case "month":
+		if m == time.December {
+			end = time.Date(y+1, 1, 1, 0, 0, 0, 0, time.UTC)
+		} else {
+			end = time.Date(y, m+1, 1, 0, 0, 0, 0, time.UTC)
+		}
+	case "day":
+		end = periodStart.AddDate(0, 0, 1)
+	default:
+		end = periodStart.Add(24 * time.Hour) // sample
+	}
+	return periodBounds{after: periodStart, before: end.Add(-1 * time.Second)}
 }
 
 func fetchMoonshotBalance(client *http.Client, getKey func() (string, bool)) ProviderBalance {

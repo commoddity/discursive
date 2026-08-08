@@ -48,6 +48,7 @@ type Server struct {
 	keySource  KeySource
 	httpClient *http.Client // optional; tests inject a mock transport
 	live       *config.LiveSettings
+	snapCtrl   *SnapshotController
 }
 
 // NewServer creates a usage UI server backed by the given store.
@@ -95,6 +96,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/exchange-rate", s.handleExchangeRate)
 	mux.HandleFunc("/api/balances", s.handleBalances)
+	mux.HandleFunc("/api/balance-spend", s.handleBalanceSpend)
 	mux.HandleFunc("/api/reasoning-effort", s.handleReasoningEffort)
 	mux.HandleFunc("/api/zai-flat-fee", s.handleZaiFlatFee)
 
@@ -108,8 +110,12 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Shutdown gracefully stops the server.
+// Shutdown gracefully stops the server and any background goroutines.
 func (s *Server) Shutdown() error {
+	if s.snapCtrl != nil {
+		s.snapCtrl.Stop()
+		s.snapCtrl = nil
+	}
 	if s.httpSrv != nil {
 		return s.httpSrv.Close()
 	}

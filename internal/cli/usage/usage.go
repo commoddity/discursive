@@ -66,6 +66,7 @@ pricing.  Defaults to today's usage.  Use --date for a specific day,
 	cmd.Flags().IntVar(&daysFlag, "days", 0, "show usage for the last N days (array of daily summaries)")
 
 	cmd.AddCommand(newPurgeCmd(portable))
+	cmd.AddCommand(newPruneSnapshotsCmd(portable))
 	return cmd
 }
 
@@ -121,6 +122,64 @@ Use --dry-run to see how many events would be deleted without actually deleting.
 	}
 
 	cmd.Flags().StringVar(&maxAgeFlag, "max-age", "90d", "delete events older than this duration (e.g. 24h, 7d, 30d, 90d)")
+	cmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "show what would be deleted without actually deleting")
+	return cmd
+}
+
+func newPruneSnapshotsCmd(portable func() bool) *cobra.Command {
+	var maxAgeFlag string
+	var dryRunFlag bool
+
+	cmd := &cobra.Command{
+		Use:   "prune-snapshots",
+		Short: "🗑️  Delete balance snapshots older than a max age",
+		Long: `🗑️  Prune balance snapshots older than --max-age.
+
+Snapshots are the raw balance readings used to compute confirmed spend.
+Old snapshots are no longer needed once the period is complete.
+Supports Go duration strings: 24h, 7d, 90d, 30d, etc.
+Use --dry-run to see how many would be deleted without actually deleting.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			util.SetupLogger()
+			dataRoot, err := util.ResolveDataRoot(portable())
+			if err != nil {
+				return err
+			}
+			store, err := usagepkg.NewStore(dataRoot)
+			if err != nil {
+				return err
+			}
+
+			dur, err := time.ParseDuration(maxAgeFlag)
+			if err != nil {
+				if len(maxAgeFlag) > 1 && maxAgeFlag[len(maxAgeFlag)-1] == 'd' {
+					daysStr := maxAgeFlag[:len(maxAgeFlag)-1]
+					if daysVal, err2 := time.ParseDuration(daysStr + "h"); err2 == nil {
+						dur = daysVal * 24
+					} else {
+						return fmt.Errorf("invalid --max-age %q: must be a Go duration (24h, 90d, etc.)", maxAgeFlag)
+					}
+				} else {
+					return fmt.Errorf("invalid --max-age %q: %w", maxAgeFlag, err)
+				}
+			}
+
+			cutoff := time.Now().UTC().Add(-dur)
+			n, err := store.DeleteBalanceSnapshotsBefore(cutoff)
+			if err != nil {
+				return err
+			}
+
+			if dryRunFlag {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Would delete %d balance snapshots older than %v (%s ago)\n", n, cutoff.Format("2006-01-02 15:04"), maxAgeFlag)
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Deleted %d balance snapshots older than %v (%s ago)\n", n, cutoff.Format("2006-01-02 15:04"), maxAgeFlag)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&maxAgeFlag, "max-age", "90d", "delete snapshots older than this duration (e.g. 24h, 7d, 30d, 90d)")
 	cmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "show what would be deleted without actually deleting")
 	return cmd
 }
