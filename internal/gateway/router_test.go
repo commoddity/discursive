@@ -623,6 +623,67 @@ func TestSmartRouter_DisabledPreservesModelAndClassifies(t *testing.T) {
 	}
 }
 
+// TestPerTurnDowngrade_ToolResultSmall verifies that a tool-result turn with a
+// small result gets downgraded to flash EVEN when the content class is
+// "editing" (which would normally keep the model). This is the core per-turn
+// routing behavior: the model just received a tool result and needs to decide
+// the next step — a task flash can handle.
+func TestPerTurnDowngrade_ToolResultSmall(t *testing.T) {
+	body := map[string]any{
+		"model": "deepseek-v4-pro",
+		"messages": []any{
+			map[string]any{"role": "system", "content": strings.Repeat("x", 15000)},
+			map[string]any{"role": "user", "content": "refactor the auth module and add tests"},
+			map[string]any{"role": "assistant", "content": "", "tool_calls": []any{}},
+			// Small tool result: "go test" output, ~30 chars
+			map[string]any{"role": "tool", "content": "ok\tinternal/gateway\t0.123s"},
+		},
+	}
+	r := NewSmartRouter(RouterConfig{Enabled: true})
+	result := r.ClassifyAndOverride(body, "req_test")
+
+	if !result.OverrideApplied {
+		t.Errorf("expected override applied for small tool-result turn, got none (class=%q, turn=%q, size=%q)",
+			result.RequestClass, result.TurnType, result.ToolResultSize)
+	}
+	if result.OverrideModel != "deepseek-v4-flash" {
+		t.Errorf("expected deepseek-v4-flash, got %q", result.OverrideModel)
+	}
+	if result.TurnType != TurnToolResult {
+		t.Errorf("expected turn_type=tool_result, got %q", result.TurnType)
+	}
+	if result.ToolResultSize != "small" {
+		t.Errorf("expected tool_result_size=small, got %q", result.ToolResultSize)
+	}
+}
+
+// TestPerTurnDowngrade_ToolResultLargeKeptModel verifies that a tool-result
+// turn with a LARGE result keeps the original model, even though it's a
+// tool-result turn. This is the conservative policy: large results may need
+// pro-level interpretation.
+func TestPerTurnDowngrade_ToolResultLargeKeptModel(t *testing.T) {
+	body := map[string]any{
+		"model": "deepseek-v4-pro",
+		"messages": []any{
+			map[string]any{"role": "system", "content": strings.Repeat("x", 15000)},
+			map[string]any{"role": "user", "content": "refactor the auth module and add tests"},
+			map[string]any{"role": "assistant", "content": "", "tool_calls": []any{}},
+			// Large tool result: >4096 chars
+			map[string]any{"role": "tool", "content": strings.Repeat("x", 5000)},
+		},
+	}
+	r := NewSmartRouter(RouterConfig{Enabled: true})
+	result := r.ClassifyAndOverride(body, "req_test")
+
+	if result.OverrideApplied {
+		t.Errorf("expected NO override for large tool-result turn, got override to %q (class=%q, turn=%q, size=%q)",
+			result.OverrideModel, result.RequestClass, result.TurnType, result.ToolResultSize)
+	}
+	if result.ToolResultSize != "large" {
+		t.Errorf("expected tool_result_size=large, got %q", result.ToolResultSize)
+	}
+}
+
 func TestShouldDowngrade(t *testing.T) {
 	tests := []struct {
 		class RequestClass
@@ -643,6 +704,32 @@ func TestShouldDowngrade(t *testing.T) {
 		t.Run(string(tt.class), func(t *testing.T) {
 			if got := shouldDowngrade(tt.class); got != tt.want {
 				t.Errorf("shouldDowngrade(%q) = %v, want %v", tt.class, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShouldDowngradeTurn(t *testing.T) {
+	tests := []struct {
+		name           string
+		turnType       TurnType
+		toolResultSize string
+		want           bool
+	}{
+		{"tool_result small → downgrade", TurnToolResult, "small", true},
+		{"tool_result medium → downgrade", TurnToolResult, "medium", true},
+		{"tool_result large → keep (conservative)", TurnToolResult, "large", false},
+		{"tool_result empty size → keep", TurnToolResult, "", false},
+		{"tool_result bogus size → keep", TurnToolResult, "enormous", false},
+		{"user_prompt → keep", TurnUserPrompt, "", false},
+		{"agent_continue → keep", TurnAgentContinue, "", false},
+		{"unknown turn → keep", TurnUnknown, "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldDowngradeTurn(tt.turnType, tt.toolResultSize); got != tt.want {
+				t.Errorf("shouldDowngradeTurn(%q, %q) = %v, want %v", tt.turnType, tt.toolResultSize, got, tt.want)
 			}
 		})
 	}

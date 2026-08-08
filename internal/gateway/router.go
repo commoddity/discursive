@@ -153,9 +153,13 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 	// Step 3: content-based classification.
 	result.RequestClass = classifyRequest(body)
 
-	// Determine whether this turn would be downgraded (based on request class only).
-	// This is logged but NOT acted on — it's pure instrumentation to measure opportunity.
-	wouldDowngrade := shouldDowngrade(result.RequestClass)
+	// Determine whether this turn should be downgraded.
+	// Two independent signals can trigger a downgrade:
+	//   (a) content class — simple lookup, code search, structured extraction, etc.
+	//   (b) per-turn — small/medium tool-result rounds within a multi-step agent flow.
+	// The per-turn signal is conservative: large tool results are excluded to
+	// minimize continuity risk (big outputs may need pro-level interpretation).
+	wouldDowngrade := shouldDowngrade(result.RequestClass) || shouldDowngradeTurn(result.TurnType, result.ToolResultSize)
 
 	// Always log classification at DEBUG so operators can tune thresholds.
 	lastMsg := lastUserMessage(body)
@@ -187,8 +191,8 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 		return result
 	}
 
-	// Determine whether to downgrade based on request class.
-	if !shouldDowngrade(result.RequestClass) {
+	// Determine whether to downgrade: content class OR per-turn tool-result signal.
+	if !wouldDowngrade {
 		return result
 	}
 
@@ -206,11 +210,19 @@ func (r *SmartRouter) ClassifyAndOverride(body map[string]any, requestID string)
 
 	result.OverrideModel = override
 	result.OverrideApplied = true
-	result.OverrideReason = string(result.RequestClass) + " downgrade (" + result.OriginalModel + " → " + override + ")"
+
+	// Build a reason that identifies which signal triggered the downgrade.
+	reason := string(result.RequestClass)
+	if shouldDowngradeTurn(result.TurnType, result.ToolResultSize) {
+		reason += "+" + string(result.TurnType) + "/" + result.ToolResultSize
+	}
+	result.OverrideReason = reason + " downgrade (" + result.OriginalModel + " → " + override + ")"
 	body["model"] = override
 	slog.Info("router: model_overridden",
 		"request_id", requestID,
 		"request_class", result.RequestClass,
+		"turn_type", result.TurnType,
+		"tool_result_size", result.ToolResultSize,
 		"from", result.OriginalModel,
 		"to", override,
 		"sys_prompt_len", result.SysPromptLen,
@@ -230,6 +242,26 @@ func shouldDowngrade(c RequestClass) bool {
 		return true
 	case ClassEditing, ClassComplexReasoning, ClassUnknown:
 		return false
+	default:
+		return false
+	}
+}
+
+// shouldDowngradeTurn returns true when a tool-result turn is safe to run on a
+// cheaper model. This is the per-turn routing signal: within a multi-step agent
+// flow, the model just received a tool result and must decide the next step —
+// a task that typically does not require full reasoning capability.
+//
+// Conservative policy: only downgrade small and medium tool results. Large
+// results (e.g. full file trees, large diffs, verbose logs) are kept on the
+// original model because they may require pro-level interpretation.
+func shouldDowngradeTurn(turnType TurnType, toolResultSize string) bool {
+	if turnType != TurnToolResult {
+		return false
+	}
+	switch toolResultSize {
+	case "small", "medium":
+		return true
 	default:
 		return false
 	}
