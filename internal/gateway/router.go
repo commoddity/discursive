@@ -223,6 +223,11 @@ func classifyRequest(body map[string]any) RequestClass {
 
 	lower := strings.ToLower(stripped)
 
+	// Raw (untrimmed) content of the last user message, including Cursor's
+	// attached code_selection / terminal_selection parts. Used to recover a
+	// lint/CI signal that lives in the attachment (not the laconic prompt).
+	raw := rawUserMessageContent(body)
+
 	// Structured extraction: response_format json_object / json_schema.
 	// This is independent of message content and takes highest priority.
 	if hasStructuredOutput(body) {
@@ -265,6 +270,16 @@ func classifyRequest(body map[string]any) RequestClass {
 	// prevent false positives from editing tasks.
 	if isCodeSearch(lower) {
 		return ClassCodeSearch
+	}
+
+	// Mechanical fix: a laconic fix-family prompt ("fix all these") backed by
+	// attached lint/CI output (code_selection with eslint/astro-lint/
+	// golangci-lint, terminal_selection showing "exit status 1", "no-undef",
+	// pre-commit) is a deterministic cleanup — flash handles it, so treat it as
+	// automation rather than editing. Real code edits ("fix the nil pointer
+	// dereference") carry no such markers and still route to editing below.
+	if isEditing(lower) && isMechanicalLintSignal(raw) {
+		return ClassAutomation
 	}
 
 	// Editing / refactoring: message mentions editing, modifying, refactoring.
@@ -434,6 +449,43 @@ func isLintTask(lower string) bool {
 	return false
 }
 
+// isMechanicalLintSignal returns true when the attached message content (the
+// raw, unstripped last-user-message including Cursor's code_selection and
+// terminal_selection parts) carries strong lint / static-analysis / CI
+// markers. Cursor strips these attachments from the visible prompt, so a
+// laconic prompt like "fix all these" loses the "lint" evidence unless we
+// scan the raw content. Used to reclassify fix prompts with lint attachments
+// as automation (flash) while real code edits stay on pro.
+//
+// Markers name the *mechanisms* that produce mechanical cleanup work:
+// specific linter tool names and their common error output, plus pre-commit
+// / formatting tooling. A lone "fix" word in a code edit ("fix the nil
+// pointer dereference in proxy.go") matches none of these.
+func isMechanicalLintSignal(raw string) bool {
+	markers := []string{
+		"eslint", "astro-lint", "astro-format",
+		"golangci-lint", "golangci", "stylelint",
+		"prettier", "lefthook", "pre-commit",
+		"no-undef",
+		"exit status", "check diagnostics",
+		"lint", "linting", "linter",
+		"formatting", "format errors",
+	}
+	r := strings.ToLower(raw)
+	for _, m := range markers {
+		if strings.Contains(r, m) {
+			return true
+		}
+	}
+	// "format" alone is too broad (appears in many non-lint contexts), but
+	// when it appears near the word "check" it signals the astro-format /
+	// prettier-style pre-commit gate.
+	if strings.Contains(r, "format") && strings.Contains(r, "check") {
+		return true
+	}
+	return false
+}
+
 // isComplexReasoning returns true when the message requires architectural or
 // deep reasoning that benefits from pro-level models. Triggers on both prefix
 // keywords and message-length+pattern heuristics.
@@ -525,8 +577,47 @@ func lastUserMessage(body map[string]any) string {
 	return ""
 }
 
-// messageRoles returns a compact role-sequence string for logging, e.g.
-// "system, user, tool, user".
+// rawUserMessageContent returns the full, untrimmed text of the last user
+// message, including Cursor's attached code_selection / terminal_selection
+// parts (which carry lint/CI evidence that the visible <user_query> prompt
+// omits). Unlike lastUserMessage / stripCursorNoise, this does not extract
+// only the <user_query> inner text — the entire part content is kept so
+// attachment signals survive for isMechanicalLintSignal.
+func rawUserMessageContent(body map[string]any) string {
+	msgs, ok := body["messages"].([]any)
+	if !ok {
+		return ""
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		msg, ok := msgs[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := msg["role"].(string)
+		if role != "user" {
+			continue
+		}
+		if parts, ok := msg["content"].([]any); ok {
+			var sb strings.Builder
+			for _, p := range parts {
+				pmap, ok := p.(map[string]any)
+				if !ok {
+					continue
+				}
+				if text, ok := pmap["text"].(string); ok {
+					sb.WriteString(text)
+					sb.WriteString(" ")
+				}
+			}
+			return sb.String()
+		}
+		if s, ok := msg["content"].(string); ok {
+			return s
+		}
+		return ""
+	}
+	return ""
+}
 func messageRoles(body map[string]any) string {
 	msgs, ok := body["messages"].([]any)
 	if !ok {

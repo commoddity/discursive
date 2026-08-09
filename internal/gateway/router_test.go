@@ -117,6 +117,66 @@ func TestSubAgentRouter_SubagentDetection(t *testing.T) {
 	}
 }
 
+// cursorMessageParts reproduces a Cursor last-user-message as an array of
+// content parts: a text part that carries the huge context block (recently
+// viewed files, attached code selection, terminal output) plus the <user_query>
+// wrapper holding the real laconic prompt. This is the shape that previously
+// caused "fix all these" with a lint attachment to miss the automation
+// classifier and stay on the expensive model.
+func cursorMessageParts(attachMarker, prompt string) map[string]any {
+	return map[string]any{
+		"role": "user",
+		"content": []any{
+			map[string]any{
+				"type": "text",
+				"text": "<system_reminder>context</system_reminder>\n<open_and_recently_viewed_files>\n</open_and_recently_viewed_files>\n" +
+					"<code_selection path=\"x/m.js\">\n" + attachMarker + "\n</code_selection>\n" +
+					"<timestamp>today</timestamp>\n<user_query>" + prompt + "</user_query>",
+			},
+		},
+	}
+}
+
+func TestContentClassification_LintAttachDowngrades(t *testing.T) {
+	tests := []struct {
+		name         string
+		attachMarker string
+		prompt       string
+		wantClass    RequestClass
+	}{
+		{
+			name:         "fix all these + eslint no-undef attach → automation (flash)",
+			attachMarker: "✖ 3 problems (3 errors)\n/path/file.mjs\n  36:19  error  'document' is not defined  no-undef\n\nexit status 1",
+			prompt:       "fix all these",
+			wantClass:    ClassAutomation,
+		},
+		{
+			name:         "fix + astro-lint pre-commit output attach → automation (flash)",
+			attachMarker: "lefthook v2.1.10 hook: pre-commit\n┃  astro-lint ❯\nexit status 1\n┃  prettier: code style issues",
+			prompt:       "fix the formatting",
+			wantClass:    ClassAutomation,
+		},
+		{
+			name:         "real code edit without lint markers stays editing",
+			attachMarker: "func f() *T { return nil }",
+			prompt:       "Fix the nil pointer dereference in proxy.go",
+			wantClass:    ClassEditing,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := map[string]any{
+				"model":    "deepseek-v4-pro",
+				"messages": []any{cursorMessageParts(tt.attachMarker, tt.prompt)},
+			}
+			got := classifyRequest(body)
+			if got != tt.wantClass {
+				t.Errorf("classifyRequest() = %q, want %q", got, tt.wantClass)
+			}
+		})
+	}
+}
+
 func TestContentClassification_DowngradePath(t *testing.T) {
 	tests := []struct {
 		name         string
