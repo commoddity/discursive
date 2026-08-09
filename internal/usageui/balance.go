@@ -100,9 +100,10 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 // PeriodSpend holds confirmed spend values for one provider across multiple
 // period lengths, derived from balance snapshots.
 type PeriodSpend struct {
-	Day   *float64 `json:"day"`
-	Week  *float64 `json:"week"`
-	Month *float64 `json:"month"`
+	Day     *float64 `json:"day"`
+	Week    *float64 `json:"week"`
+	Month   *float64 `json:"month"`
+	Covered bool     `json:"covered"` // true when we have a boundary snapshot near period start
 }
 
 // BalanceSpendResponse maps provider name to its period-level confirmed spend.
@@ -155,6 +156,16 @@ func (s *Server) confirmedPeriodSpend(prov config.Provider, now time.Time) Perio
 			ps.Month = &v
 		}
 	}
+	// Check if the month period is fully covered (boundary snapshot exists near
+	// the 1st of the month). Use a 1-hour tolerance — the controller captures
+	// every 15 minutes, so the first boundary snapshot should appear within
+	// the first hour of a new period.
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	covered, err := s.store.PeriodCovered(prov, "month", monthStart, time.Hour)
+	if err != nil {
+		slog.Warn("period covered check failed", "provider", prov, "err", err)
+	}
+	ps.Covered = covered
 	return ps
 }
 

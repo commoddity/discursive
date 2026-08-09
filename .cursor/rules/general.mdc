@@ -51,6 +51,7 @@ Mandatory protocol for EVERY task:
 | Cobra CLI commands, flags, `RunE`, help/completion | `.cursor/rules/cobra.mdc` |
 | CI workflows / GitHub Actions / release tagging / GoReleaser | `.cursor/rules/release.mdc` |
 | Test craft / cross-platform paths / t.Setenv / table-driven tests | `.cursor/rules/testing.mdc` |
+| Subagent router / compression / model override | `.cursor/rules/gateway.mdc` |
 | Gateway + Cursor behavior together | `gateway.mdc` **and** `cursor-settings.mdc` (+ `kimi.mdc` / `deepseek.mdc` / `thaura.mdc` for upstream) |
 | Anything else or unsure | this file + ask |
 
@@ -87,6 +88,7 @@ internal/
   usage/             # pricing table + per-session accounting
   usageui/           # embedded usage dashboard (HTTP server + static assets)
   doctor/            # health checks
+.cursor/agents/      # subagent definitions dispatched by the gateway router
 examples/use-kimi-on-cursor/  # behavioral reference
 .cursor/rules/       # this tree
 .cursor/skills/      # invocable agent skills
@@ -341,6 +343,7 @@ to the user. Never split without approval.
 | Thaura AI request/response quirks | `thaura.mdc` |
 | Z.AI request/response quirks | `zai.mdc` |
 | Sanitizer / tool schema / stream / model alias policy | `gateway.mdc` |
+| Subagent router / compression / model override | `gateway.mdc` |
 | Cursor settings reference / model alias map | `cursor-settings.mdc` |
 | Tunnel flapping / cloudflared missing / ephemeral URL | `tunnel.mdc` |
 | Secrets, data dirs, autostart (Unix) | `unix-packaging.mdc` |
@@ -363,7 +366,7 @@ self-references) must appear in the Routing Map and/or this table.
 See `.cursor/rules/release.mdc` for the full release process, CI workflow
 details, and GitHub Actions deprecation guidance.
 
-<!-- last-verified: 2026-07 -->
+<!-- last-verified: 2026-08 -->
 
 ---
 
@@ -374,6 +377,7 @@ details, and GitHub Actions deprecation guidance.
 | `/add-model` | `.cursor/skills/add-model/SKILL.md` | Add a model within an existing provider (Moonshot/Kimi or DeepSeek) end-to-end |
 | `/add-provider` | `.cursor/skills/add-provider/SKILL.md` | Add an entire new AI provider end-to-end (superset of `/add-model`) |
 | `/dialectic-of-cognition` | `.cursor/skills/dialectic-of-cognition/SKILL.md` | Capture session learnings into `.cursor/rules/*.mdc` |
+| `/open-pr` | `.cursor/skills/open-pr/SKILL.md` | Create a GitHub PR from current branch with diff summary and review guidance |
 | `/task-1-plan` | `.cursor/skills/task-1-plan/SKILL.md` | Plan/re-plan one `planning/TXX` task |
 | `/task-2-execute` | `.cursor/skills/task-2-execute/SKILL.md` | Execute one phase task until AC pass; hand off to `/task-3-complete` |
 | `/task-3-complete` | `.cursor/skills/task-3-complete/SKILL.md` | Verify + dialectic + INDEX `✅` + commit + push (default) + manual test + next `<stub-stem>` branch |
@@ -384,5 +388,6 @@ details, and GitHub Actions deprecation guidance.
 | Store | Use for |
 | ----- | --- |
 | `.cursor/rules/*.mdc` | Coding agent conventions / framework failure modes |
+| `.cursor/agents/*.md` | Subagent definitions (model, tools, prompt) dispatched by gateway subagent router |
 | App data dir (see `unix-packaging.mdc`) | Runtime config, usage logs, cloudflared binary — **not** repo files |
 | `planning/` | Locally-scoped planning artifacts (gitignored) |

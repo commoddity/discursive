@@ -107,6 +107,30 @@ func (s *Store) DeleteBalanceSnapshotsBefore(cutoff time.Time) (int64, error) {
 	return n, nil
 }
 
+// PeriodCovered reports whether the earliest snapshot for provider+basis was
+// captured within tolerance of the period start. A period is "covered" when
+// we have a boundary snapshot near the period start, meaning the balance delta
+// reflects the full period rather than a partial window.
+func (s *Store) PeriodCovered(provider config.Provider, basis string, periodStart time.Time, tolerance time.Duration) (bool, error) {
+	var minTS *string
+	err := s.db.QueryRow(
+		`SELECT MIN(captured_at) FROM balance_snapshots
+		 WHERE provider = ? AND basis = ? AND captured_at >= ?`,
+		string(provider), basis, periodStart.UTC().Format(time.RFC3339Nano),
+	).Scan(&minTS)
+	if err != nil {
+		return false, fmt.Errorf("period covered check: %w", err)
+	}
+	if minTS == nil {
+		return false, nil
+	}
+	ts, err := time.Parse(time.RFC3339Nano, *minTS)
+	if err != nil {
+		return false, fmt.Errorf("parse captured_at in period covered check: %w", err)
+	}
+	return ts.Sub(periodStart) <= tolerance, nil
+}
+
 // LatestBalanceSnapshots returns the most recent snapshot per provider+basis.
 func (s *Store) LatestBalanceSnapshots() ([]BalanceSnapshot, error) {
 	rows, err := s.db.Query(

@@ -4,6 +4,7 @@ description: >
   Execute one Planned/Pending MVP phase task from planning/. Implement
   until acceptance criteria pass, record verification, then hand off to
   /task-3-complete. Manual only — /task-2-execute TXX.
+model: deepseek-v4-pro
 disable-model-invocation: true
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---

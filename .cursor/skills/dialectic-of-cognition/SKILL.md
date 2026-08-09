@@ -2,7 +2,8 @@
 name: dialectic-of-cognition
 description: >
   Capture session learnings into project rules.
-  Invoke manually at end of session; also from /task-3-complete. Never auto-trigger.
+  Invoke manually at end of session; also from /task-3-complete.   Never auto-trigger.
+model: deepseek-v4-pro
 disable-model-invocation: true
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---

@@ -46,6 +46,30 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Compress verbose tool results before routing/classification.
+	if s.compressor != nil {
+		stats, err := s.compressor.Compress(r.Context(), sanitized.Body)
+		if err != nil {
+			slog.Warn("compress: failed, sending original", "request_id", requestID, "err", err)
+		} else if stats.ToolResultsCompressed > 0 {
+			slog.Info("compress: tool_results", "request_id", requestID,
+				"compressed", stats.ToolResultsCompressed,
+				"chars_before", stats.CharsBefore, "chars_after", stats.CharsAfter)
+		}
+
+		// Compress long conversation history (after tool-result compression,
+		// so the summarizer sees already-compressed tool results).
+		histStats, err := s.compressor.CompressHistory(r.Context(), sanitized.Body)
+		if err != nil {
+			slog.Warn("compress: history_failed, sending original", "request_id", requestID, "err", err)
+		} else if histStats.HistoryMsgsCompressed > 0 {
+			slog.Info("compress: history", "request_id", requestID,
+				"msgs_compressed", histStats.HistoryMsgsCompressed,
+				"chars_before", histStats.HistoryCharsBefore,
+				"chars_after", histStats.HistoryCharsAfter)
+		}
+	}
+
 	// Apply cache-optimization pass after sanitization.
 	OptimizeRequest(sanitized, OptimizeConfig{PromptCacheKey: s.sessionID})
 

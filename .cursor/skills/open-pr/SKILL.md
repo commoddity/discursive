@@ -3,7 +3,8 @@ name: open-pr
 description: >
     Create a GitHub PR from the current branch in this Discursive Go repo.
     Generates PR description with functional line count, key files to review,
-    and non-technical summary from the git diff. Supports draft mode.
+    and non-technical summary from the git diff.   Supports draft mode.
+model: deepseek-v4-flash
 disable-model-invocation: true
 allowed-tools: Bash, Read
 ---

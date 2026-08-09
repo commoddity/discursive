@@ -77,8 +77,8 @@ func TestSubAgentRouter_SubagentDetection(t *testing.T) {
 				},
 			},
 			enabled:      true,
-			wantClass:    ClassSimpleLookup, // "hi" ≤ 120 chars → simple lookup
-			wantOverride: "deepseek-v4-flash",
+			wantClass:    ClassUnknown, // short but no recognizable prefix → unknown (conservative)
+			wantOverride: "",
 		},
 	}
 
@@ -161,6 +161,30 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 			wantOverride: "deepseek-v4-flash",
 		},
 		{
+			name: "summarization: capture conversation → flash",
+			body: map[string]any{
+				"model": "deepseek-v4-pro",
+				"messages": []any{
+					map[string]any{"role": "system", "content": longSystemPrompt},
+					map[string]any{"role": "user", "content": "Capture the entire conversation into a dense, structured markdown summary file. Write it to disk."},
+				},
+			},
+			wantClass:    ClassSimpleLookup, // summarization beats editing (despite "write")
+			wantOverride: "deepseek-v4-flash",
+		},
+		{
+			name: "summarization: summarize this chat → flash",
+			body: map[string]any{
+				"model": "deepseek-v4-pro",
+				"messages": []any{
+					map[string]any{"role": "system", "content": longSystemPrompt},
+					map[string]any{"role": "user", "content": "Condense the following code review into key action items."},
+				},
+			},
+			wantClass:    ClassSimpleLookup, // summarization beats editing
+			wantOverride: "deepseek-v4-flash",
+		},
+		{
 			name: "code search: find keyword → flash",
 			body: map[string]any{
 				"model": "deepseek-v4-pro",
@@ -195,6 +219,37 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 			},
 			wantClass:    ClassCodeSearch,
 			wantOverride: "deepseek-v4-flash",
+		},
+		{
+			name: "code search: long exploration → code search (exploration guard)",
+			body: map[string]any{
+				"model": "deepseek-v4-pro",
+				"messages": []any{
+					map[string]any{"role": "system", "content": longSystemPrompt},
+					map[string]any{"role": "user", "content": `I need to understand the webhook server architecture in this Go repo for adding a new endpoint. Please explore:
+
+1. The main router in internal/gateway/router.go
+2. The handler registration in internal/gateway/server.go
+3. Find all existing webhook endpoints (look for "/webhook" patterns)
+4. List the middleware chain applied to POST endpoints
+
+This is a read-only exploration task — do not modify any files.`},
+				},
+			},
+			wantClass:    ClassCodeSearch, // exploration guard blocks long-message heuristic; falls through to code search
+			wantOverride: "deepseek-v4-flash",
+		},
+		{
+			name: "code search + complex keyword → complex reasoning (explicit signals beat guard)",
+			body: map[string]any{
+				"model": "deepseek-v4-pro",
+				"messages": []any{
+					map[string]any{"role": "system", "content": longSystemPrompt},
+					map[string]any{"role": "user", "content": "Explore the authentication system and recommend a scalability strategy. Analyze trade-offs between JWT and sessions for a high-traffic API."},
+				},
+			},
+			wantClass:    ClassComplexReasoning, // "trade-off" keyword triggers complex BEFORE code search
+			wantOverride: "",
 		},
 		{
 			name: "structured extraction: json_object → flash",
@@ -387,8 +442,8 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 					map[string]any{"role": "user", "content": "Let's get started"},
 				},
 			},
-			wantClass:    ClassSimpleLookup, // ≤ 120 chars → simple lookup → downgrade
-			wantOverride: "deepseek-v4-flash",
+			wantClass:    ClassUnknown, // no recognizable pattern → keep model (conservative)
+			wantOverride: "",
 		},
 	}
 
@@ -443,6 +498,11 @@ func TestContentClassification_OrderOfPrecedence(t *testing.T) {
 			userMsg:   "Extract names",
 			extra:     map[string]any{"response_format": map[string]any{"type": "json_object"}},
 			wantClass: ClassStructuredExtraction,
+		},
+		{
+			name:      "summarization beats editing (contains 'write' and 'capture' but is text synthesis)",
+			userMsg:   "Capture the conversation into a dense summary and write it to a file",
+			wantClass: ClassSimpleLookup,
 		},
 		{
 			name:      "refactor + pr → editing over automation (edited keyword wins for mixed)",

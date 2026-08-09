@@ -3,7 +3,8 @@ name: task-1-plan
 description: >
   Plan or re-plan a single MVP phase task from planning/. Produce a
   handoff-ready plan so a lesser/cheaper model can run /task-2-execute. Prefer
-  a large model for this skill. Manual only — /task-1-plan TXX.
+  a large model for this skill.   Manual only — /task-1-plan TXX.
+model: deepseek-v4-pro
 disable-model-invocation: true
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---

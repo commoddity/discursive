@@ -7,6 +7,7 @@ description: >-
   checks, pricing map, usage UI dashboard (colors, logos, balance fetch,
   effort labels, pricing table), rules files, README sections, and tests.
   Manual-only — /add-provider.
+model: deepseek-v4-pro
 disable-model-invocation: true
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---

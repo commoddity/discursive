@@ -192,3 +192,32 @@ the message role is not `user`/`developer` (e.g. tool-result rounds).
 | Separation | Gated on `DiagnosticDump`, NOT on `Enabled`. Dumps can fire even when the subagent router is disabled, and remain silent even when the router is enabled unless the diagnostic flag is also set. |
 
 <!-- last-verified: 2026-08 -->
+
+### `Compression — opt-in tool-result and history summarization`
+
+The `--compress` flag enables two compression strategies:
+
+- **Tool-result compression**: tool output > threshold chars is summarized by flash model
+- **History compression**: long conversation histories are compressed before upstream
+- **Fail-open**: empty or error summaries → original content sent upstream (no quality loss)
+- **Content-hash cache** + singleflight dedup: same content compressed only once
+- **Flash model** (`deepseek-v4-flash`) used for summarization
+
+| Aspect | Detail |
+| ------- | ------ |
+| Flag | `--compress` (CLI), `CompressEnabled bool` |
+| Default | `false` (off) — must be explicitly enabled |
+| Threshold | `toolResultMaxLen` (controlling when tool output gets compressed) |
+| Strategy | Two-stage: tool result messages, then conversation history |
+| Cache | Content-hash keyed, singleflight dedup, semaphore-bounded concurrency |
+| Fail-open | On any error (timeout, rejection, empty summary), original body returned unchanged |
+
+#### Debugging compression from logs
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `grep "compress"` returns no matches in gateway JSONL logs | Escaped JSON strings defeat literal grep | Parse with `python3 -c "import json,sys; [print(l.strip()) for l in sys.stdin if 'compress' in l.lower()]"` — use JSONL-aware parsing, not raw grep |
+| `compress: flash model returned empty summary (content N chars)` warning | Flash model occasionally fails to produce a summary for certain content | Expected — compression is fail-open so original content is sent upstream; no quality degradation. Tune if >20% failure rate |
+| Compression saves no tokens (cache hits all misses) | Content-hash cache not warmed, or content is already under compression threshold | Expected for first request with unique content; significant savings appear on multi-turn sessions with repeated tool results |
+
+<!-- last-verified: 2026-08 -->

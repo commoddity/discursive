@@ -97,4 +97,15 @@ internal/
 | ----- | ---- | ----- |
 | Structured slog JSON lines interleave with interactive TUI prompts, breaking both the visual flow for the user and `| jq .` pipe consumers | slog writes to stdout (default) while interactive UI also writes to stdout; the two streams intermix | Redirect interactive prompts to stderr; wrap interactive sections by replacing the default slog handler with one writing to `io.Discard`, then restoring on `defer` |
 
-<!-- last-verified: 2026-07 -->
+### `Common golangci-lint rejects before commit`
+
+These two patterns repeatedly trigger `make verify` (pre-commit hook) and should
+be fixed at authoring time — before `git commit`.
+
+| Linter | Pattern | Fix |
+| ------ | ------- | --- |
+| errcheck | `defer resp.Body.Close()` on `*http.Response` | Wrap in a deferred closure: `defer func() { _ = resp.Body.Close() }()`. Never suppress with `//nolint`. |
+| errcheck | `json.NewEncoder(w).Encode(val)` without checking the error | Bind the error: `if err := json.NewEncoder(w).Encode(val); err != nil { http.Error(w, "encode ...", http.StatusInternalServerError); return }`. In test HTTP handlers, return a 500 to the test client. |
+| revive | `var-naming`: field `GetApiKey`, `GetUrl`, `Id` instead of `GetAPIKey`, `GetURL`, `ID` | Initialisms in Go must be all-caps: `API`, `URL`, `ID`. Rename the field and update all call sites across all files. Run `go build ./...` + `go test ./...` after the rename to catch missed sites. |
+
+<!-- last-verified: 2026-08 -->

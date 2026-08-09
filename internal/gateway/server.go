@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,21 +28,23 @@ type ServerConfig struct {
 	ChatURLOverride       map[config.Provider]string // tests only
 	VisionChatURLOverride string                     // tests only
 	SubAgentRouterEnabled bool                       // default true in production (CLI --subagent-router)
+	CompressEnabled       bool                       // default false (CLI --compress)
 }
 
 // Server is the loopback gateway HTTP server.
 type Server struct {
-	cfg       ServerConfig
-	mux       *http.ServeMux
-	httpSrv   *http.Server
-	client    *http.Client
-	store     *usage.Store
-	agg       *usage.Aggregator
-	sessionID string
-	settings  *config.AppSettings
-	live      *config.LiveSettings
-	vision    *vision.Describer
-	router    *SubAgentRouter
+	cfg        ServerConfig
+	mux        *http.ServeMux
+	httpSrv    *http.Server
+	client     *http.Client
+	store      *usage.Store
+	agg        *usage.Aggregator
+	sessionID  string
+	settings   *config.AppSettings
+	live       *config.LiveSettings
+	vision     *vision.Describer
+	router     *SubAgentRouter
+	compressor *Compressor
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -100,6 +103,27 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	}
 	s.vision = vision.NewDescriber(s.client, visionURL, zaiKeyFn)
 	s.router = NewSubAgentRouter(SubAgentRouterConfig{Enabled: cfg.SubAgentRouterEnabled})
+
+	// Wire compressor when --compress is set. If the DeepSeek key is missing,
+	// compression is silently disabled (fail-open — requests flow uncompressed).
+	if cfg.CompressEnabled {
+		deepseekURL, _ := config.ChatCompletionsURL(config.ProviderDeepSeek)
+		// Strip /chat/completions suffix — Compressor.ChatURL expects the base URL.
+		flashBase := strings.TrimSuffix(deepseekURL, "/chat/completions")
+		flashKeyFn := func() (string, bool) {
+			k, err := s.settings.GetDeepSeekKey(s.cfg.DataRoot)
+			if err != nil || k == nil || *k == "" {
+				return "", false
+			}
+			return *k, true
+		}
+		s.compressor = NewCompressor(CompressorConfig{
+			Enabled:    true,
+			ChatURL:    flashBase,
+			GetAPIKey:  flashKeyFn,
+			ShadowMode: true, // history compression logs only, no mutation (until validated)
+		}, s.client)
+	}
 	s.routes()
 	return s, nil
 }

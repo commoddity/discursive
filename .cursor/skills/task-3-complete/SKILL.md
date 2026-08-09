@@ -3,7 +3,8 @@ name: task-3-complete
 description: >
   Close out one MVP phase task: re-run lint+test verify, dialectic, mark INDEX ✅,
   commit, push branch by default (opt out with --no-push), give manual test
-  commands, checkout next stub-stem branch. Manual only — /task-3-complete TXX [--no-push].
+  commands, checkout next stub-stem branch.   Manual only — /task-3-complete TXX [--no-push].
+model: deepseek-v4-flash
 disable-model-invocation: true
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---

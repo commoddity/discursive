@@ -181,12 +181,16 @@ func shouldDowngrade(c RequestClass) bool {
 //
 // Classification priority (higher matches first):
 //  1. Structured extraction (response_format json_object / json_schema)
-//  2. Automation / workflows (git, PR, branch — mechanical orchestration)
-//  3. Complex reasoning (long + multi-requirement)
-//  4. Editing / refactoring (modify, edit, write)
-//  5. Code search (find, search, explore)
-//  6. Simple lookup (question-like, explanation)
-//  7. Catch-all: short message → simple lookup; everything else → unknown
+//  2. Summarization (summarize, condense, capture conversation — deterministic
+//     text synthesis, routes to flash)
+//  3. Automation / workflows (git, PR, branch — mechanical orchestration)
+//  4. Complex reasoning (keyword/prefix signals; long-message heuristic WITH
+//     exploration guard — long+detailed exploration prompts skip the heuristic)
+//  5. Code search (find, search, explore — before editing; narrow keywords to
+//     avoid false positives from incidental mentions like "the search function")
+//  6. Editing / refactoring (modify, edit, write — after code search)
+//  7. Simple lookup (question-like, explanation)
+//  8. Catch-all: everything else → unknown
 //
 // Lint tasks (fix + lint/remove unused/rename) are a sub-case of automation:
 // when the message contains both editing keywords AND lint keywords, the
@@ -196,6 +200,13 @@ func shouldDowngrade(c RequestClass) bool {
 //
 // Classification operates on the stripped message (Cursor XML/summary
 // blocks removed) so we classify on the actual prompt, not the wrapper.
+//
+// Exploration guard: long messages (≥400 chars, ≥3 sentences) that match
+// code-search keywords but NOT explicit complex-reasoning signals (keywords
+// like "trade-off", "system design", or prefixes like "how would you")
+// are NOT classified as complex reasoning. This prevents exploration subagent
+// prompts from hitting the long-message heuristic and instead lets them fall
+// through to code search (which fires before editing).
 func classifyRequest(body map[string]any) RequestClass {
 	lastMsg := lastUserMessage(body)
 	// Strip Cursor-injected XML blocks (open_and_recently_viewed_files,
@@ -216,6 +227,14 @@ func classifyRequest(body map[string]any) RequestClass {
 	// This is independent of message content and takes highest priority.
 	if hasStructuredOutput(body) {
 		return ClassStructuredExtraction
+	}
+
+	// Summarization / synthesis: summarizing conversations, writing structured
+	// summaries, condensing content — deterministic text-synthesis tasks that
+	// flash handles well. Checked early so they route to flash even when the
+	// prompt contains editing keywords like "write" or "capture".
+	if isSummarization(lower) {
+		return ClassSimpleLookup // treated as simple lookup → flash
 	}
 
 	// Automation / workflow: git commands, PR creation, branch operations,
@@ -239,29 +258,26 @@ func classifyRequest(body map[string]any) RequestClass {
 		return ClassComplexReasoning
 	}
 
-	// Editing / refactoring: message mentions editing, modifying, refactoring.
-	// isEditing fires after automation and complex reasoning so purely
-	// mechanical or planning tasks don't get caught here.
-	if isEditing(lower) {
-		return ClassEditing
-	}
-
-	// Code search / exploration: message mentions searching, finding, exploring.
-	// Checked before simple lookup because short search messages exist.
+	// Code search / exploration: message asks to search, find, explore.
+	// Checked before editing so exploration messages that incidentally use
+	// editing keywords (e.g. "for adding a new endpoint") still route to
+	// code search. Narrow keywords (phrases, not single ambiguous words)
+	// prevent false positives from editing tasks.
 	if isCodeSearch(lower) {
 		return ClassCodeSearch
+	}
+
+	// Editing / refactoring: message mentions editing, modifying, refactoring.
+	// isEditing fires after code search so exploration prompts that contain
+	// incidental editing words are still caught by code search.
+	if isEditing(lower) {
+		return ClassEditing
 	}
 
 	// Simple lookup: question-like message, explanation request, or short
 	// ambiguous prompt with no stronger signal. This is the catch-all for
 	// cheap-to-route queries.
 	if isSimpleLookup(lower, stripped) {
-		return ClassSimpleLookup
-	}
-
-	// Catch-all: short messages (≤120 chars) that didn't match any specific
-	// intent class are treated as simple lookups.
-	if len(stripped) > 0 && len(stripped) <= 120 {
 		return ClassSimpleLookup
 	}
 
@@ -277,6 +293,25 @@ func hasStructuredOutput(body map[string]any) bool {
 	}
 	typ, _ := rf["type"].(string)
 	return typ == "json_object" || typ == "json_schema"
+}
+
+// isSummarization returns true when the message asks to summarize, condense,
+// or synthesize existing content into structured output. These are
+// deterministic text-synthesis tasks that flash handles well.
+// Detects phrases like "capture the conversation into a summary",
+// "summarize this chat", "condense the following", etc.
+func isSummarization(lower string) bool {
+	summarizeKeywords := []string{
+		"summarize", "summarise", "summary of",
+		"capture the", "condense the", "condense this", "condense following",
+		"synthesize the", "synthesise the",
+	}
+	for _, kw := range summarizeKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // isSimpleLookup returns true when the message looks like a quick lookup or
@@ -299,14 +334,23 @@ func isSimpleLookup(lower string, _ string) bool {
 }
 
 // isCodeSearch returns true when the message asks to search, find, explore,
-// or locate code without modifying it.
+// or locate code without modifying it. Keywords are intentionally narrow
+// (multi-word phrases or unambiguous single words) to avoid false positives
+// from incidental mentions (e.g. "fix the search function" is editing, not
+// code search).
 func isCodeSearch(lower string) bool {
 	searchKeywords := []string{
-		"find", "search", "locate", "look for", "look up",
-		"grep", "explore", "discover", "what files",
-		"where is the", "where are the", "show me the",
-		"list", "scan", "inspect",
-		"check the", "check if", "check how",
+		"search for", "search the", "search this",
+		"find all", "find the", "find out", "find usages",
+		"locate the", "locate all",
+		"look for", "look up",
+		"grep", "explore", "discover",
+		"what files",
+		"where is the", "where are the",
+		"show me the",
+		"list all", "list the", "list files",
+		"scan the", "scan for",
+		"inspect the",
 	}
 	for _, kw := range searchKeywords {
 		if strings.Contains(lower, kw) {
@@ -418,10 +462,14 @@ func isComplexReasoning(lower, stripped string) bool {
 	}
 
 	// Long messages (≥400 chars after stripping) with multiple sentences
-	// suggest complex multi-part reasoning.
+	// suggest complex multi-part reasoning — BUT we guard against exploration
+	// prompts (messages that look like code search without explicit complex
+	// signals). Long exploration prompts from subagents (300-800 chars with
+	// numbered requirements like "explore: 1. ... 2. ...") would otherwise
+	// hit this heuristic and stay on pro when flash handles them fine.
 	if len(stripped) >= 400 {
 		sentences := strings.Count(stripped, ".") + strings.Count(stripped, "?") + strings.Count(stripped, "!")
-		if sentences >= 3 {
+		if sentences >= 3 && !isCodeSearch(lower) {
 			return true
 		}
 	}

@@ -7,6 +7,7 @@ description: >
     frontmatter, and README staleness (broken references, outdated
     commands/structure). Read-only — never auto-removes content; all changes
     require human approval.
+model: deepseek-v4-flash
 disable-model-invocation: true
 paths: .cursor/**
 allowed-tools: Bash, Read, Grep, Glob, WebFetch
