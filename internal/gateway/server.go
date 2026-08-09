@@ -118,10 +118,9 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 			return *k, true
 		}
 		s.compressor = NewCompressor(CompressorConfig{
-			Enabled:    true,
-			ChatURL:    flashBase,
-			GetAPIKey:  flashKeyFn,
-			ShadowMode: true, // history compression logs only, no mutation (until validated)
+			Enabled:   true,
+			ChatURL:   flashBase,
+			GetAPIKey: flashKeyFn,
 		}, s.client)
 	}
 	s.routes()

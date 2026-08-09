@@ -1700,13 +1700,13 @@
     function timeRangeParams(val) {
       if (val === 'today') {
         const now = new Date();
-        const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const hoursSinceMidnight = Math.max(1, Math.ceil((now - midnight) / 3600000));
+        const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const hoursSinceMidnight = Math.max(1, Math.ceil((now.getTime() - midnight.getTime()) / 3600000));
         return { since: midnight.toISOString(), until: null, buckets: hoursSinceMidnight, bucketMins: '1h' };
       }
       if (val === 'yesterday') {
         const now = new Date();
-        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
         const yesterdayMidnight = new Date(todayMidnight.getTime() - 86400000);
         return { since: yesterdayMidnight.toISOString(), until: todayMidnight.toISOString(), buckets: 24, bucketMins: '1h' };
       }
@@ -2058,21 +2058,35 @@
         const div = document.getElementById('mtd-summary');
         div.style.display = 'grid';
 
-        // Compute MTD cost excluding Z.AI (subscription-based, not token-based).
-        // Z.AI flat monthly subscription is added only to the Month Projection.
-        let mtdCost = s.est_usd || 0;
-        if (s.by_model) {
-          for (const m of s.by_model) {
-            if (m.provider === 'zai') mtdCost -= m.est_usd || 0;
+        // MTD spend prefers confirmed balance-delta spend (month level) from /api/balance-spend.
+        // Falls back to estimated token-cost sum (excluding Z.AI).
+        let mtdCost, isConfirmedMtd = false;
+        if (balanceSpend) {
+          const cm = balanceSpend.moonshot && balanceSpend.moonshot.month;
+          const cd = balanceSpend.deepseek && balanceSpend.deepseek.month;
+          if ((cm != null) || (cd != null)) {
+            mtdCost = (cm || 0) + (cd || 0);
+            isConfirmedMtd = true;
           }
         }
+        if (!isConfirmedMtd) {
+          mtdCost = s.est_usd || 0;
+          if (s.by_model) {
+            for (const m of s.by_model) if (m.provider === 'zai') mtdCost -= m.est_usd || 0;
+          }
+        }
+
+        const mtdLabel = isConfirmedMtd ? 'EUR (confirmed)' : moneyLabel();
+        const mtdTooltip = isConfirmedMtd
+          ? 'Confirmed balance-delta spend for this month. Excludes Z.AI subscription fee.'
+          : 'Z.AI is subscription-based — its per-request token costs are excluded. Z.AI flat monthly subscription ($' + (zaiFlatFeeUsd != null && zaiFlatFeeUsd > 0 ? zaiFlatFeeUsd : '14.40') + ' USD) is added only to the Month Projection.';
 
         div.innerHTML =
           '<div class="stat"><div class="label">Requests</div><div class="value">' + fmtNum(s.request_count) + '</div></div>' +
           '<div class="stat"><div class="label">Tokens In</div><div class="value">' + (s.tokens_in >= 1e6 ? (s.tokens_in / 1e6).toFixed(2) + 'M' : fmtNum(s.tokens_in)) + '</div></div>' +
           '<div class="stat"><div class="label">Tokens Out</div><div class="value">' + (s.tokens_out >= 1e6 ? (s.tokens_out / 1e6).toFixed(2) + 'M' : fmtNum(s.tokens_out)) + '</div></div>' +
           '<div class="stat"><div class="label">Cache Hits</div><div class="value">' + (s.cache_hit_tokens >= 1e6 ? (s.cache_hit_tokens / 1e6).toFixed(2) + 'M' : fmtNum(s.cache_hit_tokens)) + '</div></div>' +
-          '<div class="stat"><div class="label">' + moneyLabel() + ' <span class="health-info" data-tip="Z.AI is subscription-based — its per-request token costs are excluded. Z.AI flat monthly subscription ($' + (zaiFlatFeeUsd != null && zaiFlatFeeUsd > 0 ? zaiFlatFeeUsd : '14.40') + ' USD) is added only to the Month Projection.">?</span></div><div class="value">' + fmtMoney(mtdCost) + '</div></div>';
+          '<div class="stat"><div class="label">' + mtdLabel + ' <span class="health-info" data-tip="' + mtdTooltip + '">?</span></div><div class="value">' + fmtMoney(mtdCost) + '</div></div>';
 
         // Projection uses same MTD payload (zero-spend days included in avg).
         // Pass by_model so renderProjection can exclude Z.AI from daily average.
@@ -2505,6 +2519,25 @@
       return { since: prevSince, until: prevUntil };
     }
 
+    // Map the time-range selector key to the matching balance-spend PeriodSpend
+    // field name. Returns null for ranges that don't map (e.g. "1h" / "3h" / "12h" / "24h" / "7d").
+    function periodToBalanceSpendKey(range) {
+      switch (range) {
+        case 'today':
+        case 'yesterday':
+          return 'day';
+        case 'this-week':
+        case 'last-week':
+          return 'week';
+        case 'this-month':
+        case 'last-month':
+        case '30d':
+          return 'month';
+        default:
+          return null;
+      }
+    }
+
     // --- Spend by Period — stacked by model ---
     async function loadByDay() {
       try {
@@ -2519,12 +2552,22 @@
         const rows = await api(url);
 
         // For current periods (today/this-week/this-month), compare vs same time point
-        // in the previous period. For the comparison periods (yesterday/last-week/last-month),
-        // compare full period vs current period.
+        // in the previous period. Only applicable when using estimated costs (not confirmed),
+        // since we don't have historical confirmed-spend baseline data.
         const isCurrentPeriod = ['today', 'this-week', 'this-month'].includes(range);
         let refCost = null;
+        // We'll set useConfirmed later; skip estimated comparison when using confirmed.
+        const confirmedRangeKey = periodToBalanceSpendKey(range);
+        let useConfirmed = false;
+        if (confirmedRangeKey && balanceSpend) {
+          const m = balanceSpend.moonshot && balanceSpend.moonshot[confirmedRangeKey];
+          const d = balanceSpend.deepseek && balanceSpend.deepseek[confirmedRangeKey];
+          if ((m != null) || (d != null)) {
+            useConfirmed = true;
+          }
+        }
 
-        if (isCurrentPeriod) {
+        if (isCurrentPeriod && !useConfirmed) {
           const prevComp = getPrevPeriodComparison(range);
           if (prevComp) {
             try {
@@ -2535,19 +2578,30 @@
           }
         }
 
-        // Populate period summary stats (aggregate across all rows)
+        // Populate period summary stats (aggregate across all rows).
+        // Token counts / requests still come from estimates (events table).
         const psum = document.getElementById('period-summary');
-        let reqs = 0, tIn = 0, tOut = 0, tHit = 0, tCost = 0;
+        let reqs = 0, tIn = 0, tOut = 0, tHit = 0;
         for (const r of rows) {
           if (r.provider === 'zai') continue; // exclude Z.AI from spend graphs
           reqs += r.request_count || 0;
           tIn += r.tokens_in || 0;
           tOut += r.tokens_out || 0;
           tHit += r.cache_hit_tokens || 0;
-          tCost += r.est_usd || 0;
         }
 
-        // Relative change badge for current-period comparisons
+        let tCost;
+        if (useConfirmed) {
+          const m = balanceSpend.moonshot && balanceSpend.moonshot[confirmedRangeKey];
+          const d = balanceSpend.deepseek && balanceSpend.deepseek[confirmedRangeKey];
+          tCost = (m || 0) + (d || 0);
+        } else {
+          tCost = 0;
+          for (const r of rows) {
+            if (r.provider !== 'zai') tCost += r.est_usd || 0;
+          }
+        }
+
         let changeHtml = '';
         if (refCost !== null && refCost !== 0) {
           const pct = ((tCost - refCost) / refCost * 100).toFixed(1);
@@ -2559,12 +2613,13 @@
 
         psum.style.display = 'grid';
         const estValClass = changeHtml ? 'value value-flex' : 'value';
+        const spendLabel = useConfirmed ? 'EUR (confirmed)' : moneyLabel();
         psum.innerHTML =
           '<div class="stat"><div class="label">Requests</div><div class="value">' + fmtNum(reqs) + '</div></div>' +
           '<div class="stat"><div class="label">Tokens In</div><div class="value">' + (tIn >= 1e6 ? (tIn / 1e6).toFixed(2) + 'M' : fmtNum(tIn)) + '</div></div>' +
           '<div class="stat"><div class="label">Tokens Out</div><div class="value">' + (tOut >= 1e6 ? (tOut / 1e6).toFixed(2) + 'M' : fmtNum(tOut)) + '</div></div>' +
           '<div class="stat"><div class="label">Cache Hits</div><div class="value">' + (tHit >= 1e6 ? (tHit / 1e6).toFixed(2) + 'M' : fmtNum(tHit)) + '</div></div>' +
-          '<div class="stat"><div class="label">' + moneyLabel() + '</div><div class="' + estValClass + '">' + fmtMoney(tCost) + changeHtml + '</div></div>';
+          '<div class="stat"><div class="label">' + spendLabel + '</div><div class="' + estValClass + '">' + fmtMoney(tCost) + changeHtml + '</div></div>';
 
         // Build bucket→models map: { bucket: [{provider, model, cost}, ...] }
         const bucketMap = {};

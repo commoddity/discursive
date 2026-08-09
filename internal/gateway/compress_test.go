@@ -54,7 +54,7 @@ func stubDeepSeekKey() func() (string, bool) {
 }
 
 func shortToolResult(content string) map[string]any {
-	role, toolCallID, name := "tool", "call_123", "read_file"
+	role, toolCallID, name := "tool", "call_123", "shell"
 	return map[string]any{
 		"role":         role,
 		"content":      content,
@@ -368,70 +368,44 @@ func TestCompress_JustOverThreshold(t *testing.T) {
 	}
 }
 
-// --- CompressHistory (3a) tests ---
+// --- Verbatim-tool skip tests ---
 
-// makeMessages builds a slice of `count` alternating user/assistant messages
-// for testing CompressHistory thresholds and partitioning.
-func makeMessages(count int) []any {
-	msgs := make([]any, 0, count+2)
-	// Start with a system message.
-	msgs = append(msgs, map[string]any{
-		"role":    "system",
-		"content": "You are a helpful coding assistant.",
-	})
-	for i := 0; i < count; i++ {
-		role := "user"
-		if i%2 == 1 {
-			role = "assistant"
-		}
-		msgs = append(msgs, map[string]any{
-			"role":    role,
-			"content": "Message number " + string(rune('0'+i%10)) + string(rune('0'+(i%100)/10)),
-		})
-	}
-	return msgs
-}
-
-func bodyWithMessagesArray(msgs []any) map[string]any {
+// assistantWithToolCall creates a minimal assistant message with a tool_call
+// that links to the given tool_call_id and name.
+func assistantWithToolCall(id, name string) map[string]any {
 	return map[string]any{
-		"model":    "deepseek-v4-pro",
-		"messages": msgs,
+		"role":    "assistant",
+		"content": "I'll read that file.",
+		"tool_calls": []any{
+			map[string]any{
+				"id":   id,
+				"type": "function",
+				"function": map[string]any{
+					"name":      name,
+					"arguments": "{}",
+				},
+			},
+		},
 	}
 }
 
-func TestCompressHistory_NilCompressor(t *testing.T) {
-	var c *Compressor
-	body := bodyWithMessagesArray(makeMessages(35))
-	stats, err := c.CompressHistory(t.Context(), body)
-	if err != nil {
-		t.Fatalf("nil compressor should not error: %v", err)
+// toolMsg creates a tool message with role=tool, content, tool_call_id, and
+// optional name. The name is omitted when empty (simulating the sanitizer's
+// behavior of stripping the name field from messages after parsing).
+func toolMsg(toolCallID, name, content string) map[string]any {
+	m := map[string]any{
+		"role":         "tool",
+		"tool_call_id": toolCallID,
+		"content":      content,
 	}
-	if stats.HistoryMsgsCompressed != 0 {
-		t.Fatalf("nil compressor should compress nothing")
+	if name != "" {
+		m["name"] = name
 	}
+	return m
 }
 
-func TestCompressHistory_UnderThreshold(t *testing.T) {
-	c := &Compressor{}
-	// 30 messages (29 + 1 system) = exactly at threshold → no-op
-	body := bodyWithMessagesArray(makeMessages(29))
-	stats, err := c.CompressHistory(t.Context(), body)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if stats.HistoryMsgsCompressed != 0 {
-		t.Fatalf("at threshold should be no-op, got %d msgs compressed", stats.HistoryMsgsCompressed)
-	}
-	// Verify message count unchanged.
-	msgs := body["messages"].([]any)
-	expected := 1 + 29 // system + 29 user/assistant
-	if len(msgs) != expected {
-		t.Fatalf("expected %d messages, got %d", expected, len(msgs))
-	}
-}
-
-func TestCompressHistory_OverThreshold(t *testing.T) {
-	srv, _ := stubFlashServer(t, "Conversation summary for testing.")
+func TestCompress_SkipsFileReadToolResult(t *testing.T) {
+	srv, count := stubFlashServer(t, "should not be called")
 	c := &Compressor{
 		cfg: CompressorConfig{
 			ChatURLOverride: srv.URL + "/chat/completions",
@@ -439,264 +413,187 @@ func TestCompressHistory_OverThreshold(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	// 31 messages (31 + 1 system = 32 total) > 30 threshold → should compress.
-	body := bodyWithMessagesArray(makeMessages(31))
-	stats, err := c.CompressHistory(t.Context(), body)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if stats.HistoryMsgsCompressed == 0 {
-		t.Fatal("expected history compression to trigger for >30 messages")
-	}
-}
+	long := longString(5000)
 
-func TestCompressHistory_PreservesSystemMessages(t *testing.T) {
-	srv, _ := stubFlashServer(t, "summary")
-	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
-		client: srv.Client(),
-	}
-	// Build messages with 2 system messages at the start.
-	sys1 := map[string]any{"role": "system", "content": "System prompt one."}
-	sys2 := map[string]any{"role": "system", "content": "System prompt two."}
-	var msgs []any
-	msgs = append(msgs, sys1, sys2)
-	for i := 0; i < 35; i++ {
-		msgs = append(msgs, map[string]any{
-			"role": "user", "content": "msg",
-		})
-	}
-	body := map[string]any{"model": "deepseek-v4-pro", "messages": msgs}
-	_, err := c.CompressHistory(t.Context(), body)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	result := body["messages"].([]any)
-	// First 2 messages should be the system messages, verbatim.
-	if result[0].(map[string]any)["content"] != "System prompt one." {
-		t.Fatalf("first system message not preserved")
-	}
-	if result[1].(map[string]any)["content"] != "System prompt two." {
-		t.Fatalf("second system message not preserved")
-	}
-}
-
-func TestCompressHistory_PreservesRecentMessages(t *testing.T) {
-	srv, _ := stubFlashServer(t, "summary")
-	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
-		client: srv.Client(),
-	}
-	// 50 user messages + 1 system = 51 total.
-	body := bodyWithMessagesArray(makeMessages(50))
-	_, err := c.CompressHistory(t.Context(), body)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	result := body["messages"].([]any)
-	// Should have: 1 system + 1 compressed + 10 recent = 12 messages.
-	if len(result) != 12 {
-		t.Fatalf("expected 12 messages (1 system + 1 compressed + 10 recent), got %d", len(result))
-	}
-	// The last 10 should be the original messages (roles match).
-	lastRole, _ := result[len(result)-1].(map[string]any)["role"].(string)
-	// With 50 alternating user/assistant starting at user (even index),
-	// message 50 (0-indexed 49) should be assistant.
-	if lastRole != "assistant" {
-		t.Fatalf("expected last message role assistant, got %s", lastRole)
-	}
-}
-
-func TestCompressHistory_MiddleReplacementPrefix(t *testing.T) {
-	srv, _ := stubFlashServer(t, "test summary content")
-	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
-		client: srv.Client(),
-	}
-	body := bodyWithMessagesArray(makeMessages(35))
-	_, err := c.CompressHistory(t.Context(), body)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	result := body["messages"].([]any)
-	// The second message (index 1) should be the compressed system message.
-	compressedMsg := result[1].(map[string]any)
-	if compressedMsg["role"] != "system" {
-		t.Fatalf("compressed message should be role=system, got %q", compressedMsg["role"])
-	}
-	content := compressedMsg["content"].(string)
-	if !strings.Contains(content, "[Compressed conversation history —") {
-		t.Fatalf("compressed message missing prefix marker, got: %q", content)
-	}
-	if !strings.Contains(content, "test summary content") {
-		t.Fatalf("compressed message missing summary content, got: %q", content)
-	}
-}
-
-func TestCompressHistory_CacheHit(t *testing.T) {
-	srv, count := stubFlashServer(t, "cached history summary")
-	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
-		client: srv.Client(),
-	}
-	// Use the same messages for both calls.
-	body1 := bodyWithMessagesArray(makeMessages(40))
-	_, err := c.CompressHistory(t.Context(), body1)
-	if err != nil {
-		t.Fatalf("first call: unexpected error: %v", err)
-	}
-	if count.Load() != 1 {
-		t.Fatalf("first call should trigger flash call, got %d", count.Load())
-	}
-
-	body2 := bodyWithMessagesArray(makeMessages(40))
-	_, err = c.CompressHistory(t.Context(), body2)
-	if err != nil {
-		t.Fatalf("second call: unexpected error: %v", err)
-	}
-	if count.Load() != 1 {
-		t.Fatalf("second call should be cache hit (flash not called again), got %d", count.Load())
-	}
-}
-
-func TestCompressHistory_CacheKeyInvalidation(t *testing.T) {
-	srv, count := stubFlashServer(t, "summary")
-	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
-		client: srv.Client(),
-	}
-
-	body1 := bodyWithMessagesArray(makeMessages(40))
-	_, err := c.CompressHistory(t.Context(), body1)
-	if err != nil {
-		t.Fatalf("first call: unexpected error: %v", err)
-	}
-	if count.Load() != 1 {
-		t.Fatalf("first call should trigger flash call, got %d", count.Load())
-	}
-
-	// Different message count → different middle range → cache miss.
-	body2 := bodyWithMessagesArray(makeMessages(45))
-	_, err = c.CompressHistory(t.Context(), body2)
-	if err != nil {
-		t.Fatalf("second call: unexpected error: %v", err)
-	}
-	if count.Load() != 2 {
-		t.Fatalf("different content should be cache miss, got %d calls", count.Load())
-	}
-}
-
-func TestCompressHistory_FailOpen(t *testing.T) {
-	srv := stubErrorFlashServer(t)
-	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
-		client: srv.Client(),
-	}
-	body := bodyWithMessagesArray(makeMessages(40))
-	// Snapshot the message count before compression.
-	original := body["messages"].([]any)
-	origCount := len(original)
-
-	_, err := c.CompressHistory(t.Context(), body)
-	if err == nil {
-		t.Fatal("expected error from flash model")
-	}
-	// Fail-open: body should be unchanged.
-	result := body["messages"].([]any)
-	if len(result) != origCount {
-		t.Fatalf("fail-open: expected %d messages unchanged, got %d", origCount, len(result))
-	}
-}
-
-func TestCompressHistory_ShadowMode(t *testing.T) {
-	srv, _ := stubFlashServer(t, "shadow mode summary")
-	c := &Compressor{
-		cfg: CompressorConfig{
-			Enabled:         true,
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-			ShadowMode:      true,
-		},
-		client: srv.Client(),
-	}
-	body := bodyWithMessagesArray(makeMessages(40))
-	original := body["messages"].([]any)
-	origCount := len(original)
-
-	stats, err := c.CompressHistory(t.Context(), body)
-	if err != nil {
-		t.Fatalf("unexpected error in shadow mode: %v", err)
-	}
-	if stats.HistoryMsgsCompressed == 0 {
-		t.Fatal("shadow mode should report compression stats")
-	}
-	// Shadow mode: body must be unchanged.
-	result := body["messages"].([]any)
-	if len(result) != origCount {
-		t.Fatalf("shadow mode: expected %d messages unchanged, got %d", origCount, len(result))
-	}
-}
-
-func TestCompressHistory_DeveloperMessagesTreatedAsSystem(t *testing.T) {
-	srv, _ := stubFlashServer(t, "summary")
-	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
-		client: srv.Client(),
-	}
-	// Message 0: system, Message 1: developer — both should be preserved.
-	var msgs []any
-	msgs = append(msgs,
-		map[string]any{"role": "system", "content": "System A"},
-		map[string]any{"role": "developer", "content": "Developer B"},
+	// Simulate post-sanitizer body: assistant + tool, where tool name is
+	// missing (sanitizer strips it). Detection via tool_call_id → assistant
+	// tool_calls correlation.
+	body := bodyWithMessages(
+		assistantWithToolCall("call_abc", "read_file"),
+		toolMsg("call_abc", "", long),
 	)
-	for i := 0; i < 35; i++ {
-		msgs = append(msgs, map[string]any{"role": "user", "content": "msg"})
-	}
-	body := map[string]any{"model": "deepseek-v4-pro", "messages": msgs}
-	_, err := c.CompressHistory(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	result := body["messages"].([]any)
-	if result[0].(map[string]any)["role"] != "system" || result[0].(map[string]any)["content"] != "System A" {
-		t.Fatal("system message not preserved")
+	if stats.ToolResultsCompressed != 0 {
+		t.Fatalf("file read tool result should not be compressed, got %d", stats.ToolResultsCompressed)
 	}
-	if result[1].(map[string]any)["role"] != "developer" || result[1].(map[string]any)["content"] != "Developer B" {
-		t.Fatal("developer message not preserved")
+	if count.Load() != 0 {
+		t.Fatalf("flash summarizer should not be called for verbatim tool, got %d calls", count.Load())
+	}
+	// Content must be unchanged.
+	msgs := body["messages"].([]any)
+	content := msgs[1].(map[string]any)["content"].(string)
+	if content != long {
+		t.Fatalf("read_file content should be unchanged")
 	}
 }
 
-func TestCompressHistory_NoDeepSeekKey(t *testing.T) {
+func TestCompress_SkipsFileReadByNameField(t *testing.T) {
+	srv, count := stubFlashServer(t, "should not be called")
 	c := &Compressor{
 		cfg: CompressorConfig{
-			GetAPIKey: func() (string, bool) { return "", false },
+			ChatURLOverride: srv.URL + "/chat/completions",
+			GetAPIKey:       stubDeepSeekKey(),
 		},
-		client: &http.Client{},
+		client: srv.Client(),
 	}
-	body := bodyWithMessagesArray(makeMessages(40))
-	_, err := c.CompressHistory(t.Context(), body)
-	if err == nil {
-		t.Fatal("expected error when DeepSeek key is missing")
+	long := longString(5000)
+
+	// Tool message with explicit name field (no assistant needed).
+	body := bodyWithMessages(toolMsg("call_x", "read_file", long))
+	stats, err := c.Compress(t.Context(), body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.ToolResultsCompressed != 0 {
+		t.Fatalf("read_file by name should not be compressed, got %d", stats.ToolResultsCompressed)
+	}
+	if count.Load() != 0 {
+		t.Fatalf("flash summarizer should not be called, got %d", count.Load())
+	}
+}
+
+func TestCompress_CompressesShellToolResult(t *testing.T) {
+	srv, count := stubFlashServer(t, "shell output summary")
+	c := &Compressor{
+		cfg: CompressorConfig{
+			ChatURLOverride: srv.URL + "/chat/completions",
+			GetAPIKey:       stubDeepSeekKey(),
+		},
+		client: srv.Client(),
+	}
+	long := longString(5000)
+
+	// Shell tool results should still be compressed.
+	body := bodyWithMessages(
+		assistantWithToolCall("call_sh", "shell"),
+		toolMsg("call_sh", "", long),
+	)
+	stats, err := c.Compress(t.Context(), body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.ToolResultsCompressed != 1 {
+		t.Fatalf("shell tool result should be compressed, got %d", stats.ToolResultsCompressed)
+	}
+	if count.Load() != 1 {
+		t.Fatalf("flash summarizer should be called for shell, got %d", count.Load())
+	}
+}
+
+func TestCompress_CompressesUnknownToolName(t *testing.T) {
+	srv, count := stubFlashServer(t, "unknown tool summary")
+	c := &Compressor{
+		cfg: CompressorConfig{
+			ChatURLOverride: srv.URL + "/chat/completions",
+			GetAPIKey:       stubDeepSeekKey(),
+		},
+		client: srv.Client(),
+	}
+	long := longString(5000)
+
+	// A tool with no name and no matching assistant tool_calls → fall through
+	// to compress (safe default — unknown tools are more likely
+	// shell/test/log output than verbatim file content).
+	body := bodyWithMessages(toolMsg("orphan_call", "", long))
+	stats, err := c.Compress(t.Context(), body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.ToolResultsCompressed != 1 {
+		t.Fatalf("unknown tool without name should be compressed (safe default), got %d", stats.ToolResultsCompressed)
+	}
+	if count.Load() != 1 {
+		t.Fatalf("flash summarizer should be called, got %d", count.Load())
+	}
+}
+
+func TestCompress_SkipsGrepToolResult(t *testing.T) {
+	srv, count := stubFlashServer(t, "should not be called")
+	c := &Compressor{
+		cfg: CompressorConfig{
+			ChatURLOverride: srv.URL + "/chat/completions",
+			GetAPIKey:       stubDeepSeekKey(),
+		},
+		client: srv.Client(),
+	}
+	long := longString(5000)
+	body := bodyWithMessages(
+		assistantWithToolCall("call_g", "Grep"),
+		toolMsg("call_g", "", long),
+	)
+	stats, err := c.Compress(t.Context(), body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.ToolResultsCompressed != 0 {
+		t.Fatalf("grep tool result should not be compressed, got %d", stats.ToolResultsCompressed)
+	}
+	if count.Load() != 0 {
+		t.Fatalf("flash summarizer should not be called for grep, got %d", count.Load())
+	}
+}
+
+func TestCompress_SkipsMcpPrefixedToolName(t *testing.T) {
+	srv, count := stubFlashServer(t, "should not be called")
+	c := &Compressor{
+		cfg: CompressorConfig{
+			ChatURLOverride: srv.URL + "/chat/completions",
+			GetAPIKey:       stubDeepSeekKey(),
+		},
+		client: srv.Client(),
+	}
+	long := longString(5000)
+	body := bodyWithMessages(
+		assistantWithToolCall("call_mcp", "mcp.fs.read_file"),
+		toolMsg("call_mcp", "", long),
+	)
+	stats, err := c.Compress(t.Context(), body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.ToolResultsCompressed != 0 {
+		t.Fatalf("mcp.__read_file tool result should not be compressed, got %d", stats.ToolResultsCompressed)
+	}
+	if count.Load() != 0 {
+		t.Fatalf("flash summarizer should not be called, got %d", count.Load())
+	}
+}
+
+func TestCompress_SkipsWebFetchToolResult(t *testing.T) {
+	srv, count := stubFlashServer(t, "should not be called")
+	c := &Compressor{
+		cfg: CompressorConfig{
+			ChatURLOverride: srv.URL + "/chat/completions",
+			GetAPIKey:       stubDeepSeekKey(),
+		},
+		client: srv.Client(),
+	}
+	long := longString(5000)
+	body := bodyWithMessages(
+		assistantWithToolCall("call_wf", "WebFetch"),
+		toolMsg("call_wf", "", long),
+	)
+	stats, err := c.Compress(t.Context(), body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.ToolResultsCompressed != 0 {
+		t.Fatalf("WebFetch tool result should not be compressed, got %d", stats.ToolResultsCompressed)
+	}
+	if count.Load() != 0 {
+		t.Fatalf("flash summarizer should not be called for WebFetch, got %d", count.Load())
 	}
 }

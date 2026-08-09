@@ -181,7 +181,7 @@ determines whether the task is cheap enough for a flash model:
 | `--background`      | `false`  | Detach and run in the background. Logs to `{dataRoot}/gateway.log`.                                                                                                                   |
 | `--tunnel`          | (config) | Tunnel mode: `named`, `none`, or `quick` (persists to config).                                                                                                                        |
 | `--public-url`      | (config) | Public HTTPS base URL ending in `/v1` (persists to config).                                                                                                                           |
-| `--compress`        | `false`  | Compress verbose tool results and long conversation history to reduce token cost. Uses a cheap summarizer model (flash). Fail-open: on any error, original content is sent unchanged. |
+| `--compress`        | `false`  | Compress verbose tool results to reduce token cost. Uses a cheap summarizer model (flash). Fail-open: on any error, original content is sent unchanged. |
 
 Examples:
 
@@ -203,12 +203,10 @@ discursive start --compress --log-level debug
 ### Compression
 
 The `--compress` flag enables context compression to reduce token cost during
-multi-turn agent sessions. Two strategies are applied in sequence:
+multi-turn agent sessions:
 
 1. **Tool-result compression**: Tool output exceeding a character threshold is
    summarized by a cheap model (`deepseek-v4-flash`).
-2. **History compression**: The conversation history is compressed before
-   reaching the upstream model.
 
 Compression is **fail-open**: if the summarizer model returns an empty or error
 result, the original content is sent upstream unchanged — there is no quality
