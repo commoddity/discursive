@@ -80,6 +80,15 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Apply verbosity controls (nil when --verbosity is unset → zero cost).
+	// Runs AFTER routing/downgrade so the directive + token cap key on the
+	// FINAL model actually served (e.g. deepseek-v4-pro downgraded to
+	// deepseek-v4-flash for subagent-like work still gets flash's verbosity
+	// controls). Configuration only exists for models we target.
+	if s.verbosity != nil {
+		s.verbosity.ApplyRequest(sanitized.Body, sanitized.Model)
+	}
+
 	upstreamKey, err := s.upstreamKey(sanitized.Provider)
 	if err != nil {
 		logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
@@ -113,7 +122,15 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Buffer error / non-SSE responses; stream SSE success without buffering.
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 && wantsStream && isSSEContentType(resp.Header.Get("Content-Type")) {
 		scan := &sseUsageScanner{}
-		cerr := copySSE(w, resp.Body, scan)
+		var cerr error
+		if s.verbosity != nil {
+			// Verbosity control active: buffer the stream, trim trailing prose
+			// from pure-text completions, then re-emit. Tool-call streams pass
+			// through unchanged.
+			cerr = s.trimBufferedSSE(w, resp.Body, sanitized.Model, scan)
+		} else {
+			cerr = copySSE(w, resp.Body, scan)
+		}
 		_ = resp.Body.Close()
 		lat := time.Since(started)
 		if scan.found && scan.usage != nil {
@@ -164,7 +181,15 @@ func (s *Server) finishUpstream(w http.ResponseWriter, resp *http.Response, want
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 && wantsStream && isSSEContentType(resp.Header.Get("Content-Type")) {
 		scan := &sseUsageScanner{}
-		_ = copySSE(w, resp.Body, scan)
+		var cerr error
+		if s.verbosity != nil {
+			cerr = s.trimBufferedSSE(w, resp.Body, model, scan)
+		} else {
+			cerr = copySSE(w, resp.Body, scan)
+		}
+		if cerr != nil {
+			logRequest(requestID, "sse_copy_error", cerr.Error(), "effort", effort, "retry", true)
+		}
 		lat := time.Since(started)
 		if scan.found && scan.usage != nil {
 			s.recordUsage(provider, model, effort, requestID, lat, *scan.usage)
@@ -193,6 +218,8 @@ func (s *Server) finishUpstream(w http.ResponseWriter, resp *http.Response, want
 func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBody []byte, wantsStream bool, provider config.Provider, model, effort, requestID string, started time.Time) {
 	lat := time.Since(started)
 	if status >= 200 && status < 300 {
+		// Trim trailing verbose prose (non-streaming success only) before parse.
+		respBody = s.trimBufferedJSON(respBody, model)
 		var completion map[string]any
 		if err := json.Unmarshal(respBody, &completion); err != nil {
 			w.Header().Set("Content-Type", "application/json")

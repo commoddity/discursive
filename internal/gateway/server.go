@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/gateway/verbosity"
 	"github.com/commoddity/discursive/internal/gateway/vision"
 	"github.com/commoddity/discursive/internal/usage"
 )
@@ -29,6 +30,7 @@ type ServerConfig struct {
 	VisionChatURLOverride string                     // tests only
 	SubAgentRouterEnabled bool                       // default true in production (CLI --subagent-router)
 	CompressEnabled       bool                       // default false (CLI --compress)
+	VerbosityEnabled      bool                       // default false (CLI --verbosity)
 }
 
 // Server is the loopback gateway HTTP server.
@@ -45,6 +47,7 @@ type Server struct {
 	vision     *vision.Describer
 	router     *SubAgentRouter
 	compressor *Compressor
+	verbosity  *verbosity.Controller
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -122,6 +125,20 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 			ChatURL:   flashBase,
 			GetAPIKey: flashKeyFn,
 		}, s.client)
+	}
+
+	// Wire verbosity control when --verbosity is set. The whole subsystem is
+	// gated behind s.verbosity != nil (nil when disabled → zero overhead).
+	if cfg.VerbosityEnabled {
+		s.verbosity = verbosity.NewController(verbosity.VerbosityConfig{
+			Models: map[string]verbosity.ModelConfig{
+				"deepseek-v4-flash": {
+					SystemMessageDirective: flashTersenessDirective,
+					MaxTokens:              flashVerbosityMaxTokens,
+					TrimEnabled:            true,
+				},
+			},
+		})
 	}
 	s.routes()
 	return s, nil

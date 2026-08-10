@@ -16,7 +16,7 @@ import (
 	"github.com/commoddity/discursive/internal/usageui"
 )
 
-func serveGateway(version, dataRoot string, settings config.AppSettings, subAgentRouter, compress bool) error {
+func serveGateway(version, dataRoot string, settings config.AppSettings, subAgentRouter, compress, verbosity bool) error {
 	live := config.NewLiveSettings(dataRoot, settings)
 	snap := live.Snapshot()
 	listen := fmt.Sprintf("127.0.0.1:%d", snap.LocalPort)
@@ -28,6 +28,7 @@ func serveGateway(version, dataRoot string, settings config.AppSettings, subAgen
 		Live:                  live,
 		SubAgentRouterEnabled: subAgentRouter,
 		CompressEnabled:       compress,
+		VerbosityEnabled:      verbosity,
 	})
 	if err != nil {
 		return err
@@ -51,6 +52,7 @@ func serveGateway(version, dataRoot string, settings config.AppSettings, subAgen
 		"reasoning_effort", live.EffortMap(),
 		"subagent_router", subAgentRouter,
 		"compress", compress,
+		"verbosity", verbosity,
 	)
 
 	uiSrv := startUsageUI(version, srv, live, publicURL)
@@ -171,11 +173,11 @@ func writePIDFile(dataRoot string) (string, error) {
 // serveWithWatchdog runs serveGateway in a loop for background child processes.
 // Clean shutdown (via `discursive stop` stop-file) exits the loop. Crashes and
 // listen errors restart after a short delay.
-func serveWithWatchdog(version, dataRoot string, settings config.AppSettings, subAgentRouter, compress bool) error {
+func serveWithWatchdog(version, dataRoot string, settings config.AppSettings, subAgentRouter, compress, verbosity bool) error {
 	const restartDelay = 2 * time.Second
 
 	for {
-		err := serveGateway(version, dataRoot, settings, subAgentRouter, compress)
+		err := serveGateway(version, dataRoot, settings, subAgentRouter, compress, verbosity)
 		if err == nil {
 			slog.Info("gateway stopped cleanly")
 			return nil
