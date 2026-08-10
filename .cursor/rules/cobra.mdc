@@ -1,6 +1,6 @@
 ---
 description: Cobra CLI layout, flags, RunE, and testing (no Viper for MVP)
-globs: "**/cmd/**/*.go"
+globs: "**/cli/**/*.go"
 alwaysApply: false
 ---
 

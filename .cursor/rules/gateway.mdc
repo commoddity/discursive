@@ -166,32 +166,40 @@ when the model has a mapped cheaper variant:
 | "fix linter errors in some files" stays on the expensive model instead of flash | `isStrongEditing` matches "fix" and blocks the `automation` downgrade | Let lint tasks classify as automation even with a strong-editing word present (`isLintTask` → bypass the `!isStrongEditing` guard) |
 | `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultFlashModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.2` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.2`), uncomment the entry in `modelOverrideMap` — it takes priority over the universal fallback. |
 
-#### Flash verbosity cap (output token ceiling on cheap turns)
+#### Verbosity control (`--verbosity`) — model-keyed request+response transforms
 
-| Symptom | Cause | Fix |
-| ------- | ----- | --- |
-| Agent flow "takes too long / overthought a lot" for a simple change | On `flash` turn the model is over-confident and emits 4–16k output tokens (~20–106s) rather than a terse next step | Cap cheap tiers' `max_tokens` to `toolVerbosityCap` (1500) so flash turns stay terse. Apply the cap even when the model override is a no-op (flow already on flash). Cheap turns should land at 78–600 output tokens, not thousands |
+The `--verbosity` flag enables an opt-in subsystem (`internal/gateway/verbosity/`,
+wired as `Server.verbosity`, nil when disabled → zero overhead) that reduces
+flash turn verbosity via three mechanisms, all keyed on the **served model**:
 
-`<!-- last-verified: 2026-08 -->`
-
-### `DiagnosticDump: gated message-array dumps for content-extraction analysis`
-
-The `--diagnostic-dump` flag (`SubAgentRouterConfig.DiagnosticDump`) writes the full
-`messages` array to `/tmp/discursive-msgdump-<requestID>.json` whenever content
-extraction from the last user message returns empty (`stripped_len == 0`).
-This only happens when the last message is entirely Cursor XML boilerplate or
-the message role is not `user`/`developer` (e.g. tool-result rounds).
+- **Directive injection** — appends `flashTersenessDirective` to the last
+  system/developer message (or prepends a new one).
+- **Token cap** — lowers `max_tokens` to `flashVerbosityMaxTokens` (4096);
+  never raises.
+- **Response trimming** — strips trailing prose after the last substantive
+  boundary (code fence, inline code, bullet list, diff, DSML tool call);
+  never cuts code/tool/diff/list content; keeps a short sentence-floor summary.
 
 | Aspect | Detail |
 | ------ | ------ |
-| Flag | `--diagnostic-dump` (CLI), `DiagnosticDump bool` (SubAgentRouterConfig) |
-| Default | `false` (off) — must be explicitly enabled |
-| Trigger | `stripped_len == 0` (content extraction produced nothing) |
-| Output | `/tmp/discursive-msgdump-<requestID>.json` (full `messages` array, indented JSON) |
-| Cleanup | `/tmp/` is automatically cleaned on macOS reboot and by Linux `tmpfiles.d` |
-| Separation | Gated on `DiagnosticDump`, NOT on `Enabled`. Dumps can fire even when the subagent router is disabled, and remain silent even when the router is enabled unless the diagnostic flag is also set. |
+| Flag | `--verbosity` (CLI), `VerbosityEnabled bool` |
+| Default | `false` (off) — nil controller, zero verbosity code runs |
+| Model key | Config map keys on the **real** model id (`deepseek-v4-flash`), not alias |
+| Streaming safety | Pure-text streams may be buffered+re-synthesized; tool-call streams always pass through verbatim |
+| Fail-open | Unknown model / no config → passthrough unchanged |
 
-<!-- last-verified: 2026-08 -->
+### `Model-dependent middlewares must run AFTER routing/downgrade`
+
+Request/response transforms that are keyed on the served model (verbosity,
+thinking shape, token caps) must be applied **after** the subagent-router
+`ClassifyAndOverride` downgrade reassigns the model — not at the point where the
+sanitizer first resolved the alias.
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `--verbosity` never trims a turn the router downgraded to `deepseek-v4-flash` (directive absent, `max_tokens` uncapped) — only the response-side trim fires, not the request-side injection/cap | `ApplyRequest` ran with the **original** resolved model (`deepseek-v4-pro` for `o1`); the controller config keys only on `deepseek-v4-flash`, so it early-returned. Response trimming incidentally worked because it re-reads `sanitized.Model` after the override | In `handleChatCompletions`, apply model-keyed request transforms **after** `ClassifyAndOverride` (and after the provider re-resolve) so they see the final served model. The response/trim path already re-reads `sanitized.Model` post-override, so it follows the served model automatically |
+
+`<!-- last-verified: 2026-08 -->`
 
 ### `Compression — opt-in tool-result summarization`
 
