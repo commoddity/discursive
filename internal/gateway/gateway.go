@@ -28,12 +28,16 @@ const (
 	// enough for substantive coding responses but prevents the model from
 	// emitting run-away prose.
 	flashVerbosityMaxTokens = 4096
+
+	// proVerbosityMaxTokens is the output-token ceiling applied to
+	// deepseek-v4-pro when verbosity control is enabled for it (off by
+	// default). Higher than flash since pro produces longer-thinking answers.
+	proVerbosityMaxTokens = 8192
 )
 
 // flashTersenessDirective is appended to deepseek-v4-flash system messages
-// when verbosity control is enabled. It uses an authority-marked, numbered
-// constraint format for maximum LLM adherence (DeepSeek models follow
-// enumerated, verifiable constraints better than descriptive prose).
+// when verbosity control is enabled. Each rule is a hard MANDATORY constraint
+// — the model must follow every one without exception.
 const flashTersenessDirective = "" +
 	"CRITICAL OUTPUT CONSTRAINT — ALWAYS FOLLOW:\n" +
 	"\n" +
@@ -43,4 +47,15 @@ const flashTersenessDirective = "" +
 	"3. Never write more than 2 sentences of prose without code between them.\n" +
 	"4. If a single-line code change solves the problem, return ONLY that line.\n" +
 	"5. Omit: pleasantries, recaps, \"let me explain\", \"here's why\",\n" +
-	"   \"I hope this helps\", and all other conversational filler."
+	"   \"I hope this helps\", \"now let me think about this\",\n" +
+	"   \"let me reconsider\", \"actually\", \"hmm\", and all other conversational filler.\n" +
+	"6. Before making a tool call or code edit, state what you are about to do\n" +
+	"   in one line, then act. Do not narrate your investigative process.\n" +
+	"7. When deciding between approaches, pick one and proceed.\n" +
+	"   Do not show your deliberation or weigh alternatives in prose.\n" +
+	"8. NEVER output internal monologue, stream-of-consciousness reasoning,\n" +
+	"   or self-correction chains. The user only sees the final result.\n" +
+	"9. If you catch yourself writing 'OK so', 'Let me', 'I think', 'I see',\n" +
+	"   or 'Looking at', STOP. Delete it. Write code or a terse statement instead.\n" +
+	"10. Your response must be at least 80% code/tool-calls by character count.\n" +
+	"    Prose is filler. Code is the deliverable."

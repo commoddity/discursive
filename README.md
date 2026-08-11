@@ -181,8 +181,6 @@ determines whether the task is cheap enough for a flash model:
 | `--background`      | `false`  | Detach and run in the background. Logs to `{dataRoot}/gateway.log`.                                                                                                                   |
 | `--tunnel`          | (config) | Tunnel mode: `named`, `none`, or `quick` (persists to config).                                                                                                                        |
 | `--public-url`      | (config) | Public HTTPS base URL ending in `/v1` (persists to config).                                                                                                                           |
-| `--compress`        | `false`  | Compress verbose tool results to reduce token cost. Uses a cheap summarizer model (flash). Fail-open: on any error, original content is sent unchanged. |
-| `--verbosity`       | `false`  | Enforce terse output on flash turns: injects a terseness directive, caps `max_tokens`, and trims trailing prose. Ignored unless the served model is `deepseek-v4-flash`. |
 
 Examples:
 
@@ -192,9 +190,6 @@ discursive start --subagent-router --log-level debug
 
 # Disable routing entirely
 discursive start --subagent-router=false
-
-# Enable compression for cost savings
-discursive start --compress --log-level debug
 ```
 
 > **💡 Tip:** At `--log-level debug`, the router logs one line per request with
@@ -203,8 +198,9 @@ discursive start --compress --log-level debug
 
 ### Compression
 
-The `--compress` flag enables context compression to reduce token cost during
-multi-turn agent sessions:
+Tool-result compression reduces token cost during multi-turn agent sessions. It
+is toggleable from the usage dashboard (`http://127.0.0.1:4002` → **Gateway Toggles**,
+no restart required):
 
 1. **Tool-result compression**: Tool output exceeding a character threshold is
    summarized by a cheap model (`deepseek-v4-flash`).
@@ -260,6 +256,7 @@ process or configuration.
 
 - **System health** - health checks & system uptime
 - **Reasoning effort** — per-model `low` / `high` / `max` (and DeepSeek `off`) saved to app settings
+- **Output verbosity** — per-model toggles (DeepSeek) that inject a terseness directive and cap output tokens to coerce terse replies (never trims responses)
 - **Provider balances & monthly spend projection** — average daily spend, projected monthly total
 - **Month to date spending** — requests, tokens, and estimated cost (USD, EUR, CNY)
 - **Spend by period, model, and provider** — clear charts per time period, model, and provider
@@ -288,6 +285,26 @@ expose this control.
 - `kimi-k2.7-code` always thinks — thinking is always on and there is no effort
 selector: [Kimi K2.7 Code](https://www.kimi.com/resources/kimi-k2-7-code)
 - DeepSeek only documents `high`/`max` for effort: [DeepSeek Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)).
+
+### Output Verbosity
+
+DeepSeek models tend to emit verbose reasoning prose. The gateway can tighten
+that per-model from the **Output Verbosity** card at the Usage Dashboard
+(`http://127.0.0.1:4002`). When a model's toggle is on, the gateway applies
+two controls to that model's **requests**:
+
+1. **Terseness directive** — a numbered, authority-marked system prompt appendix
+   telling the model to lead with the solution and omit conversational filler.
+2. **Output-token cap** — a generous `max_tokens` ceiling (only ever lowers a
+   request's existing value).
+
+Verbosity only **coerces/prompts the model** to be less verbose. The gateway
+**never edits response content** — both streaming and non-streaming replies pass
+through byte-for-byte, so there is no trailing-`…` response trimming.
+
+Defaults: `deepseek-v4-flash` is **on**, `deepseek-v4-pro` is **off**. Changes
+apply to new requests immediately (no restart). The `--verbosity` CLI flag has
+been removed — verbosity is now managed entirely from the dashboard.
 
 ### 🌙 Moonshot (Kimi) <!-- omit in toc -->
 
@@ -457,7 +474,7 @@ All output is JSON on stdout. Pipe through `jq` for readability.
 
 | Command                      | Description                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `discursive start`           | Start gateway on `localhost:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. `--subagent-router` (on by default), `--compress` (off by default), `--verbosity` (off by default). Auto-invokes `init` if config is incomplete on first run. See [Subagent Routing](#-subagent-routing) and [Compression](#-compression). |
+| `discursive start`           | Start gateway on `localhost:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. `--subagent-router` (on by default). Runtime toggles managed from the usage dashboard. Auto-invokes `init` if config is incomplete on first run. See [Subagent Routing](#-subagent-routing) and [Compression](#-compression). |
 | `discursive stop`            | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                                                                                                                                                                                    |
 | `discursive status`          | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                                                                                                                                                                    |
 | `discursive logs`            | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail (uses fsnotify — no polling). `-n N` for last N lines. File auto-rotates at ~2 MB, keeps 2 backups.                                                                                                                                                                         |

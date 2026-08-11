@@ -13,18 +13,21 @@ const configFileName = "config.json"
 
 // AppSettings is the persisted settings (secrets encrypted at rest).
 type AppSettings struct {
-	LocalPort            uint16            `json:"localPort"`
-	RealModel            string            `json:"realModel"`
-	AliasModel           string            `json:"aliasModel"`
-	TunnelMode           string            `json:"tunnelMode,omitempty"`
-	PublicBaseURL        string            `json:"publicBaseUrl,omitempty"`
-	TunnelTokenEncrypted *string           `json:"tunnelTokenEncrypted,omitempty"`
-	MoonshotKeyEncrypted *string           `json:"moonshotKeyEncrypted,omitempty"`
-	DeepSeekKeyEncrypted *string           `json:"deepseekKeyEncrypted,omitempty"`
-	ThauraKeyEncrypted   *string           `json:"thauraKeyEncrypted,omitempty"`
-	ZaiKeyEncrypted      *string           `json:"zaiKeyEncrypted,omitempty"`
-	GatewayKey           string            `json:"gatewayKey"`
-	ReasoningEffort      map[string]string `json:"reasoningEffort,omitempty"` // real model id → effort
+	LocalPort              uint16            `json:"localPort"`
+	RealModel              string            `json:"realModel"`
+	AliasModel             string            `json:"aliasModel"`
+	TunnelMode             string            `json:"tunnelMode,omitempty"`
+	PublicBaseURL          string            `json:"publicBaseUrl,omitempty"`
+	TunnelTokenEncrypted   *string           `json:"tunnelTokenEncrypted,omitempty"`
+	MoonshotKeyEncrypted   *string           `json:"moonshotKeyEncrypted,omitempty"`
+	DeepSeekKeyEncrypted   *string           `json:"deepseekKeyEncrypted,omitempty"`
+	ThauraKeyEncrypted     *string           `json:"thauraKeyEncrypted,omitempty"`
+	ZaiKeyEncrypted        *string           `json:"zaiKeyEncrypted,omitempty"`
+	GatewayKey             string            `json:"gatewayKey"`
+	ReasoningEffort        map[string]string `json:"reasoningEffort,omitempty"`    // real model id → effort
+	CompressionEnabled     bool              `json:"compressionEnabled,omitempty"` // legacy: maps to ToolCompressionEnabled
+	ToolCompressionEnabled bool              `json:"toolCompressionEnabled,omitempty"`
+	Verbosity              map[string]bool   `json:"verbosity,omitempty"` // real model id → enabled
 }
 
 // DefaultSettings returns product defaults (no upstream secrets; empty gateway until Ensure).
@@ -35,6 +38,7 @@ func DefaultSettings() AppSettings {
 		AliasModel:      DefaultAliasModel,
 		TunnelMode:      DefaultTunnelMode,
 		ReasoningEffort: DefaultReasoningEffort(),
+		Verbosity:       DefaultVerbosity(),
 	}
 }
 
@@ -73,7 +77,10 @@ func Load(dataRoot string) (AppSettings, error) {
 	if s.TunnelMode == "" {
 		s.TunnelMode = DefaultTunnelMode
 	}
+	// Migrate legacy single compression toggle → tool compression.
+	s.normalizeCompressionFlags()
 	s.ReasoningEffort = NormalizeReasoningEffortMap(s.ReasoningEffort)
+	s.Verbosity = NormalizeVerbosityMap(s.Verbosity)
 	if err := s.EnsureGatewayKey(); err != nil {
 		return AppSettings{}, err
 	}
@@ -101,6 +108,17 @@ func Save(dataRoot string, s AppSettings) error {
 		return fmt.Errorf("rename config: %w", err)
 	}
 	return nil
+}
+
+// normalizeCompressionFlags ports the legacy single compression toggle onto the
+// per-feature toggles. The old flag enabled tool-result compression.
+func (s *AppSettings) normalizeCompressionFlags() {
+	if s.CompressionEnabled {
+		if !s.ToolCompressionEnabled {
+			s.ToolCompressionEnabled = true
+		}
+		s.CompressionEnabled = false
+	}
 }
 
 // EnsureGatewayKey sets a valid gateway key when missing or malformed.

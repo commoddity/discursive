@@ -13,7 +13,8 @@ import (
 )
 
 // verboseFlashCompletion returns a flash completion with a code block followed
-// by trailing verbose prose that should be trimmed by verbosity control.
+// by trailing verbose prose. Verbosity is prompt-only, so responses pass
+// through unchanged; this content is used to assert passthrough.
 func verboseFlashCompletion() map[string]any {
 	return map[string]any{
 		"id":      "chatcmpl-flash",
@@ -28,7 +29,7 @@ func verboseFlashCompletion() map[string]any {
 	}
 }
 
-func TestVerbosityEnabled_BufferedResponseTrimmed(t *testing.T) {
+func TestVerbosityEnabled_AppliesRequestSideControls_PassthroughResponse(t *testing.T) {
 	var upstreamBody map[string]any
 	upstream := func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&upstreamBody)
@@ -68,27 +69,26 @@ func TestVerbosityEnabled_BufferedResponseTrimmed(t *testing.T) {
 		t.Fatalf("expected max_tokens capped to 4096, got %v", upstreamBody["max_tokens"])
 	}
 
-	// 2. Response-side: leading verbose prose dropped, code + short trailing
-	//    summary preserved.
+	// 2. Response-side: content passes through byte-for-byte — verbosity only
+	//    coerces the model; it never edits response content.
 	var completion map[string]any
 	_ = json.Unmarshal(body, &completion)
 	content := completion["choices"].([]any)[0].(map[string]any)["message"].(map[string]any)["content"].(string)
 	if !strings.Contains(content, "```go") || !strings.Contains(content, "x := 1") {
-		t.Fatalf("code block lost after trim: %q", content)
+		t.Fatalf("code block lost: %q", content)
 	}
-	if strings.Contains(content, "first sentence") || strings.Contains(content, "third sentence") {
-		t.Fatalf("verbose prose not trimmed: %q", content)
-	}
+	// The verbose trailing prose must be preserved intact (prompt-coercion
+	// only — no trimming, no ellipsis).
 	if !strings.Contains(content, "fifth sentence") {
-		t.Fatalf("short trailing summary should be preserved: %q", content)
+		t.Fatalf("verbose prose should pass through unchanged: %q", content)
 	}
-	if !strings.HasSuffix(content, "…") {
-		t.Fatalf("expected trim ellipsis suffix, got %q", content)
+	if strings.Contains(content, "…") {
+		t.Fatalf("response content must never be trimmed with an ellipsis: %q", content)
 	}
 }
 
 func TestVerbosityDisabled_Passthrough(t *testing.T) {
-	// Default (no VerbosityEnabled) must not trim, inject, or cap.
+	// Per-model verbosity off for flash must not trim, inject, or cap.
 	var gotBody map[string]any
 	upstream := func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&gotBody)
@@ -96,7 +96,7 @@ func TestVerbosityDisabled_Passthrough(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(verboseFlashCompletion())
 	}
 
-	env := setupEnv(t, "", "sk-ds", "", upstream)
+	env := setupVerbosityDisabledEnv(t, upstream)
 
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
 		"model":      "o3-mini",
@@ -127,9 +127,9 @@ func TestVerbosityDisabled_Passthrough(t *testing.T) {
 	}
 }
 
-// TestVerbosityEnabled_StreamingPureTextTrimmed verifies that a pure-text
-// verbose stream is buffered, trimmed, and re-emitted.
-func TestVerbosityEnabled_StreamingPureTextTrimmed(t *testing.T) {
+// TestVerbosityEnabled_StreamingPassthrough verifies that a pure-text verbose
+// stream is passed through byte-for-byte (verbosity never edits streams).
+func TestVerbosityEnabled_StreamingPassthrough(t *testing.T) {
 	upstream := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
@@ -157,10 +157,11 @@ func TestVerbosityEnabled_StreamingPureTextTrimmed(t *testing.T) {
 		t.Fatalf("content-type %q", res.Header.Get("Content-Type"))
 	}
 	if !strings.Contains(string(body), "```go") || !strings.Contains(string(body), "x := 1") {
-		t.Fatalf("code lost in streamed trim: %s", body)
+		t.Fatalf("code lost in stream: %s", body)
 	}
-	if strings.Contains(string(body), "this first sentence") || strings.Contains(string(body), "This first sentence") {
-		t.Fatalf("verbose prose not trimmed in stream: %s", body)
+	// Verbose prose must pass through unchanged (no trim).
+	if !strings.Contains(string(body), "fifth sentence") {
+		t.Fatalf("verbose prose not passed through in stream: %s", body)
 	}
 	// Usage must still be recorded.
 	store, _ := usage.NewStore(env.dataRoot)
@@ -246,9 +247,10 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 	}
 }
 
-// setupVerbosityEnv builds a gateway with verbosity control enabled. When
+// setupVerbosityEnv builds a gateway with per-model verbosity control. When
 // enableRouter is true, the subagent router is also enabled (so model
-// downgrades to flash occur for cheap work).
+// downgrades to flash occur for cheap work). verbosity overrides the settings
+// map before load (default: DeepSeek flash on, pro off).
 func setupVerbosityEnv(t *testing.T, upstream http.HandlerFunc, enableRouter ...bool) *testEnv {
 	t.Helper()
 	routerOn := false
@@ -276,8 +278,48 @@ func setupVerbosityEnv(t *testing.T, upstream http.HandlerFunc, enableRouter ...
 		DataRoot:              dataRoot,
 		Settings:              &settings,
 		HTTPClient:            up.Client(),
-		VerbosityEnabled:      true,
 		SubAgentRouterEnabled: routerOn,
+		ChatURLOverride: map[config.Provider]string{
+			config.ProviderDeepSeek: up.URL + "/deepseek/chat/completions",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { _ = srv.Shutdown(t.Context()) })
+
+	return &testEnv{srv: srv, ts: ts, gatewayKey: settings.GatewayKey, dataRoot: dataRoot}
+}
+
+// setupVerbosityDisabledEnv builds a gateway with flash verbosity explicitly
+// turned off, for asserting that verbosity controls are inert by default per
+// model setting.
+func setupVerbosityDisabledEnv(t *testing.T, upstream http.HandlerFunc) *testEnv {
+	t.Helper()
+	dataRoot := t.TempDir()
+	settings := config.DefaultSettings()
+	settings.Verbosity[config.ModelDeepSeekV4Flash] = false
+	if err := settings.EnsureGatewayKey(); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(dataRoot, settings); err != nil {
+		t.Fatal(err)
+	}
+
+	up := httptest.NewServer(upstream)
+	t.Cleanup(up.Close)
+
+	srv, err := gateway.NewServer(gateway.ServerConfig{
+		ListenAddr: "127.0.0.1:0",
+		GatewayKey: settings.GatewayKey,
+		DataRoot:   dataRoot,
+		Settings:   &settings,
+		HTTPClient: up.Client(),
 		ChatURLOverride: map[config.Provider]string{
 			config.ProviderDeepSeek: up.URL + "/deepseek/chat/completions",
 		},

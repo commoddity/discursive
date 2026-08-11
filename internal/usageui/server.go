@@ -98,6 +98,8 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/balances", s.handleBalances)
 	mux.HandleFunc("/api/balance-spend", s.handleBalanceSpend)
 	mux.HandleFunc("/api/reasoning-effort", s.handleReasoningEffort)
+	mux.HandleFunc("/api/settings", s.handleSettings)
+	mux.HandleFunc("/api/verbosity", s.handleVerbosity)
 	mux.HandleFunc("/api/zai-flat-fee", s.handleZaiFlatFee)
 
 	ln, err := net.Listen("tcp", s.addr)

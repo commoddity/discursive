@@ -12,7 +12,7 @@ import (
 	"github.com/commoddity/discursive/internal/usage"
 )
 
-func runStart(cmd *cobra.Command, opts Options, tunnelFlag, publicURLFlag, logLevelFlag string, background, bgChild, subAgentRouter, compress, verbosity bool) error {
+func runStart(cmd *cobra.Command, opts Options, tunnelFlag, publicURLFlag, logLevelFlag string, background, bgChild, subAgentRouter bool) error {
 	// --- resolve data root + load settings ---
 	dataRoot, err := util.ResolveDataRoot(opts.Portable())
 	if err != nil {
@@ -83,7 +83,7 @@ func runStart(cmd *cobra.Command, opts Options, tunnelFlag, publicURLFlag, logLe
 	}
 
 	if bgChild {
-		return serveWithWatchdog(opts.Version, dataRoot, settings, subAgentRouter, compress, verbosity)
+		return serveWithWatchdog(opts.Version, dataRoot, settings, subAgentRouter)
 	}
-	return serveGateway(opts.Version, dataRoot, settings, subAgentRouter, compress, verbosity)
+	return serveGateway(opts.Version, dataRoot, settings, subAgentRouter)
 }

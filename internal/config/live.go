@@ -16,6 +16,7 @@ type LiveSettings struct {
 // NewLiveSettings wraps settings loaded for a data root.
 func NewLiveSettings(dataRoot string, s AppSettings) *LiveSettings {
 	s.ReasoningEffort = NormalizeReasoningEffortMap(s.ReasoningEffort)
+	s.Verbosity = NormalizeVerbosityMap(s.Verbosity)
 	return &LiveSettings{settings: s, dataRoot: dataRoot}
 }
 
@@ -78,6 +79,56 @@ func (l *LiveSettings) LocalPort() uint16 {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.settings.LocalPort
+}
+
+// ToolCompressionEnabled returns the live tool-result compression toggle state.
+func (l *LiveSettings) ToolCompressionEnabled() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.settings.ToolCompressionEnabled
+}
+
+// SetToolCompressionEnabled updates the live tool-result compression toggle and
+// persists it. "on" is safe only when a DeepSeek key is present so summaries
+// can be generated fail-open; callers (start CLI) pre-check that.
+func (l *LiveSettings) SetToolCompressionEnabled(v bool) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.settings.ToolCompressionEnabled = v
+	if err := Save(l.dataRoot, l.settings); err != nil {
+		return fmt.Errorf("save tool compression enabled: %w", err)
+	}
+	return nil
+}
+
+// VerbosityMap returns a copy of the normalized per-model verbosity map.
+func (l *LiveSettings) VerbosityMap() map[string]bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return NormalizeVerbosityMap(l.settings.Verbosity)
+}
+
+// VerbosityFor returns configured verbosity for a real model id.
+func (l *LiveSettings) VerbosityFor(model string) bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return VerbosityFor(l.settings.Verbosity, model)
+}
+
+// SetVerbosity updates the live verbosity toggle for model and persists it.
+func (l *LiveSettings) SetVerbosity(model string, enabled bool) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	norm := NormalizeVerbosityMap(l.settings.Verbosity)
+	if _, ok := norm[model]; !ok {
+		return fmt.Errorf("model %q does not support verbosity control", model)
+	}
+	norm[model] = enabled
+	l.settings.Verbosity = norm
+	if err := Save(l.dataRoot, l.settings); err != nil {
+		return fmt.Errorf("save verbosity: %w", err)
+	}
+	return nil
 }
 
 // HasMoonshotKey reports whether a Moonshot key is configured.
@@ -156,6 +207,12 @@ func cloneSettings(s AppSettings) AppSettings {
 		out.ReasoningEffort = make(map[string]string, len(s.ReasoningEffort))
 		for k, v := range s.ReasoningEffort {
 			out.ReasoningEffort[k] = v
+		}
+	}
+	if s.Verbosity != nil {
+		out.Verbosity = make(map[string]bool, len(s.Verbosity))
+		for k, v := range s.Verbosity {
+			out.Verbosity[k] = v
 		}
 	}
 	return out

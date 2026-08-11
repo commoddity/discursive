@@ -166,58 +166,108 @@ when the model has a mapped cheaper variant:
 | "fix linter errors in some files" stays on the expensive model instead of flash | `isStrongEditing` matches "fix" and blocks the `automation` downgrade | Let lint tasks classify as automation even with a strong-editing word present (`isLintTask` → bypass the `!isStrongEditing` guard) |
 | `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultFlashModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.2` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.2`), uncomment the entry in `modelOverrideMap` — it takes priority over the universal fallback. |
 
-#### Verbosity control (`--verbosity`) — model-keyed request+response transforms
+#### Verbosity control — model-keyed request-side transforms
 
-The `--verbosity` flag enables an opt-in subsystem (`internal/gateway/verbosity/`,
-wired as `Server.verbosity`, nil when disabled → zero overhead) that reduces
-flash turn verbosity via three mechanisms, all keyed on the **served model**:
+Verbosity control (`internal/gateway/verbosity/`, wired as `Server.verbosity`) is
+per-model and toggleable live from the **Output Verbosity** dashboard card
+(`GET/PUT /api/verbosity`). Each model's toggle is read per-request via
+`LiveSettings.VerbosityFor(model)` (`s.verbosityEnabledFor(model)`). The
+controller is always allocated and gated per-request on that per-model toggle.
+It coerces the model to be less verbose via two **request-side** mechanisms, all
+keyed on the **served model**. It **never edits response content** — both
+streaming and non-streaming replies pass through byte-for-byte:
 
 - **Directive injection** — appends `flashTersenessDirective` to the last
-  system/developer message (or prepends a new one).
+  system/developer message (or prepends a new one). Constraints include a
+  reasoning-before-action rule ("state what you are about to do in one line,
+  then act; do not narrate your investigative process").
 - **Token cap** — lowers `max_tokens` to `flashVerbosityMaxTokens` (4096);
   never raises.
-- **Response trimming** — strips trailing prose after the last substantive
-  boundary (code fence, inline code, bullet list, diff, DSML tool call);
-  never cuts code/tool/diff/list content; keeps a short sentence-floor summary.
 
 | Aspect | Detail |
 | ------ | ------ |
-| Flag | `--verbosity` (CLI), `VerbosityEnabled bool` |
-| Default | `false` (off) — nil controller, zero verbosity code runs |
-| Model key | Config map keys on the **real** model id (`deepseek-v4-flash`), not alias |
-| Streaming safety | Pure-text streams may be buffered+re-synthesized; tool-call streams always pass through verbatim |
+| Runtime toggle | `/api/verbosity` → per-model, applies immediately, no restart |
+| Controller | Always allocated; per-request gate `s.verbosityEnabledFor(model)` |
+| Model key | Config map keys on the **real** model id (`deepseek-v4-flash`, `deepseek-v4-pro`), not alias |
+| Response handling | Both streaming and non-streaming replies pass through unchanged — verbosity only prompts/caps, never trims |
 | Fail-open | Unknown model / no config → passthrough unchanged |
 
 ### `Model-dependent middlewares must run AFTER routing/downgrade`
 
-Request/response transforms that are keyed on the served model (verbosity,
-thinking shape, token caps) must be applied **after** the subagent-router
+Request transforms that are keyed on the served model (verbosity, thinking
+shape, token caps) must be applied **after** the subagent-router
 `ClassifyAndOverride` downgrade reassigns the model — not at the point where the
 sanitizer first resolved the alias.
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| `--verbosity` never trims a turn the router downgraded to `deepseek-v4-flash` (directive absent, `max_tokens` uncapped) — only the response-side trim fires, not the request-side injection/cap | `ApplyRequest` ran with the **original** resolved model (`deepseek-v4-pro` for `o1`); the controller config keys only on `deepseek-v4-flash`, so it early-returned. Response trimming incidentally worked because it re-reads `sanitized.Model` after the override | In `handleChatCompletions`, apply model-keyed request transforms **after** `ClassifyAndOverride` (and after the provider re-resolve) so they see the final served model. The response/trim path already re-reads `sanitized.Model` post-override, so it follows the served model automatically |
+| Verbosity controls never fire on a turn the router downgraded to `deepseek-v4-flash` (directive absent, `max_tokens` uncapped) | `ApplyRequest` ran with the **original** resolved model (`deepseek-v4-pro` for `o1`); the controller config keys only on `deepseek-v4-flash`, so it early-returned | In `handleChatCompletions`, apply model-keyed request transforms **after** `ClassifyAndOverride` (and after the provider re-resolve) so they see the final served model |
 
 `<!-- last-verified: 2026-08 -->`
 
-### `Compression — opt-in tool-result summarization`
+### `Compression + verbosity — opt-in, runtime-toggleable`
 
-The `--compress` flag enables tool-result compression:
+Compression and verbosity are enabled via **live settings** read from the usage
+dashboard (`http://127.0.0.1:4002`) with **no restart**. The gateway reads the
+live value per-request via the `LiveSettings` mutex-guarded store; the
+compressor/verbosity controllers are always allocated and gated on the current
+toggle, so the off state adds zero hot-path cost.
 
-- **Tool-result compression**: tool output > threshold chars is summarized by flash model
-- **Fail-open**: empty or error summaries → original content sent upstream (no quality loss)
+**Tool-result compression** (toggleable from the usage dashboard only, no CLI flag):
+
+- `role:tool` output > `toolResultMaxLen` (4000) chars is summarized by flash
+- **Fail-open**: empty/error summaries → original content sent upstream
 - **Content-hash cache** + singleflight dedup: same content compressed only once
 - **Flash model** (`deepseek-v4-flash`) used for summarization
 
+**History compression** (`--history-compress`) was prototyped and **removed**
+(T10). See [Why history compression was dropped](#why-history-compression-was-dropped).
+
+**Verbosity** (per-model, no CLI flag):
+
+- Controlled per-model from the **Output Verbosity** dashboard card
+  (`GET/PUT /api/verbosity`); DeepSeek `deepseek-v4-flash` defaults on,
+  `deepseek-v4-pro` defaults off. Only DeepSeek models support verbosity.
+- Three request-side mechanisms — **never edits response content**:
+  1. **Directive injection** — appends `flashTersenessDirective` (10 enumerated
+     mandatory constraints) to the last system/developer message
+  2. **Token cap** — lowers `max_tokens` to `flashVerbosityMaxTokens` (4096) or
+     `proVerbosityMaxTokens` (8192); never raises
+- Verbosity is applied **after** the subagent-router downgrade so the final
+  served model determines which controls fire
+
 | Aspect | Detail |
 | ------- | ------ |
-| Flag | `--compress` (CLI), `CompressEnabled bool` |
-| Default | `false` (off) — must be explicitly enabled |
-| Threshold | `toolResultMaxLen` (controlling when tool output gets compressed) |
-| Strategy | Tool-result message compression only |
-| Cache | Content-hash keyed, singleflight dedup, semaphore-bounded concurrency |
-| Fail-open | On any error (timeout, rejection, empty summary), original body returned unchanged |
+| Compression runtime toggles | `GET/PUT /api/settings` in usage UI → applies immediately, no restart |
+| Config fields | `ToolCompressionEnabled bool`, `Verbosity map[string]bool` (in `AppSettings`/`LiveSettings`) |
+| Tool threshold | `toolResultMaxLen` (4000 chars) |
+| Failure / key-missing | Fail-open: original body returned unchanged |
+
+#### Why history compression was dropped
+
+History compression was prototyped in T10 as an automatic summarization of older
+conversation turns to reduce context bloat. It was removed for these reasons:
+
+1. **Poor cost/benefit ratio** — each compression pass required 10–12 upstream
+   flash calls (~96K tokens) for a 360K-char transcript. The token overhead
+   approached the actual savings, and the compressible span changes on every
+   request (defeating the content-hash cache).
+2. **Empty-summary upstream glitches** — `deepseek-v4-flash` frequently returns
+   blank content for tool-heavy transcript chunks, even with retry+fallback.
+   Each empty chunk aborts the entire compression pass as fail-open.
+3. **Latency tax** — chunked summarization added serial upstream calls on the
+   request-serving goroutine, directly slowing the user-visible turn.
+4. **Redundancy with tool compression** — tool-result compression already handles
+   the largest source of context bloat (verbose file reads, search results,
+   diffs). The marginal gain from also compressing old prose messages was low.
+5. **Summary quality risk** — even with identifier-preserving prompts, an
+   auto-generated summary of code-review conversation risks dropping file paths,
+   error messages, and decisions that matter.
+
+The conclusion: tool-result compression is the high-leverage optimization.
+History compression adds complexity, latency, and upstream cost while saving
+marginal tokens. If context limits become a problem, prefer shorter sessions
+or manual summarization.
 
 #### Debugging compression from logs
 
@@ -226,7 +276,6 @@ The `--compress` flag enables tool-result compression:
 | `grep "compress"` returns no matches in gateway JSONL logs | Escaped JSON strings defeat literal grep | Parse with `python3 -c "import json,sys; [print(l.strip()) for l in sys.stdin if 'compress' in l.lower()]"` — use JSONL-aware parsing, not raw grep |
 | `compress: flash model returned empty summary (content N chars)` warning | Flash model occasionally fails to produce a summary for certain content | Expected — compression is fail-open so original content is sent upstream; no quality degradation. Tune if >20% failure rate. The HTTP client timeout for flash calls is 8s (fail-fast, don't block the user-visible turn). |
 | Compression saves no tokens (cache hits all misses) | Content-hash cache not warmed, or content is already under compression threshold | Expected for first request with unique content; significant savings appear on multi-turn sessions with repeated tool results |
-| Many `compress: skipping verbatim tool result` DEBUG lines | Every tool result (file reads, searches, diffs) triggered a debug log when `--log-level debug`; this log has been removed | The `compress: tool_results` INFO log reports actual compressions; per-tool skip logging is unnecessary noise |
 
 #### Performance: inline auxiliary API calls must fail fast
 

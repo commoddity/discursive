@@ -903,6 +903,40 @@
       align-items: stretch;
     }
 
+    .settings-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-top: 4px;
+    }
+
+    .setting-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      padding: 8px 10px;
+      border: 1px solid #484f58;
+      border-radius: 6px;
+      background: rgba(22, 27, 34, 0.8);
+      font-size: 14px;
+    }
+
+    .setting-toggle input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent, #58a6ff);
+    }
+
+    .settings-save-status {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #9da5b1;
+    }
+
+    .settings-save-status.ok { color: #3fb950; }
+    .settings-save-status.err { color: #f85149; }
+
     @media (max-width: 720px) {
       .effort-providers {
         grid-template-columns: 1fr;
@@ -959,6 +993,14 @@
       font-size: 0.9rem;
       color: var(--text);
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      white-space: nowrap;
+    }
+
+    .effort-model-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
     }
 
     .effort-model-actions {
@@ -1041,6 +1083,53 @@
       filter: grayscale(0.35);
     }
 
+    .model-control-group {
+      margin-bottom: 18px;
+    }
+
+    .model-control-group-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted, #9da5b1);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin: 0 0 8px 2px;
+    }
+
+    .model-control-tag {
+      font-size: 0.7rem;
+      color: var(--text-muted, #9da5b1);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    .model-verb-toggle {
+      padding: 6px 10px;
+      border-color: rgba(88, 166, 255, 0.35);
+      background: rgba(88, 166, 255, 0.06);
+    }
+
+    .model-verb-toggle .setting-label {
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    .model-control-save-status {
+      margin-top: 10px;
+      font-size: 0.78rem;
+      color: var(--text-muted, #9da5b1);
+      min-height: 1.1em;
+    }
+
+    .model-control-save-status.ok {
+      color: var(--accent2, #3fb950);
+    }
+
+    .model-control-save-status.err {
+      color: var(--danger, #f85149);
+    }
+
     .effort-toggle-btn::before {
       content: "Hide";
       grid-area: 1 / 1;
@@ -1052,6 +1141,21 @@
     }
 
     .effort-toggle-btn>.effort-toggle-text {
+      grid-area: 1 / 1;
+      white-space: nowrap;
+    }
+
+    .verbosity-toggle-btn::before {
+      content: "Hide";
+      grid-area: 1 / 1;
+      visibility: hidden;
+      height: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .verbosity-toggle-btn>.verbosity-toggle-text {
       grid-area: 1 / 1;
       white-space: nowrap;
     }
@@ -1291,21 +1395,34 @@
     </div>
   </div>
 
-  <div class="card" id="effort-card">
+  <div class="card" id="model-controls-card">
     <div class="card-header bal-card-header">
-      <h2>🧠 Reasoning Effort</h2>
+      <h2>⚙️ Model Controls</h2>
       <div class="bal-header-actions">
         <span class="health-info" style="margin-left:0"
-          data-tip="Per-model reasoning effort for providers that support it. Lower effort usually means fewer thinking tokens and lower cost. Changes apply to new requests immediately.">?</span>
-        <button class="health-btn bal-toggle-btn effort-toggle-btn" type="button" id="effort-panel-toggle"
-          onclick="toggleEffortPanel()"><span class="effort-toggle-text">Show</span></button>
+          data-tip="Per-model controls grouped by provider: reasoning effort and output verbosity (where supported). All changes apply to new requests immediately — no restart required.">?</span>
       </div>
     </div>
-    <div id="effort-body" style="display:none">
-      <div class="loading" id="effort-loading">Loading...</div>
-      <div class="effort-providers" id="effort-providers" style="display:none"></div>
-      <div class="effort-save-status" id="effort-save-status"></div>
-      <div class="error" id="effort-error" style="display:none"></div>
+    <div id="model-controls-body">
+      <div class="loading" id="model-controls-loading">Loading...</div>
+      <div class="error" id="model-controls-error" style="display:none"></div>
+
+      <div id="model-controls-content" style="display:none">
+        <div class="model-control-group" id="global-controls-group">
+          <h3 class="model-control-group-title">🌐 Global</h3>
+          <div class="settings-grid">
+            <label class="setting-toggle" data-tip="Summarize verbose tool results to reduce token cost.">
+              <input type="checkbox" id="toggle-tool-compression">
+              <span class="setting-label">Tool-result compression</span>
+            </label>
+          </div>
+          <div class="settings-save-status" id="settings-save-status"></div>
+        </div>
+
+        <div class="effort-providers" id="model-controls-providers"></div>
+
+        <div class="model-control-save-status" id="model-controls-save-status"></div>
+      </div>
     </div>
   </div>
 
@@ -1877,49 +1994,15 @@
       copyToClipboard(event, raw);
     }
 
-    // --- Reasoning effort ---
-    const LS_EFFORT_OPEN = 'discursive_usageui_effort_open';
+    // --- Model Controls (compression, reasoning effort, verbosity) ---
     const PROVIDER_NAMES = { moonshot: 'Moonshot', deepseek: 'DeepSeek', thaura: 'Thaura', zai: 'Z.AI' };
     const EFFORT_DOC_URLS = {
       moonshot: 'https://platform.kimi.ai/docs/guide/use-reasoning-effort',
       deepseek: 'https://api-docs.deepseek.com/guides/thinking_mode',
     };
 
-    function ensureEffortPanelDefault() {
-      if (localStorage.getItem(LS_EFFORT_OPEN) === null) {
-        localStorage.setItem(LS_EFFORT_OPEN, '0');
-      }
-    }
-
-    function getEffortPanelOpen() {
-      return localStorage.getItem(LS_EFFORT_OPEN) === '1';
-    }
-
-    function saveEffortPanelOpen(open) {
-      localStorage.setItem(LS_EFFORT_OPEN, open ? '1' : '0');
-    }
-
-    function applyEffortPanelVisibility() {
-      const open = getEffortPanelOpen();
-      const body = document.getElementById('effort-body');
-      if (body) body.style.display = open ? 'block' : 'none';
-      const btn = document.getElementById('effort-panel-toggle');
-      if (btn) {
-        const label = btn.querySelector('.effort-toggle-text');
-        if (label) label.textContent = open ? 'Hide' : 'Show';
-      }
-    }
-
-    function toggleEffortPanel() {
-      saveEffortPanelOpen(!getEffortPanelOpen());
-      applyEffortPanelVisibility();
-      if (getEffortPanelOpen() && !window._effortLoaded) {
-        loadReasoningEffort();
-      }
-    }
-
     function syncEffortSelectWidths() {
-      const sels = document.querySelectorAll('#effort-providers .effort-select');
+      const sels = document.querySelectorAll('#model-controls-providers .effort-select');
       if (!sels.length) return;
       let longest = '';
       sels.forEach(sel => {
@@ -1936,13 +2019,13 @@
       document.body.appendChild(probe);
       const w = Math.ceil(probe.getBoundingClientRect().width);
       document.body.removeChild(probe);
-      document.getElementById('effort-providers').style.setProperty('--effort-select-width', w + 'px');
+      document.getElementById('model-controls-providers').style.setProperty('--effort-select-width', w + 'px');
     }
 
     function updateEffortSavedMap(data) {
       window._effortSaved = {};
-      (data.providers || []).forEach(p => {
-        (p.models || []).forEach(m => {
+      (data.controls || []).forEach(ctrl => {
+        (ctrl.models || []).forEach(m => {
           window._effortSaved[m.id] = m.effort;
         });
       });
@@ -1958,7 +2041,7 @@
     }
 
     function wireEffortRowListeners() {
-      document.querySelectorAll('#effort-providers .effort-select').forEach(sel => {
+      document.querySelectorAll('#model-controls-providers .effort-select').forEach(sel => {
         const modelId = sel.dataset.model;
         sel.addEventListener('change', () => updateEffortSaveButton(modelId));
         updateEffortSaveButton(modelId);
@@ -1967,8 +2050,8 @@
 
     function renderEffortProviders(data) {
       updateEffortSavedMap(data);
-      const root = document.getElementById('effort-providers');
-      const providers = data.providers || [];
+      const root = document.getElementById('model-controls-providers');
+      const providers = data.controls || [];
       root.innerHTML = providers.map(p => {
         const cls = 'effort-provider ' + (p.id || '');
         const logo = LOGO_URLS[p.id] || '';
@@ -1988,9 +2071,19 @@
           const opts = (m.options || []).map(o =>
             '<option value="' + o + '"' + (o === m.effort ? ' selected' : '') + '>' + o + '</option>'
           ).join('');
+          const verbToggle = m.verbosity !== undefined
+            ? '<label class="setting-toggle model-verb-toggle" data-tip="Output verbosity: inject a terseness directive and cap output tokens to keep replies concise. Responses are never edited.">' +
+              '<input type="checkbox" id="verb-opt-' + m.id + '"' + (!!m.verbosity ? ' checked' : '') + ' onchange="saveModelVerbosity(\'' + m.id + '\')">' +
+              '<span class="setting-label">🍃 Terse</span>' +
+              '</label>'
+            : '';
           return '<div class="effort-row" data-model="' + m.id + '">' +
+            '<div class="effort-model-head">' +
             '<div class="effort-model-label">' + (m.label || m.id) + '</div>' +
+            verbToggle +
+            '</div>' +
             '<div class="effort-model-actions">' +
+            '<span class="model-control-tag">Effort</span>' +
             '<select class="time-select effort-select" data-model="' + m.id + '">' + opts + '</select>' +
             '<button class="' + saveCls + '" type="button" data-model="' + m.id + '" disabled onclick="saveModelEffort(\'' + m.id + '\')">Save</button>' +
             '</div>' +
@@ -2005,28 +2098,49 @@
       wireEffortRowListeners();
     }
 
-    async function loadReasoningEffort() {
+    async function loadModelControls() {
+      window._controls = null;
       try {
-        const data = await api('/api/reasoning-effort');
-        window._effortLoaded = true;
-        document.getElementById('effort-loading').style.display = 'none';
-        document.getElementById('effort-error').style.display = 'none';
-        const root = document.getElementById('effort-providers');
-        root.style.display = 'grid';
-        renderEffortProviders(data);
+        const [settings, effort, verbosity] = await Promise.all([
+          api('/api/settings'),
+          api('/api/reasoning-effort'),
+          api('/api/verbosity'),
+        ]);
+        document.getElementById('model-controls-loading').style.display = 'none';
+        document.getElementById('model-controls-error').style.display = 'none';
+        document.getElementById('model-controls-content').style.display = 'block';
+
+        document.getElementById('toggle-tool-compression').checked = !!settings.toolCompressionEnabled;
+
+        // Merge reasoning-effort providers with per-model verbosity toggles.
+        const verbById = {};
+        (verbosity.models || []).forEach(v => { verbById[v.id] = !!v.enabled; });
+        const controls = (effort.providers || []).map(p => ({
+          id: p.id,
+          label: p.label,
+          models: (p.models || []).map(m => ({
+            id: m.id,
+            label: m.label,
+            options: m.options,
+            effort: m.effort,
+            ...(m.id in verbById ? { verbosity: verbById[m.id] } : {}),
+          })),
+        }));
+        window._controls = { controls };
+        renderEffortProviders(window._controls);
       } catch (e) {
-        document.getElementById('effort-loading').style.display = 'none';
-        document.getElementById('effort-error').style.display = 'block';
-        document.getElementById('effort-error').textContent = 'Error: ' + e.message;
+        document.getElementById('model-controls-loading').style.display = 'none';
+        document.getElementById('model-controls-error').style.display = 'block';
+        document.getElementById('model-controls-error').textContent = 'Error: ' + e.message;
       }
     }
 
     async function saveModelEffort(modelId) {
-      const status = document.getElementById('effort-save-status');
+      const status = document.getElementById('model-controls-save-status');
       const sel = document.querySelector('select.effort-select[data-model="' + modelId + '"]');
       const btn = document.querySelector('button.effort-save-btn[data-model="' + modelId + '"]');
       if (!sel || btn?.disabled) return;
-      status.className = 'effort-save-status';
+      status.className = 'model-control-save-status';
       status.textContent = 'Saving…';
       try {
         const body = {};
@@ -2041,13 +2155,106 @@
           throw new Error(t || (r.status + ' ' + r.statusText));
         }
         const data = await r.json();
-        renderEffortProviders(data);
-        status.className = 'effort-save-status ok';
-        status.textContent = 'Saved ' + modelId + ' → ' + body[modelId];
+        // Save response carries only effort changes; re-merge verbosity state.
+        mergeEffortIntoControls(data);
+        renderEffortProviders(window._controls);
+        status.className = 'model-control-save-status ok';
+        status.textContent = 'Saved ' + modelId + ' effort → ' + body[modelId];
       } catch (e) {
-        status.className = 'effort-save-status err';
+        status.className = 'model-control-save-status err';
         status.textContent = 'Error: ' + e.message;
       }
+    }
+
+    function mergeEffortIntoControls(data) {
+      if (!window._controls) return;
+      (window._controls.controls || []).forEach(ctrl => {
+        (ctrl.models || []).forEach(m => {
+          const updated = findModel(data, m.id);
+          if (updated) m.effort = updated.effort;
+        });
+      });
+    }
+
+    function findModel(data, id) {
+      for (const p of (data.providers || data.controls || [])) {
+        for (const m of (p.models || [])) if (m.id === id) return m;
+      }
+      return null;
+    }
+
+    // --- Gateway toggles (compression) ---
+    async function saveGatewaySettings() {
+      const status = document.getElementById('settings-save-status');
+      status.className = 'settings-save-status';
+      status.textContent = 'Saving…';
+      try {
+        const body = {
+          toolCompressionEnabled: document.getElementById('toggle-tool-compression').checked,
+        };
+        const r = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error(t || (r.status + ' ' + r.statusText));
+        }
+        status.className = 'settings-save-status ok';
+        status.textContent = 'Saved at ' + new Date().toLocaleTimeString();
+      } catch (e) {
+        status.className = 'settings-save-status err';
+        status.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    // --- Output verbosity (per-model toggles, rendered inside merged model controls) ---
+    async function saveModelVerbosity(modelId) {
+      const status = document.getElementById('model-controls-save-status');
+      const cb = document.getElementById('verb-opt-' + modelId);
+      if (status) {
+        status.className = 'settings-save-status';
+        status.textContent = 'Saving…';
+      }
+      try {
+        const body = {};
+        body[modelId] = !!cb.checked;
+        const r = await fetch('/api/verbosity', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error(t || (r.status + ' ' + r.statusText));
+        }
+        const data = await r.json();
+        const verbById = {};
+        (data.models || []).forEach(v => { verbById[v.id] = !!v.enabled; });
+        // Update the merged in-memory controls and re-render provider rows.
+        updateControlsVerbosity(verbById);
+        renderEffortProviders(window._controls);
+        if (status) {
+          status.className = 'settings-save-status ok';
+          status.textContent = 'Saved ' + modelId + ' verbosity';
+        }
+      } catch (e) {
+        if (status) {
+          status.className = 'settings-save-status err';
+          status.textContent = 'Error: ' + e.message;
+        }
+      }
+    }
+
+    function updateControlsVerbosity(verbById) {
+      const controls = window._controls && window._controls.controls;
+      if (!controls) return;
+      controls.forEach(p => {
+        (p.models || []).forEach(m => {
+          if (m.id in verbById) m.verbosity = verbById[m.id];
+        });
+      });
     }
 
     // --- MTD summary ---
@@ -3185,10 +3392,9 @@
       ensureBalancesHiddenDefault();
       applyBalancesVisibility();
       ensureSessionsListDefault();
-      ensureEffortPanelDefault();
-      applyEffortPanelVisibility();
       loadHealth();
-      if (getEffortPanelOpen()) loadReasoningEffort();
+      loadModelControls();
+      document.getElementById('toggle-tool-compression').addEventListener('change', saveGatewaySettings);
       loadBalances();
       loadMTD();
       reloadGraphs();

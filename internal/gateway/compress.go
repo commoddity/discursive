@@ -5,7 +5,7 @@
 //
 // The compressor is fail-open: on any error (flash model timeout, upstream
 // rejection, cancellation), it returns the original body unchanged.
-// Compression is opt-in via --compress CLI flag.
+// Compression is opt-in via the usage dashboard toggle.
 package gateway
 
 import (

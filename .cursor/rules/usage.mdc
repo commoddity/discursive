@@ -83,7 +83,7 @@ Keep README § Usage Dashboard in sync when panels change.
 | Persistence | SQLite at `{dataRoot}/usage/usage.db` (shared with gateway) |
 | UI stack | Go `embed.FS` + HTML/CSS/vanilla JS — no React/Vue/npm |
 | Charts | Chart.js 4.4.7 — vendored in `static/` (offline) |
-| API | `/api/summary`, `/api/by-day-model`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions`, `/api/balances` |
+| API | `/api/summary`, `/api/by-day-model`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions`, `/api/balances`, `/api/reasoning-effort`, `/api/settings` (live compression toggles), `/api/verbosity` (per-model deepseek toggles — see `gateway.mdc`) |
 | Lifecycle | Start/stop with gateway |
 
 ### Currency support

@@ -28,9 +28,8 @@ type ServerConfig struct {
 	HTTPClient            *http.Client
 	ChatURLOverride       map[config.Provider]string // tests only
 	VisionChatURLOverride string                     // tests only
+	CompressEnabled       bool                       // default false (usage dashboard toggle)
 	SubAgentRouterEnabled bool                       // default true in production (CLI --subagent-router)
-	CompressEnabled       bool                       // default false (CLI --compress)
-	VerbosityEnabled      bool                       // default false (CLI --verbosity)
 }
 
 // Server is the loopback gateway HTTP server.
@@ -107,41 +106,73 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	s.vision = vision.NewDescriber(s.client, visionURL, zaiKeyFn)
 	s.router = NewSubAgentRouter(SubAgentRouterConfig{Enabled: cfg.SubAgentRouterEnabled})
 
-	// Wire compressor when --compress is set. If the DeepSeek key is missing,
-	// compression is silently disabled (fail-open — requests flow uncompressed).
-	if cfg.CompressEnabled {
-		deepseekURL, _ := config.ChatCompletionsURL(config.ProviderDeepSeek)
-		// Strip /chat/completions suffix — Compressor.ChatURL expects the base URL.
-		flashBase := strings.TrimSuffix(deepseekURL, "/chat/completions")
-		flashKeyFn := func() (string, bool) {
-			k, err := s.settings.GetDeepSeekKey(s.cfg.DataRoot)
-			if err != nil || k == nil || *k == "" {
-				return "", false
-			}
-			return *k, true
+	// Always allocate the compressor and verbosity controller so they can be
+	// enabled/disabled at runtime from the usage dashboard without a restart.
+	// Per-request gates (compressionEnabled / verbosityEnabled) read the live
+	// setting; when disabled they short-circuit before any work is done, so the
+	// always-allocated structs add zero hot-path cost.
+	deepseekURL, _ := config.ChatCompletionsURL(config.ProviderDeepSeek)
+	// Strip /chat/completions suffix — Compressor.ChatURL expects the base URL.
+	flashBase := strings.TrimSuffix(deepseekURL, "/chat/completions")
+	flashKeyFn := func() (string, bool) {
+		k, err := s.settings.GetDeepSeekKey(s.cfg.DataRoot)
+		if err != nil || k == nil || *k == "" {
+			return "", false
 		}
-		s.compressor = NewCompressor(CompressorConfig{
-			Enabled:   true,
-			ChatURL:   flashBase,
-			GetAPIKey: flashKeyFn,
-		}, s.client)
+		return *k, true
 	}
+	s.compressor = NewCompressor(CompressorConfig{
+		Enabled:   true,
+		ChatURL:   flashBase,
+		GetAPIKey: flashKeyFn,
+	}, s.client)
 
-	// Wire verbosity control when --verbosity is set. The whole subsystem is
-	// gated behind s.verbosity != nil (nil when disabled → zero overhead).
-	if cfg.VerbosityEnabled {
-		s.verbosity = verbosity.NewController(verbosity.VerbosityConfig{
-			Models: map[string]verbosity.ModelConfig{
-				"deepseek-v4-flash": {
-					SystemMessageDirective: flashTersenessDirective,
-					MaxTokens:              flashVerbosityMaxTokens,
-					TrimEnabled:            true,
-				},
+	// Verbosity controller holds the per-model verbosity config (terseness
+	// directive, token cap) for every model that supports it. Whether a model's
+	// controls are actually applied is decided per-request by
+	// verbosityEnabledFor, which reads the live per-model toggles. Verbosity
+	// only coerces the model via the request — response content is never edited.
+	s.verbosity = verbosity.NewController(verbosity.VerbosityConfig{
+		Models: map[string]verbosity.ModelConfig{
+			"deepseek-v4-flash": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              flashVerbosityMaxTokens,
 			},
-		})
-	}
+			"deepseek-v4-pro": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              proVerbosityMaxTokens,
+			},
+		},
+	})
 	s.routes()
 	return s, nil
+}
+
+// toolCompressionEnabled reports whether tool-result compression is currently
+// on. It reads the live runtime setting when present, falling back to the
+// static ServerConfig flag or persisted settings for test/no-live setups.
+func (s *Server) toolCompressionEnabled() bool {
+	if s.live != nil {
+		return s.live.ToolCompressionEnabled()
+	}
+	if s.cfg.CompressEnabled {
+		return true
+	}
+	return s.settings != nil && s.settings.ToolCompressionEnabled
+}
+
+// verbosityEnabledFor reports whether output-verbosity controls are on for a
+// real model id. It reads the live per-model map when present, falling back to
+// the persisted settings map. Flash defaults to on; other models default per
+// the catalog.
+func (s *Server) verbosityEnabledFor(model string) bool {
+	if s.live != nil {
+		return s.live.VerbosityFor(model)
+	}
+	if s.settings != nil {
+		return config.VerbosityFor(s.settings.Verbosity, model)
+	}
+	return false
 }
 
 func (s *Server) routes() {
