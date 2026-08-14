@@ -1,34 +1,23 @@
-<p align="center">
-  <img src=".github/img/Discursive.png" alt="Discursive" width="600" />
-</p>
 
-<div align="center">
-  <blockquote>
-    <em>/dĭ-skûr′sĭv/ - proceeding coherently from topic to topic; marked by analytical reasoning</em>
-  </blockquote>
-  <p>A gateway proxy that enables <a href="https://cursor.com">Cursor</a>'s full agentic workflow with alternative providers.</p>
-</div>
 
-<p align="center">
-  <a href="https://platform.kimi.ai/"><img src=".github/img/moonshot-white.svg" alt="Moonshot Kimi" height="35" valign="middle" /></a>
-  &ensp;&middot;&ensp;
-  <a href="https://api-docs.deepseek.com/"><img src=".github/img/deepseek.svg" alt="DeepSeek" height="35" valign="middle" /></a>
-  &ensp;&middot;&ensp;
-  <a href="https://thaura.ai/"><img src=".github/img/thaura.png" alt="Thaura AI" height="35" valign="middle" /></a>
-  &ensp;&middot;&ensp;
-  <a href="https://docs.z.ai/"><img src=".github/img/zai.svg" alt="Z.AI" height="35" valign="middle" /></a>
-</p>
+> */dĭ-skûr′sĭv/ - proceeding coherently from topic to topic; marked by analytical reasoning*
 
-<h3 align="center">Written in <a href="https://go.dev/"><img src=".github/img/go.svg" alt="Go" height="28" valign="middle" /></a></h3>
+A gateway proxy that enables [Cursor](https://cursor.com)'s full agentic workflow with alternative providers.
+
+ ·   ·   · 
+
+### Written in
 
 ---
 
-### Table of Contents <!-- omit in toc -->
+
+
+### Table of Contents 
 
 - [📦 Quickstart](#-quickstart)
 - [⚡ Subagent Routing](#-subagent-routing)
   - [What gets downgraded](#what-gets-downgraded)
-  - [`discursive start` flags](#discursive-start-flags)
+  - `discursive start` [flags](#discursive-start-flags)
   - [Compression](#compression)
 - [☁️ Setting up Cloudflare](#️-setting-up-cloudflare)
 - [📊 Usage Dashboard](#-usage-dashboard)
@@ -45,9 +34,13 @@
 
 ---
 
+
+
 ## 📦 Quickstart
 
-### 1. Install <!-- omit in toc -->
+
+
+### 1. Install 
 
 ```bash
 go install github.com/commoddity/discursive@latest
@@ -55,14 +48,17 @@ go install github.com/commoddity/discursive@latest
 
 Or download a [release binary](https://github.com/commoddity/discursive/releases) and put it on your `PATH`.
 
-### Prerequisites <!-- omit in toc -->
+### Prerequisites 
 
-#### Dependencies <!-- omit in toc -->
+
+
+#### Dependencies 
 
 - [Go](https://go.dev/dl/) 1.26.5+
 - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
 
 On first run, the interactive wizard also prompts for:
+
 
 | Item                    | Required | Where to get / notes                                       |
 | ----------------------- | -------- | ---------------------------------------------------------- |
@@ -73,7 +69,10 @@ On first run, the interactive wizard also prompts for:
 | Thaura AI API key       | No       | [thaura.ai](https://thaura.ai/api-platform)                |
 | Z.AI API key            | No       | [docs.z.ai](https://docs.z.ai/api-reference/introduction)  |
 
-### 2. Start the gateway <!-- omit in toc -->
+
+
+
+### 2. Start the gateway 
 
 ```bash
 discursive start --background
@@ -101,15 +100,19 @@ Gateway keys are masked by default. Pass `--show-key` to print the full
 > See [Subagent Routing](#-subagent-routing) below, or disable it with
 > `discursive start --subagent-router=false`.
 
-### 3. Configure Cursor <!-- omit in toc -->
+
+
+### 3. Configure Cursor 
 
 Open **Cursor Settings → Models** and enter:
+
 
 | Setting                  | Value                                                 |
 | ------------------------ | ----------------------------------------------------- |
 | OpenAI API Key           | `gateway_key` from `discursive status --show-key`     |
 | Override OpenAI Base URL | `public_url` from `discursive status` (ends in `/v1`) |
 | Model                    | Pick an alias from the table below (e.g. `gpt-4o`)    |
+
 
 Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 `Connection verified` above the Base URL field.
@@ -119,7 +122,9 @@ Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 > hover over the `?` icons next to ☁️ Tunnel and 🔐 Gateway Key for field-specific
 > setup instructions.
 
-### 4. Switch providers <!-- omit in toc -->
+
+
+### 4. Switch providers 
 
 Change the model alias in Cursor's model picker — no restart needed:
 
@@ -138,12 +143,14 @@ Change the model alias in Cursor's model picker — no restart needed:
 
 
 
-### 5. Switch back to Cursor's models <!-- omit in toc -->
+### 5. Switch back to Cursor's models 
 
 In Cursor Settings → Models: turn off "Override OpenAI API Key" and
 "Override OpenAI Base URL", then pick a Cursor-native model.
 
 ---
+
+
 
 ## ⚡ Subagent Routing
 
@@ -157,10 +164,13 @@ and requires no configuration.
 > inspects each request, may route it to a cheaper model, and proxies upstream.
 > Cursor's model picker is unaware of the routing.
 
+
+
 ### What gets downgraded
 
 Each incoming request is classified by its **content** — the last user message
 determines whether the task is cheap enough for a flash model:
+
 
 | Request type                                          | Action             | Model               |
 | ----------------------------------------------------- | ------------------ | ------------------- |
@@ -172,15 +182,20 @@ determines whether the task is cheap enough for a flash model:
 | Complex reasoning / architecture                      | keep model         | original model      |
 | Unknown / unclassified                                | keep model         | original model      |
 
+
+
+
 ### `discursive start` flags
 
-| Flag                | Default  | Purpose                                                                                                                                                                               |
-| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--subagent-router` | `true`   | Enable the subagent router (content-based classification + flash downgrade). Set `--subagent-router=false` to run the gateway with no automatic model changes.                        |
-| `--log-level`       | `info`   | Log verbosity: `debug`, `info`, `warn`, `error`. Use `debug` to see per-request `request_class` and override lines from the router. Overrides `DISCURSIVE_LOG_LEVEL`.                 |
-| `--background`      | `false`  | Detach and run in the background. Logs to `{dataRoot}/gateway.log`.                                                                                                                   |
-| `--tunnel`          | (config) | Tunnel mode: `named`, `none`, or `quick` (persists to config).                                                                                                                        |
-| `--public-url`      | (config) | Public HTTPS base URL ending in `/v1` (persists to config).                                                                                                                           |
+
+| Flag                | Default  | Purpose                                                                                                                                                               |
+| ------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--subagent-router` | `true`   | Enable the subagent router (content-based classification + flash downgrade). Set `--subagent-router=false` to run the gateway with no automatic model changes.        |
+| `--log-level`       | `info`   | Log verbosity: `debug`, `info`, `warn`, `error`. Use `debug` to see per-request `request_class` and override lines from the router. Overrides `DISCURSIVE_LOG_LEVEL`. |
+| `--background`      | `false`  | Detach and run in the background. Logs to `{dataRoot}/gateway.log`.                                                                                                   |
+| `--tunnel`          | (config) | Tunnel mode: `named`, `none`, or `quick` (persists to config).                                                                                                        |
+| `--public-url`      | (config) | Public HTTPS base URL ending in `/v1` (persists to config).                                                                                                           |
+
 
 Examples:
 
@@ -196,14 +211,16 @@ discursive start --subagent-router=false
 > `request_class`. This is the easiest way to see exactly what the router is
 > doing and tune your expectations.
 
+
+
 ### Compression
 
 Tool-result compression reduces token cost during multi-turn agent sessions. It
-is toggleable from the usage dashboard (`http://127.0.0.1:4002` → **Gateway Toggles**,
+is toggleable from the usage dashboard (`http://127.0.0.1:4002` → **Model Controls**,
 no restart required):
 
 1. **Tool-result compression**: Tool output exceeding a character threshold is
-   summarized by a cheap model (`deepseek-v4-flash`).
+  summarized by a cheap model (`deepseek-v4-flash`).
 
 Compression is **fail-open**: if the summarizer model returns an empty or error
 result, the original content is sent upstream unchanged — there is no quality
@@ -243,12 +260,7 @@ a public HTTPS URL.
 
 ## 📊 Usage Dashboard
 
-<div align="center">
-  <img src=".github/img/usage-dashboard.png" alt="Usage Dashboard" width="500">
-</div>
-<p align="center">
-  <em>Usage Dashboard</em>
-</p>
+*Usage Dashboard*
 
 The gateway serves a local usage dashboard at `http://localhost:4002`
 (loopback only). It starts automatically with `discursive start` — no extra
@@ -266,6 +278,8 @@ process or configuration.
 
 ---
 
+
+
 ## 🪐 Providers
 
 Models that support configurable reasoning / thinking (`kimi-k3`,
@@ -274,17 +288,21 @@ Models that support configurable reasoning / thinking (`kimi-k3`,
 settings and applied to new gateway requests immediately (no restart). Gateway
 logs include an `effort` field on request/response/usage lines.
 
+
 | Model                                   | Options              | Default                                                                                  |
 | --------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------- |
 | `kimi-k3`                               | `low`, `high`, `max` | `low` (API default is `max`; we default lower for cost)                                  |
 | `deepseek-v4-pro` / `deepseek-v4-flash` | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
 | `glm-5.2`                               | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
 
+
 - Lower effort usually means fewer thinking tokens and lower cost. `thaura` does not
 expose this control.
 - `kimi-k2.7-code` always thinks — thinking is always on and there is no effort
 selector: [Kimi K2.7 Code](https://www.kimi.com/resources/kimi-k2-7-code)
 - DeepSeek only documents `high`/`max` for effort: [DeepSeek Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)).
+
+
 
 ### Output Verbosity
 
@@ -294,9 +312,9 @@ that per-model from the **Output Verbosity** card at the Usage Dashboard
 two controls to that model's **requests**:
 
 1. **Terseness directive** — a numbered, authority-marked system prompt appendix
-   telling the model to lead with the solution and omit conversational filler.
+  telling the model to lead with the solution and omit conversational filler.
 2. **Output-token cap** — a generous `max_tokens` ceiling (only ever lowers a
-   request's existing value).
+  request's existing value).
 
 Verbosity only **coerces/prompts the model** to be less verbose. The gateway
 **never edits response content** — both streaming and non-streaming replies pass
@@ -306,7 +324,7 @@ Defaults: `deepseek-v4-flash` is **on**, `deepseek-v4-pro` is **off**. Changes
 apply to new requests immediately (no restart). The `--verbosity` CLI flag has
 been removed — verbosity is now managed entirely from the dashboard.
 
-### 🌙 Moonshot (Kimi) <!-- omit in toc -->
+### 🌙 Moonshot (Kimi) 
 
 [Moonshot](https://platform.kimi.ai/) provides frontier models with long-context
 windows and native reasoning capabilities.
@@ -326,16 +344,22 @@ windows and native reasoning capabilities.
 
 
 
-### 🐋 DeepSeek <!-- omit in toc -->
+### 🐋 DeepSeek 
 
 [DeepSeek](https://api-docs.deepseek.com/) provides cost-efficient reasoning
 models at a fraction of the cost per token.
 
+DeepSeek uses **peak / off-peak billing** (effective 2026-08-16 16:00 UTC).
+Peak hours are 01:00–04:00 and 06:00–10:00 UTC (all other hours are
+off-peak); peak rates are 2× the off-peak rates.
 
-| API model ID        | Cache hit / MTok | Cache miss / MTok | Output / MTok | Role                                 |
-| ------------------- | ---------------- | ----------------- | ------------- | ------------------------------------ |
-| `deepseek-v4-pro`   | $0.003625        | $0.435            | $0.87         | Harder reasoning / agentic execution |
-| `deepseek-v4-flash` | $0.0028          | $0.14             | $0.28         | Cheap, high-volume execution         |
+
+| API model ID        | Tier     | Cache hit / MTok | Cache miss / MTok | Output / MTok | Role                                 |
+| ------------------- | -------- | ---------------- | ----------------- | ------------- | ------------------------------------ |
+| `deepseek-v4-pro`   | Off-peak | $0.022           | $0.66             | $1.98         | Harder reasoning / agentic execution |
+| `deepseek-v4-pro`   | Peak     | $0.044           | $1.32             | $3.96         |                                      |
+| `deepseek-v4-flash` | Off-peak | $0.007           | $0.22             | $0.66         | Cheap, high-volume execution         |
+| `deepseek-v4-flash` | Peak     | $0.014           | $0.44             | $1.32         |                                      |
 
 
 - Pricing: [https://api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/quick_start/pricing)
@@ -344,12 +368,15 @@ models at a fraction of the cost per token.
 
 ---
 
-### 🪻 Z.AI <!-- omit in toc -->
+
+
+### 🪻 [Z.AI](http://Z.AI) 
 
 [Z.AI](https://docs.z.ai/) provides GLM-series models with
 thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 (subscription, credits quota), which exposes the OpenAI-compatible base URL
 `https://api.z.ai/api/coding/paas/v4`.
+
 
 | API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                                                     |
 | ------------ | ---------------- | ------------ | ------------- | ------------------------------------------------------------------------ |
@@ -357,27 +384,33 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 | `glm-4.7`    | $0.11            | $0.60        | $2.20         | Budget execution; thinking on/off                                        |
 | `glm-4.6v`   | $0.05            | $0.30        | $0.90         | Vision worker — describes images for ALL providers (not user-selectable) |
 
+
 > **Image routing:** any request (any provider) that contains image content is
 > intercepted by the gateway and each image is described by Z.AI `glm-4.6v`
 > (coding-plan endpoint) before the selected text model is called. A Z.AI API
-> key is therefore required to send images. If it is missing or the vision
-> model rejects the image, the request **fails fast** with a clear `vision_error`
-> rather than silently dropping the image.
+> key is therefore required to send images. Images that were already described
+> are reused from a durable cache, so later turns in the same chat do not
+> re-invoke the vision model. If the key is missing, or an image cannot be
+> described (e.g. the vision model is rate-limited), the image is replaced with
+> a placeholder note and the request proceeds to the text model — a rate-limited
+> vision model never blocks the conversation.
 
 - Pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing)
 - API docs: [https://docs.z.ai/api-reference/introduction](https://docs.z.ai/api-reference/introduction)
 - API key: [https://z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) (GLM Coding Plan key)
 
+
 | Parameter          | `glm-5.2`                                                     | `glm-4.7`               |
 | ------------------ | ------------------------------------------------------------- | ----------------------- |
-| `thinking`         | `{type: "enabled"}` when reasoning; else `{type: "disabled"}` | `{type: "enabled"       | "disabled"}` |
+| `thinking`         | `{type: "enabled"}` when reasoning; else `{type: "disabled"}` | `{type: "enabled"       |
 | `reasoning_effort` | Normalized → `off`/`high`/`max`                               | Deleted (not supported) |
+
 
 ---
 
 
 
-### 🐪 Thaura <!-- omit in toc -->
+### 🐪 Thaura 
 
 [Thaura](https://thaura.ai/) is an AI platform that combines technical
 excellence with ethical principles, designed to support Palestinian liberation
@@ -395,7 +428,6 @@ and mission-aligned technology development.
 > **🇵🇸 Incubated by Tech for Palestine**
 >
 > Click to expand  
->
 >
 > [Tech for Palestine](https://techforpalestine.org/) (T4P) is a coalition of founders, engineers, product marketers, investors, and other professionals working in support of Palestinian liberation.
 >
@@ -421,11 +453,9 @@ and mission-aligned technology development.
 > - Hire Palestinians
 >
 > Learn more at [techforpalestine.org](https://techforpalestine.org/)
->
->
-
 
 ---
+
 
 
 ## 🛠 Tech Stack
@@ -438,7 +468,9 @@ and mission-aligned technology development.
 | Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) named tunnel |
 | Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura + Z.AI)                                   |
 
+
 ---
+
 
 
 ## 📁 File Structure
@@ -453,14 +485,14 @@ internal/
   config/                 # App settings, paths, upstream URL helpers
   crypto/                 # Encrypt upstream keys + gateway key gen
   gateway/                # HTTP server, sanitizer, optimizer, proxy, auth
-    vision/               # Image description via glm-4.6v (fail-fast, content-hash cache)
+    vision/               # Image description via glm-4.6v (content-hash cache, graceful fallback)
   tunnel/                 # cloudflared supervisor
   doctor/                 # Health checks
   usage/                  # Pricing tables, token/cost store, slog helpers
   usageui/                # Embedded usage dashboard (HTTP, Chart.js)
 .cursor/rules/            # Agent conventions
 .cursor/skills/           # Invocable workflows
-planning/          # MVP task sequence (T01–T10)
+planning/          # Local scratch for MVP task plans (gitignored — not in fresh checkout)
 ```
 
 ---
@@ -472,18 +504,21 @@ planning/          # MVP task sequence (T01–T10)
 All output is JSON on stdout. Pipe through `jq` for readability.
 
 
-| Command                      | Description                                                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command                      | Description                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `discursive start`           | Start gateway on `localhost:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. `--subagent-router` (on by default). Runtime toggles managed from the usage dashboard. Auto-invokes `init` if config is incomplete on first run. See [Subagent Routing](#-subagent-routing) and [Compression](#-compression). |
-| `discursive stop`            | Send SIGTERM via PID file. No-op if not running.                                                                                                                                                                                                                                                                                                                    |
-| `discursive status`          | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                                                                                                                                                                    |
-| `discursive logs`            | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail (uses fsnotify — no polling). `-n N` for last N lines. File auto-rotates at ~2 MB, keeps 2 backups.                                                                                                                                                                         |
-| `discursive log-level [debug | info                                                                                                                                                                                                                                                                                                                                                                | warn | error]`      | Show or set log verbosity. Set persists per-process; hints how to export `DISCURSIVE_LOG_LEVEL` for persistence. |
-| `discursive doctor`          | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                                                                                                                                                                              |
-| `discursive usage`           | Token + cost estimates per session/model.                                                                                                                                                                                                                                                                                                                           |
-| `discursive set`             | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--zai-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key.                                                                                                                          |
-| `discursive completion [bash | zsh                                                                                                                                                                                                                                                                                                                                                                 | fish | powershell]` | Generate a shell completion script (see [Shell Completion](#️-shell-completion)).                                 |
-| `discursive version`         | Print version.                                                                                                                                                                                                                                                                                                                                                      |
+| `discursive stop`            | Write a `gateway.stop` poll file (the real signal for background gateways that ignore SIGTERM), then SIGTERM for foreground/legacy processes, SIGKILL on no-graceful-exit. No-op if not running.                                                                                                                                                                                                                                                                                                                                       |
+| `discursive status`          | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                                                                                                                                                                                       |
+| `discursive logs`            | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail (uses fsnotify — no polling). `-n N` for last N lines. File auto-rotates at ~2 MB, keeps 2 backups.                                                                                                                                                                                            |
+| `discursive log-level [debug\|info\|warn\|error]` | Show or set log verbosity. No arg prints the current level; pass `debug`/`info`/`warn`/`error` (alias `warning`) to set it for the current process. Persist with `export DISCURSIVE_LOG_LEVEL=debug`.                                                                                                                                              |
+| `discursive doctor`          | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                                                                                                                                                                                                 |
+| `discursive usage`           | Token + cost estimates per session/model. Defaults to today; `--date YYYY-MM-DD`, `--session <id>`, or `--days N` (last N days). Also prints a confirmed + estimated spend report (Moonshot/DeepSeek balance-confirmed + Thaura estimate; Z.AI excluded — flat-fee plan). Subcommands: `purge`, `prune-snapshots`.      |
+| `discursive usage purge`     | Delete usage events older than `--max-age` (Go duration, default `90d`; also `24h`, `7d`, `30d`…). `--dry-run` previews the count without deleting.                                                                                                                                                                                                                                   |
+| `discursive usage prune-snapshots` | Delete balance snapshots older than `--max-age` (default `90d`). Raw snapshot rows used to compute confirmed spend; no longer needed once a period is complete. `--dry-run` previews without deleting.                                                                                                                                     |
+| `discursive init`            | Run first-time setup: write config, generate the gateway key, store provider API keys. Auto-invoked by `start` when config is incomplete.                                                                                                                                                                                                                                            |
+| `discursive set`             | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--zai-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key.                                                                                                                                             |
+| `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (Cobra built-in). See [Shell Completion](#-shell-completion).                                                                                                                                                                                 |
+| `discursive version`         | Print version.                                                                                                                                                                                                                                                                                                                                                                         |
 
 
 JSON slog on **stdout**, interactive prompts on **stderr** — pipe-friendly.
@@ -579,8 +614,6 @@ public surface
 
 
 ## 🧪 Methodology
-
-
 
 Discursive was developed using [Turboplan](https://github.com/commoddity/turboplan),
 a methodology for AI-assisted software delivery. Turboplan structures work into

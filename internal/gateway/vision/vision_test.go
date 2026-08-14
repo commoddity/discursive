@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -133,7 +134,7 @@ func TestReplaceImagesCacheHit(t *testing.T) {
 	}
 }
 
-func TestReplaceImagesUpstreamErrorFailsFast(t *testing.T) {
+func TestReplaceImagesUpstreamErrorFallsBack(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = w.Write([]byte(`{"error":{"message":"Insufficient balance. Please recharge."}}`))
@@ -149,23 +150,23 @@ func TestReplaceImagesUpstreamErrorFailsFast(t *testing.T) {
 		standardImageURLPart("data:image/png;base64,abc123"),
 	)
 	n, err := d.ReplaceImages(t.Context(), body)
-	if n != 0 {
-		t.Fatalf("expected 0 images described on error, got %d", n)
+	if err != nil {
+		t.Fatalf("expected graceful fallback (no error), got: %v", err)
 	}
-	if err == nil {
-		t.Fatal("expected fail-fast error on upstream rejection")
-	}
-	if !strings.Contains(err.Error(), "Insufficient balance") {
-		t.Fatalf("expected upstream message surfaced in error, got: %v", err)
+	if n != 1 {
+		t.Fatalf("expected 1 image part replaced, got %d", n)
 	}
 
-	// Body must be left untouched (fail fast, no silent placeholder).
+	// The image part must now be a text placeholder, not the raw image_url.
 	msgs := body["messages"].([]any)
 	msg := msgs[0].(map[string]any)
 	parts := msg["content"].([]any)
-	imgPart := parts[1].(map[string]any)
-	if imgPart["type"] != "image_url" {
-		t.Fatalf("expected original image_url part preserved on error, got type=%v", imgPart["type"])
+	replaced := parts[1].(map[string]any)
+	if replaced["type"] != "text" {
+		t.Fatalf("expected image replaced with text placeholder, got type=%v", replaced["type"])
+	}
+	if !strings.Contains(replaced["text"].(string), "Image 1") {
+		t.Fatalf("unexpected replacement text: %q", replaced["text"])
 	}
 }
 
@@ -248,12 +249,8 @@ func TestReplaceImagesNilDescriber(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("expected 0 images described for nil describer, got %d", n)
 	}
-	if err == nil {
-		t.Fatal("expected error for nil describer with images")
-	}
-	// A nil describer means vision is unavailable → fail fast.
-	if !strings.Contains(err.Error(), "vision") {
-		t.Fatalf("expected vision error, got: %v", err)
+	if err != nil {
+		t.Fatalf("expected no error for nil describer (graceful no-op), got: %v", err)
 	}
 }
 
@@ -268,20 +265,131 @@ func TestReplaceImagesNoKey(t *testing.T) {
 		standardImageURLPart("https://example.com/img.png"),
 	)
 	n, err := d.ReplaceImages(t.Context(), body)
-	if n != 0 {
-		t.Fatalf("expected 0 images described without key, got %d", n)
+	if err != nil {
+		t.Fatalf("expected graceful fallback (no error) without key, got: %v", err)
 	}
-	if err != ErrNoVisionKey {
-		t.Fatalf("expected ErrNoVisionKey, got: %v", err)
+	if n != 1 {
+		t.Fatalf("expected 1 image replaced with placeholder, got %d", n)
 	}
 
-	// Body must be left untouched (fail fast, no silent placeholder).
+	// Missing key → graceful placeholder, not the raw image_url.
 	msgs := body["messages"].([]any)
 	msg := msgs[0].(map[string]any)
 	parts := msg["content"].([]any)
-	imgPart := parts[1].(map[string]any)
-	if imgPart["type"] != "image_url" {
-		t.Fatalf("expected original image_url part preserved, got type=%v", imgPart["type"])
+	replaced := parts[1].(map[string]any)
+	if replaced["type"] != "text" {
+		t.Fatalf("expected image replaced with text placeholder, got type=%v", replaced["type"])
+	}
+}
+
+func TestReplaceImagesReusesPersistentCache(t *testing.T) {
+	// First turn: describe the image once (populates the durable cache).
+	// Subsequent turns with the same image must NOT re-call the vision model,
+	// even after the in-memory cache has been cleared.
+	srv, count := stubGLM46vServer(t, map[string]any{
+		"choices": []any{
+			map[string]any{
+				"message": map[string]any{
+					"content": "A cached, persisted image description",
+				},
+			},
+		},
+	})
+	dir := t.TempDir()
+	persist, err := NewPersistentCache(dir)
+	if err != nil {
+		t.Fatalf("NewPersistentCache: %v", err)
+	}
+	t.Cleanup(func() { _ = persist.Close() })
+
+	d := &Describer{
+		client:    srv.Client(),
+		chatURL:   srv.URL + visionRequestPath,
+		getZaiKey: stubZaiKey(),
+		persist:   persist,
+	}
+
+	first := sampleChatBodyWithImages(standardImageURLPart("https://example.com/historical.png"))
+	if n, err := d.ReplaceImages(t.Context(), first); err != nil || n != 1 {
+		t.Fatalf("first turn: n=%d err=%v", n, err)
+	}
+	if count.Load() != 1 {
+		t.Fatalf("first turn should make 1 upstream call, got %d", count.Load())
+	}
+
+	// Simulate a stale in-memory cache so only the durable store can serve it.
+	d.cache = sync.Map{}
+
+	second := sampleChatBodyWithImages(standardImageURLPart("https://example.com/historical.png"))
+	if n, err := d.ReplaceImages(t.Context(), second); err != nil || n != 1 {
+		t.Fatalf("second turn: n=%d err=%v", n, err)
+	}
+	if count.Load() != 1 {
+		t.Fatalf("historical image must be reused from durable cache (no new upstream call), got %d calls", count.Load())
+	}
+
+	// The description text must be present in the second turn's body.
+	msgs := second["messages"].([]any)
+	msg := msgs[0].(map[string]any)
+	parts := msg["content"].([]any)
+	descPart := parts[1].(map[string]any)
+	if descPart["type"] != "text" {
+		t.Fatalf("expected text replacement, got %v", descPart["type"])
+	}
+	if !strings.Contains(descPart["text"].(string), "persisted image description") {
+		t.Fatalf("unexpected reused description: %q", descPart["text"])
+	}
+}
+
+func TestReplaceImagesNewImageFallsBackGracefully(t *testing.T) {
+	// A rate-limited vision model must NOT fail the request; a NEW (undescribed)
+	// image is replaced with a placeholder, and its hash is logged so the
+	// operator can tell whether Cursor resends the same bytes.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"Usage limit reached for 5 hour."}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	persist, err := NewPersistentCache(dir)
+	if err != nil {
+		t.Fatalf("NewPersistentCache: %v", err)
+	}
+	t.Cleanup(func() { _ = persist.Close() })
+
+	d := &Describer{
+		client:    srv.Client(),
+		chatURL:   srv.URL + visionRequestPath,
+		getZaiKey: stubZaiKey(),
+		persist:   persist,
+	}
+
+	// A new, undescribed image against a rate-limited model falls back to a
+	// placeholder instead of failing.
+	newBody := sampleChatBodyWithImages(standardImageURLPart("https://example.com/new.png"))
+	if n, err := d.ReplaceImages(t.Context(), newBody); n != 1 || err != nil {
+		t.Fatalf("expected graceful fallback for new image, got n=%d err=%v", n, err)
+	}
+	msgs := newBody["messages"].([]any)
+	msg := msgs[0].(map[string]any)
+	parts := msg["content"].([]any)
+	if parts[1].(map[string]any)["type"] != "text" {
+		t.Fatalf("expected text placeholder, got %v", parts[1].(map[string]any)["type"])
+	}
+
+	// Pre-populate the durable cache, then a turn carrying only that historical
+	// image must reuse the description (no upstream call, no failure).
+	if err := persist.Put(hashImageURL("https://example.com/old.png"), "known old image"); err != nil {
+		t.Fatalf("persist.Put: %v", err)
+	}
+	histBody := sampleChatBodyWithImages(standardImageURLPart("https://example.com/old.png"))
+	if n, err := d.ReplaceImages(t.Context(), histBody); n != 1 || err != nil {
+		t.Fatalf("historical image must reuse cache, got n=%d err=%v", n, err)
+	}
+	histParts := histBody["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	if !strings.Contains(histParts[1].(map[string]any)["text"].(string), "known old image") {
+		t.Fatalf("expected cached description, got %q", histParts[1].(map[string]any)["text"])
 	}
 }
 

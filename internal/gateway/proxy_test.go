@@ -159,11 +159,34 @@ func TestProxyDeepSeekImagesDescribedByVision(t *testing.T) {
 		t.Fatalf("expected image description in text model input, got %v", lastTextBody["messages"])
 	}
 
-	// Usage should be recorded.
+	// Usage should be recorded for both the text model and the vision worker
+	// (vision calls are now metered into the usage store, in their own sentinel
+	// session so they don't pollute the chat session grouping).
 	store, _ := usage.NewStore(env.dataRoot)
 	events, _ := store.LoadEvents()
-	if len(events) != 1 || events[0].Provider != config.ProviderDeepSeek {
-		t.Fatalf("usage events: %+v", events)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 usage events (chat + vision), got %d: %+v", len(events), events)
+	}
+	var chatEvent, visionEvent *usage.Event
+	for i := range events {
+		switch events[i].Provider {
+		case config.ProviderDeepSeek:
+			chatEvent = &events[i]
+		case config.ProviderZai:
+			visionEvent = &events[i]
+		}
+	}
+	if chatEvent == nil {
+		t.Fatalf("expected a deepseek chat usage event, got %+v", events)
+	}
+	if visionEvent == nil {
+		t.Fatalf("expected a zai vision usage event, got %+v", events)
+	}
+	if visionEvent.Model != "glm-4.6v" {
+		t.Fatalf("vision usage event model = %q, want glm-4.6v", visionEvent.Model)
+	}
+	if visionEvent.SessionID != "vision-worker" {
+		t.Fatalf("vision usage event session = %q, want vision-worker", visionEvent.SessionID)
 	}
 }
 
@@ -274,13 +297,14 @@ func TestProxyVisionAppliedToAllProviders(t *testing.T) {
 	}
 }
 
-func TestProxyImageWithoutVisionKeyFailsFast(t *testing.T) {
-	// No Z.AI key configured. An image request must fail with a clear error,
-	// and the upstream text model must never be called.
+func TestProxyImageWithoutVisionKeyFallsBack(t *testing.T) {
+	// No Z.AI key configured. An image request must still proceed: the image
+	// is replaced with a placeholder note and the text model is called.
 	var textCalled atomic.Int32
 	textUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		textCalled.Add(1)
-		t.Fatal("text model must not be called when vision key is missing")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"cmpl-1","choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
 	}))
 	t.Cleanup(textUp.Close)
 
@@ -331,14 +355,11 @@ func TestProxyImageWithoutVisionKeyFailsFast(t *testing.T) {
 			},
 		},
 	})
-	if res.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400 on missing vision key, got %d body %s", res.StatusCode, body)
+	if res.StatusCode != 200 {
+		t.Fatalf("expected 200 graceful fallback, got %d body %s", res.StatusCode, body)
 	}
-	if !strings.Contains(string(body), "Z.AI API key") {
-		t.Fatalf("expected clear vision-key error message, got: %s", body)
-	}
-	if textCalled.Load() != 0 {
-		t.Fatalf("text model called %d times despite fail-fast", textCalled.Load())
+	if textCalled.Load() == 0 {
+		t.Fatalf("text model must still be called when vision falls back to a placeholder")
 	}
 }
 

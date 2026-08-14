@@ -97,6 +97,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/exchange-rate", s.handleExchangeRate)
 	mux.HandleFunc("/api/balances", s.handleBalances)
 	mux.HandleFunc("/api/balance-spend", s.handleBalanceSpend)
+	mux.HandleFunc("/api/spend", s.handleSpend)
 	mux.HandleFunc("/api/reasoning-effort", s.handleReasoningEffort)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/verbosity", s.handleVerbosity)

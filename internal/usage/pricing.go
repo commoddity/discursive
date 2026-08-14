@@ -6,16 +6,20 @@ package usage
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/commoddity/discursive/internal/config"
 )
 
-// Pricing verified: 2026-07 (see usage.mdc / README).
+// Pricing verified: 2026-08 (see usage.mdc / README).
 // Sources: https://platform.kimi.ai/docs/pricing/chat
 //
 //	https://api-docs.deepseek.com/quick_start/pricing
 //	https://thaura.ai/api-platform
 //	https://docs.z.ai/guides/overview/pricing
+//
+// DeepSeek switched to peak/off-peak billing at 2026-08-16 16:00 UTC; peak
+// hours (01:00–04:00 and 06:00–10:00 UTC) bill at 2x the off-peak rates.
 
 var ErrUnknownModel = errors.New("unknown model for pricing")
 
@@ -48,9 +52,49 @@ type deepseekRates struct {
 	cacheHit, cacheMiss, output float64
 }
 
+// deepseekPricing is the legacy FLAT card, valid until 2026-08-16 16:00 UTC.
+// Retained because pricing is per-request: events recorded before the cutover
+// must keep estimating at legacy rates, not the new card.
 var deepseekPricing = map[string]deepseekRates{
 	"deepseek-v4-flash": {0.0028, 0.14, 0.28},
 	"deepseek-v4-pro":   {0.003625, 0.435, 0.87},
+}
+
+// deepseekPricingOffPeak is the new off-peak card (2026-08-16 16:00 UTC onward).
+// Peak = 2x off-peak on every billing item.
+var deepseekPricingOffPeak = map[string]deepseekRates{
+	"deepseek-v4-flash": {0.007, 0.22, 0.66},
+	"deepseek-v4-pro":   {0.022, 0.66, 1.98},
+}
+
+// DeepSeekPeakCutover is when the new peak/off-peak card takes effect.
+// Source: https://api-docs.deepseek.com/quick_start/pricing
+var DeepSeekPeakCutover = time.Date(2026, 8, 16, 16, 0, 0, 0, time.UTC)
+
+// DeepSeekPeakHours reports whether a UTC hour is a peak hour. Peak windows are
+// half-open [01:00,04:00) and [06:00,10:00) UTC (hours 1,2,3 and 6,7,8,9).
+func DeepSeekPeakHours(utcHour int) bool {
+	return (utcHour >= 1 && utcHour < 4) || (utcHour >= 6 && utcHour < 10)
+}
+
+// deepseekRateFor selects the rate card for a given billing instant: the legacy
+// flat card before the cutover, otherwise the new card with peak hours at 2x.
+func deepseekRateFor(model string, at time.Time) (deepseekRates, error) {
+	if at.Before(DeepSeekPeakCutover) {
+		r, ok := deepseekPricing[model]
+		if !ok {
+			return deepseekRates{}, fmt.Errorf("%w: deepseek %q", ErrUnknownModel, model)
+		}
+		return r, nil
+	}
+	r, ok := deepseekPricingOffPeak[model]
+	if !ok {
+		return deepseekRates{}, fmt.Errorf("%w: deepseek %q", ErrUnknownModel, model)
+	}
+	if DeepSeekPeakHours(at.UTC().Hour()) {
+		return deepseekRates{cacheHit: r.cacheHit * 2, cacheMiss: r.cacheMiss * 2, output: r.output * 2}, nil
+	}
+	return r, nil
 }
 
 // thauraRates USD per 1M tokens (input, output).
@@ -89,8 +133,14 @@ func CursorComparisonReference() (input, cache, output float64) {
 	return cursorComparisonUSD.composer25Input, cursorComparisonUSD.composer25Cache, cursorComparisonUSD.composer25Output
 }
 
-// EstimateUSD computes estimated cost for provider + real model id.
-func EstimateUSD(provider config.Provider, model string, u UsageTokens) (float64, error) {
+// EstimateUSDAt computes estimated cost for provider + real model id at the
+// billing instant (per-request timestamp). For DeepSeek the rate card depends
+// on the instant: legacy flat card before 2026-08-16 16:00 UTC, then
+// off-peak/peak (peak hours 01:00–04:00 and 06:00–10:00 UTC bill at 2x).
+func EstimateUSDAt(provider config.Provider, model string, u UsageTokens, at time.Time) (float64, error) {
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
 	switch provider {
 	case config.ProviderMoonshot:
 		r, ok := moonshotPricing[model]
@@ -102,9 +152,9 @@ func EstimateUSD(provider config.Provider, model string, u UsageTokens) (float64
 			perMillion(miss, r.input) +
 			perMillion(u.CompletionTokens, r.output), nil
 	case config.ProviderDeepSeek:
-		r, ok := deepseekPricing[model]
-		if !ok {
-			return 0, fmt.Errorf("%w: deepseek %q", ErrUnknownModel, model)
+		r, err := deepseekRateFor(model, at)
+		if err != nil {
+			return 0, err
 		}
 		hit, miss := splitPrompt(u)
 		return perMillion(hit, r.cacheHit) +
@@ -130,6 +180,11 @@ func EstimateUSD(provider config.Provider, model string, u UsageTokens) (float64
 	default:
 		return 0, fmt.Errorf("%w: provider %q", ErrUnknownModel, provider)
 	}
+}
+
+// EstimateUSD computes estimated cost at the current instant.
+func EstimateUSD(provider config.Provider, model string, u UsageTokens) (float64, error) {
+	return EstimateUSDAt(provider, model, u, time.Now().UTC())
 }
 
 func splitPrompt(u UsageTokens) (hit, miss uint64) {

@@ -113,8 +113,8 @@ examples/use-kimi-on-cursor/  # behavioral reference
 ```bash
 go build ./...
 go test ./...
-make verify          # lint + test + build when Makefile exists
-make run             # start CLI/daemon (once wired)
+make verify          # fmt + lint + test + build (see Makefile)
+make run             # (no `run` target in Makefile — gateway starts via `discursive start`)
 ```
 
 Day-to-day: host CLI — not `wails` / Yarn / Docker Compose as the default.

@@ -34,14 +34,25 @@ const visionPrompt = "Describe this image in detail for a coding assistant. Capt
 // vision key is not configured. Callers fail fast (never silently strip).
 var ErrNoVisionKey = fmt.Errorf("image attached but the vision model (Z.AI glm-4.6v) requires a Z.AI API key which is not configured; run `discursive set --zai-key <key>` and restart the gateway")
 
+// visionModel is the real Z.AI model id used for image description.
+const visionModel = "glm-4.6v"
+
+// UsageRecorder meters one successful vision call. model is the real model id,
+// promptTokens/completionTokens come from the upstream usage block, latency is
+// the round-trip duration. Best-effort: implementers must not fail the vision
+// path on a recording error.
+type UsageRecorder func(model string, promptTokens, completionTokens uint64, latency time.Duration)
+
 // Describer describes images via glm-4.6v and replaces image_url parts with
 // text descriptions inline.
 type Describer struct {
 	client    *http.Client
 	chatURL   string
 	getZaiKey func() (string, bool)
+	record    UsageRecorder // optional best-effort usage meter; may be nil
 
-	cache   sync.Map // sha256hash -> cacheEntry
+	cache   sync.Map  // sha256hash -> cacheEntry (short-lived in-memory)
+	persist descCache // durable hash -> description store; nil in tests
 	sfg     singleflight.Group
 	descMu  sync.Mutex // guards descriptionCounter
 	counter int        // per-replace cycle image counter
@@ -62,15 +73,61 @@ func NewDescriber(client *http.Client, chatURL string, getZaiKey func() (string,
 	}
 }
 
+// SetPersistentCache installs a durable content-hash description store. When
+// set, an image that was described on a previous turn (or a previous process)
+// is resolved from the store without an upstream vision call, so a vision model
+// that is rate-limited no longer breaks later turns that only carry already
+// described images. Closing is the caller's responsibility.
+func (d *Describer) SetPersistentCache(c descCache) {
+	if d != nil {
+		d.persist = c
+	}
+}
+
+// SetUsageRecorder installs a best-effort usage meter called after each
+// successful vision call. Passing nil disables metering (default). The
+// recorder must not fail the vision path.
+func (d *Describer) SetUsageRecorder(r UsageRecorder) {
+	if d != nil {
+		d.record = r
+	}
+}
+
+// imageJob describes one image_url part found in the message history.
+type imageJob struct {
+	msgIdx  int
+	partIdx int
+	hash    string
+	imgURL  string
+}
+
+// imageResult is the per-image replacement outcome: a description on success
+// or an error on a failed vision call (which falls back to a placeholder).
+type imageResult struct {
+	desc string
+	err  error
+}
+
+// imageUnavailableNote is substituted for an image part when the vision model
+// cannot describe it (rate-limited, missing key, network, or upstream
+// rejection). The text model still receives a clear, honest placeholder instead
+// of the raw image, and the turn proceeds.
+const imageUnavailableNote = "[An image could not be described because the vision model is unavailable (e.g. rate-limited). It has been replaced with this note so the conversation can continue.]"
+
 // ReplaceImages scans messages for image parts and replaces each with a text
 // description from glm-4.6v. Applies to ALL providers (Moonshot/DeepSeek/Z.AI/
-// Thaura). Caches by content hash (10 min TTL). Returns the count of images
-// described and, on hard failure, an error that the caller must surface to the
-// user (fail-fast): a missing Z.AI key, or any upstream rejection / network
-// error. On error the body is left untouched.
+// Thaura). Caches by content hash in memory (10 min TTL) and, when a durable
+// store is installed, persists descriptions so historical images are reused
+// without a vision call. Returns the count of image parts replaced.
+//
+// Contract: ReplaceImages is graceful. An image already described (historical)
+// is reused from cache with no vision call. A new image that cannot be
+// described (missing Z.AI key, rate limit, network, upstream rejection) is
+// replaced with a placeholder note rather than failing the whole request — a
+// rate-limited vision model never blocks subsequent prompts.
 func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int, error) {
 	if d == nil {
-		return 0, ErrNoVisionKey
+		return 0, nil
 	}
 
 	msgs, ok := body["messages"].([]any)
@@ -83,12 +140,6 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 	d.descMu.Unlock()
 
 	// Collect all image hashes across messages first.
-	type imageJob struct {
-		msgIdx  int
-		partIdx int
-		hash    string
-		imgURL  string
-	}
 	var jobs []imageJob
 	for mi, raw := range msgs {
 		msg, ok := raw.(map[string]any)
@@ -118,34 +169,64 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 		return 0, nil
 	}
 
-	// Fail fast if the vision key is missing — never silently strip images.
-	if d.getZaiKey == nil {
-		return 0, ErrNoVisionKey
-	}
-	if key, ok := d.getZaiKey(); !ok || key == "" {
-		return 0, ErrNoVisionKey
+	// Resolve historical images from the durable/in-memory cache; only images
+	// with no cached description need a vision call (and only those hit the
+	// upstream provider). A rate-limited vision model therefore cannot fault
+	// already-described images.
+	keyMissing := false
+	results := make([]imageResult, len(jobs))
+	needsVision := false
+
+	if d.getZaiKey != nil {
+		if k, ok := d.getZaiKey(); !ok || k == "" {
+			keyMissing = true
+		}
+	} else {
+		keyMissing = true
 	}
 
-	// Deduplicate concurrent descriptions by hash.
-	type result struct {
-		desc string
-		err  error
+	for i, job := range jobs {
+		if d.persist != nil {
+			if desc, ok := d.persist.Get(job.hash); ok {
+				d.cache.Store(job.hash, cacheEntry{desc: desc, expiresAt: time.Now().Add(cacheTTL)})
+				results[i] = imageResult{desc: desc}
+				continue
+			}
+		}
+		if v, ok := d.cache.Load(job.hash); ok {
+			entry := v.(cacheEntry)
+			if time.Now().Before(entry.expiresAt) {
+				results[i] = imageResult{desc: entry.desc}
+				continue
+			}
+			d.cache.Delete(job.hash)
+		}
+		// No cached description: this image needs a vision call. If the key is
+		// missing, we will fall back to a placeholder below (never fail).
+		needsVision = true
+		if keyMissing {
+			results[i] = imageResult{err: ErrNoVisionKey}
+		}
 	}
-	results := make([]result, len(jobs))
+
+	if !needsVision {
+		return d.applyDescriptions(msgs, jobs, results), nil
+	}
+
+	// If the vision key is missing, no upstream call is possible; fall back to
+	// placeholder notes for every undescribed image and continue.
+	if keyMissing {
+		logDescriptionsSkipped(jobs, results)
+		return d.applyDescriptions(msgs, jobs, results), nil
+	}
 
 	// Limit concurrent vision calls.
 	sem := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
 
 	for i, job := range jobs {
-		// Check cache first (fast path outside semaphore).
-		if v, ok := d.cache.Load(job.hash); ok {
-			entry := v.(cacheEntry)
-			if time.Now().Before(entry.expiresAt) {
-				results[i] = result{desc: entry.desc}
-				continue
-			}
-			d.cache.Delete(job.hash)
+		if results[i].desc != "" {
+			continue // already served from cache
 		}
 
 		wg.Add(1)
@@ -154,32 +235,36 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// Deduplicate concurrent calls for the same hash.
 			val, err, _ := d.sfg.Do(j.hash, func() (any, error) {
-				desc, err := d.describeImage(ctx, j.imgURL)
+				desc, err := d.describeImage(ctx, j.imgURL, j.hash)
 				if err != nil {
 					return nil, err
 				}
 				d.cache.Store(j.hash, cacheEntry{desc: desc, expiresAt: time.Now().Add(cacheTTL)})
+				if d.persist != nil {
+					_ = d.persist.Put(j.hash, desc)
+				}
 				return desc, nil
 			})
 			if err != nil {
-				results[idx] = result{err: err}
+				results[idx] = imageResult{err: err}
 			} else {
-				results[idx] = result{desc: val.(string)}
+				results[idx] = imageResult{desc: val.(string)}
 			}
 		}(i, job)
 	}
 	wg.Wait()
 
-	// On ANY hard failure, fail fast: surface the error and leave body untouched.
-	for i := range jobs {
-		if results[i].err != nil {
-			return 0, fmt.Errorf("vision describe failed for image %d: %w", i+1, results[i].err)
-		}
-	}
+	// Graceful fallback: any image that failed to describe is replaced with a
+	// placeholder note. The request always proceeds.
+	logDescriptionsSkipped(jobs, results)
+	return d.applyDescriptions(msgs, jobs, results), nil
+}
 
-	// Apply results: replace image parts inline.
+// applyDescriptions replaces image parts inline with their text descriptions
+// (or a placeholder note on failure). It returns the number of image parts
+// replaced.
+func (d *Describer) applyDescriptions(msgs []any, jobs []imageJob, results []imageResult) int {
 	count := 0
 	for i, job := range jobs {
 		msg := msgs[job.msgIdx].(map[string]any)
@@ -189,10 +274,33 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 		d.counter++
 		n := d.counter
 		d.descMu.Unlock()
-		parts[job.partIdx] = map[string]any{"type": "text", "text": fmt.Sprintf("[Image %d: %s]", n, results[i].desc)}
+		text := results[i].desc
+		if text == "" {
+			text = imageUnavailableNote
+		}
+		parts[job.partIdx] = map[string]any{"type": "text", "text": fmt.Sprintf("[Image %d: %s]", n, text)}
 	}
+	return count
+}
 
-	return count, nil
+// logDescriptionsSkipped logs (at WARN) one line per image that could not be
+// described, including its truncated content hash so the operator can tell
+// whether Cursor is resending the same image bytes across turns.
+func logDescriptionsSkipped(jobs []imageJob, results []imageResult) {
+	for i, job := range jobs {
+		if i < len(results) && results[i].desc != "" {
+			continue
+		}
+		short := job.hash
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		slog.Warn("vision_image_unavailable",
+			"image_hash", short,
+			"msg_idx", job.msgIdx,
+			"reason", "vision model could not describe the image (rate-limited, missing key, or upstream error)",
+		)
+	}
 }
 
 // extractImageURL pulls the URL string from an image_url content part.
@@ -236,14 +344,14 @@ func imageContentForHash(url string) []byte {
 	return []byte(url)
 }
 
-func (d *Describer) describeImage(ctx context.Context, imgURL string) (string, error) {
+func (d *Describer) describeImage(ctx context.Context, imgURL, hash string) (string, error) {
 	key, ok := d.getZaiKey()
 	if !ok || key == "" {
 		return "", ErrNoVisionKey
 	}
 
 	reqBody := map[string]any{
-		"model":  "glm-4.6v",
+		"model":  visionModel,
 		"stream": false,
 		"thinking": map[string]any{
 			"type": "disabled",
@@ -277,6 +385,7 @@ func (d *Describer) describeImage(ctx context.Context, imgURL string) (string, e
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
 
+	start := time.Now()
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("vision: upstream request failed: %w", err)
@@ -290,8 +399,16 @@ func (d *Describer) describeImage(ctx context.Context, imgURL string) (string, e
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg := extractUpstreamError(respBody)
+		// Truncate the hash so repeated diagnostics stay compact but still let
+		// us distinguish "same image resent" (same hash) from "new image" (new
+		// hash). This is the signal used to debug Cursor's image-history replay.
+		shortHash := hash
+		if len(shortHash) > 12 {
+			shortHash = shortHash[:12]
+		}
 		slog.Warn("vision_call_failed",
 			"status", resp.StatusCode,
+			"image_hash", shortHash,
 			"body", string(respBody),
 		)
 		if msg != "" {
@@ -306,6 +423,10 @@ func (d *Describer) describeImage(ctx context.Context, imgURL string) (string, e
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     uint64 `json:"prompt_tokens"`
+			CompletionTokens uint64 `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(respBody, &completion); err != nil {
 		return "", fmt.Errorf("vision: unmarshal completion: %w", err)
@@ -319,9 +440,13 @@ func (d *Describer) describeImage(ctx context.Context, imgURL string) (string, e
 		return "", fmt.Errorf("vision: empty description")
 	}
 	slog.Info("vision_call_succeeded",
-		"model", "glm-4.6v",
+		"model", visionModel,
 		"desc_len", len(desc),
 	)
+	// Best-effort usage metering; never fail the vision path on a record error.
+	if d.record != nil {
+		d.record(visionModel, completion.Usage.PromptTokens, completion.Usage.CompletionTokens, time.Since(start))
+	}
 	return desc, nil
 }
 

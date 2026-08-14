@@ -36,6 +36,22 @@ Thaura AI: hardcoded `$0.50/$2.00` per MTok. Check `thaura.ai/api-platform` if a
 
 Source: https://api-docs.deepseek.com/quick_start/pricing — verify live before updating.
 
+**Peak/off-peak billing since 2026-08-16 16:00 UTC.** Peak hours are
+01:00–04:00 and 06:00–10:00 UTC (half-open windows; hours 1,2,3 and 6,7,8,9);
+all other hours off-peak. Peak = 2× off-peak on every billing item.
+
+| Model | Tier | Cache hit | Cache miss | Output |
+| ----- | ---- | --------- | ---------- | ------ |
+| `deepseek-v4-flash` | Off-peak | $0.007 | $0.22 | $0.66 |
+| `deepseek-v4-flash` | Peak | $0.014 | $0.44 | $1.32 |
+| `deepseek-v4-pro` | Off-peak | $0.022 | $0.66 | $1.98 |
+| `deepseek-v4-pro` | Peak | $0.044 | $1.32 | $3.96 |
+
+Legacy flat card (pre-cutover events only): flash $0.0028 / $0.14 / $0.28,
+pro $0.003625 / $0.435 / $0.87. Pricing is per-request: `EstimateUSDAt`
+selects the card from the event timestamp (`Record` passes it); never
+re-price old events with the new card.
+
 DeepSeek responses expose `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` — prefer for estimates.
 
 ### Kimi/Moonshot (USD/MTok)
@@ -147,6 +163,24 @@ Default: summary stats row for the selected time range (sessions, requests, toke
 - Persist JSONL under app data (`usage/events.jsonl`).
 - Log level: `DISCURSIVE_LOG_LEVEL=debug|info|warn|error` (default `info`). Never log secrets.
 
+### CLI spend report (`discursive usage`)
+
+`discursive usage` prints the same blended confirmed+estimated spend as the dashboard
+`/api/spend`: Moonshot/DeepSeek MTD/Today (billing-confirmed from balance deltas) + Thaura
+MTD (token-estimated). **Z.AI is excluded from the MTD/Today totals** (flat-fee coding plan);
+it appears as its own row for information only. Keep CLI + dashboard sums in sync:
+any change to which providers feed `Estimated`/headline totals must update both
+`internal/cli/usage/confirm.go` and `internal/usageui/spend.go`.
+
+Subcommands:
+- `discursive usage purge` — delete `events` rows older than `--max-age` (Go duration, default `90d`); `--dry-run` previews.
+- `discursive usage prune-snapshots` — delete `balance_snapshots` rows older than `--max-age` (default `90d`); `--dry-run` previews. Old snapshots are safe to drop once the period they bound is complete (confirmed spend is then already bucketed).
+
+Coverage note: `GET /api/spend?since=...` returns `covered` (true only when both Moonshot
+and DeepSeek have a boundary snapshot at `since`, via `Store.PeriodCovered`). Gate any
+period-over-period % badge on `covered`, never on the mere presence of spend.
+
+
 ## Cursor comparison (reference only — not gateway billing)
 
 | Provider | Model               | Input | Cache read/hit | Output |
@@ -157,8 +191,9 @@ Default: summary stats row for the selected time range (sessions, requests, toke
 | Cursor   | Grok 4.5 (Fast)     | $4.00 | $1.00          | $18.00 |
 
 Peer reading (approx.): K3 ↔ Grok 4.5 family; K2.7 Code ↔ Composer 2.5 family;
-DeepSeek V4 is typically far cheaper per token than either. Do not use Cursor
-rows for live cost math.
+DeepSeek V4 off-peak is still far cheaper per token than either (peak-hour
+cache-hit pricing rose sharply in the 2026-08 update — see DeepSeek section
+above). Do not use Cursor rows for live cost math.
 
 ---
 
@@ -250,11 +285,17 @@ rows for live cost math.
 | ----- | ---- | ----- |
 | Chart shows wrong number of days at period boundaries | `new Date(y,m,1).toISOString()` converts local midnight → UTC, giving `2026-06-30T23:00Z` in UTC+1. Server `Truncate(24h)` hits wrong day. | All period boundaries must be UTC: `Date.UTC(y,m,d)` for construction, `getUTCDay/Month/etc()` for week calcs. Helper: `utcMidnight(y,m,d)` → `new Date(Date.UTC(y,m,d)).toISOString()`. |
 
-### `Period tooltip leaks zero-cost models`
+### `Peak/off-peak indicator shows the pricing cutover instead of today's schedule`
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| Tooltip shows providers/models with $0 spend on that bucket day | Server pads all buckets with $0 entries per model; `bucketMap` has every model in every bucket. | Filter in tooltip: `(bucketMap[label] || []).filter(it => +it.cost > 0)`. |
+| A live Peak/Off-peak indicator in the header shows a future date/time ("5 PM") and a wrong countdown | A pre-cutover branch rendered the **one-time** billing cutover timestamp (e.g. `2026-08-16 16:00 UTC`) as if it were today's **repeating** peak schedule | A live rate indicator must always show the repeating schedule, never a one-off policy-change timestamp. Implement the boundary as explicit ordered hour checks (`h<1→01:00, h<4→04:00, h<6→06:00, h<10→10:00, else tomorrow 01:00`); compute peak from UTC hours; convert only the *result* to the user's locale. Render times with `hourCycle:'h23'` (EU uses 24h clock). |
+
+### `Period-over-period % badge inflated by partial history`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| "vs Last Month" badge shows an absurd % (e.g. `+13354.2%`) | The badge compared the current period's **projection** against the previous period's **full** total when snapshot coverage was incomplete (e.g. balance snapshots only began recently, so "last month" has a few days of data, not 30) | Gate the badge on a server-reported coverage flag, not the presence of any spend. `/api/spend` returns `covered` from `Store.PeriodCovered` (both Moonshot + DeepSeek). Only compute/render the % when `covered === true`; otherwise show an empty `—` "insufficient history" placeholder. Never let sparse/daily-bucket counts stand in for true period coverage. |
 
 ### `Provider balance API has multiple quota buckets`
 

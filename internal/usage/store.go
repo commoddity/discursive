@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver; loaded via database/sql
@@ -117,12 +118,18 @@ func initSchema(db *sql.DB) error {
 		amount       REAL NOT NULL,
 		currency     TEXT NOT NULL DEFAULT '',
 		usd_amount   REAL NOT NULL DEFAULT 0,
+		topped_up_amount REAL NOT NULL DEFAULT 0,
 		PRIMARY KEY (provider, basis, period_start, captured_at)
 	);
 	CREATE INDEX IF NOT EXISTS idx_bal_snap_prov_cap ON balance_snapshots(provider, captured_at);
 	`
 	if _, err := db.Exec(ddl); err != nil {
 		return fmt.Errorf("init schema: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE balance_snapshots ADD COLUMN topped_up_amount REAL NOT NULL DEFAULT 0`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("migrate balance_snapshots: %w", err)
+		}
 	}
 	return nil
 }
@@ -150,7 +157,7 @@ func (s *Store) Record(ev Event) (Event, error) {
 		CacheHitTokens:   ev.CacheHitTokens,
 		CacheMissTokens:  ev.CacheMissTokens,
 	}
-	est, err := EstimateUSD(ev.Provider, ev.Model, tokens)
+	est, err := EstimateUSDAt(ev.Provider, ev.Model, tokens, ev.Timestamp)
 	if err != nil {
 		return Event{}, err
 	}

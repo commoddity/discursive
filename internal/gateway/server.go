@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,15 @@ import (
 	"github.com/commoddity/discursive/internal/gateway/verbosity"
 	"github.com/commoddity/discursive/internal/gateway/vision"
 	"github.com/commoddity/discursive/internal/usage"
+)
+
+// Auxiliary worker usage events get their own session/request ids so they are
+// distinguishable from (and don't pollute) the active chat session grouping.
+const (
+	auxVisionSession     = "vision-worker"
+	auxCompressSession   = "compressor-worker"
+	auxVisionRequestID   = "vision"
+	auxCompressRequestID = "compressor"
 )
 
 // ServerConfig configures the local OpenAI-compatible gateway.
@@ -34,19 +44,20 @@ type ServerConfig struct {
 
 // Server is the loopback gateway HTTP server.
 type Server struct {
-	cfg        ServerConfig
-	mux        *http.ServeMux
-	httpSrv    *http.Server
-	client     *http.Client
-	store      *usage.Store
-	agg        *usage.Aggregator
-	sessionID  string
-	settings   *config.AppSettings
-	live       *config.LiveSettings
-	vision     *vision.Describer
-	router     *SubAgentRouter
-	compressor *Compressor
-	verbosity  *verbosity.Controller
+	cfg         ServerConfig
+	mux         *http.ServeMux
+	httpSrv     *http.Server
+	client      *http.Client
+	store       *usage.Store
+	agg         *usage.Aggregator
+	sessionID   string
+	settings    *config.AppSettings
+	live        *config.LiveSettings
+	vision      *vision.Describer
+	visionCache interface{ Close() error } // durable image-description cache; nil in tests
+	router      *SubAgentRouter
+	compressor  *Compressor
+	verbosity   *verbosity.Controller
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -104,6 +115,26 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		return *k, true
 	}
 	s.vision = vision.NewDescriber(s.client, visionURL, zaiKeyFn)
+	// Install a durable description cache so historical images (resent by
+	// Cursor on every turn) are resolved without re-invoking the vision model.
+	// This keeps a rate-limited vision provider from breaking later turns that
+	// only carry already-described images.
+	visionCache, err := vision.NewPersistentCache(filepath.Join(cfg.DataRoot, "usage"))
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("gateway: open vision cache: %w", err)
+	}
+	s.vision.SetPersistentCache(visionCache)
+	s.visionCache = visionCache
+	// Best-effort usage metering for vision calls: they use real LLM tokens but
+	// were previously unrecorded. Meter into a dedicated sentinel session so the
+	// cost accrues without polluting the active chat session grouping.
+	s.vision.SetUsageRecorder(func(model string, promptTokens, completionTokens uint64, latency time.Duration) {
+		s.recordAuxUsage(auxVisionSession, config.ProviderZai, model, auxVisionRequestID, latency, tokenUsage{
+			PromptTokens:     promptTokens,
+			CompletionTokens: completionTokens,
+		})
+	})
 	s.router = NewSubAgentRouter(SubAgentRouterConfig{Enabled: cfg.SubAgentRouterEnabled})
 
 	// Always allocate the compressor and verbosity controller so they can be
@@ -125,6 +156,16 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		Enabled:   true,
 		ChatURL:   flashBase,
 		GetAPIKey: flashKeyFn,
+		// Best-effort usage metering for summarizer calls: they use real LLM
+		// tokens but were previously unrecorded. Meter into a dedicated
+		// sentinel session so the cost accrues without polluting the active
+		// chat session grouping.
+		RecordUsage: func(model string, promptTokens, completionTokens uint64, latency time.Duration) {
+			s.recordAuxUsage(auxCompressSession, config.ProviderDeepSeek, model, auxCompressRequestID, latency, tokenUsage{
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+			})
+		},
 	}, s.client)
 
 	// Verbosity controller holds the per-model verbosity config (terseness
@@ -244,6 +285,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 // Shutdown stops the HTTP server and flushes the usage aggregator.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.agg.Stop()
+	if s.visionCache != nil {
+		_ = s.visionCache.Close()
+	}
 	s.mu.Lock()
 	srv := s.httpSrv
 	s.mu.Unlock()

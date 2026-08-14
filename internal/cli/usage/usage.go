@@ -56,7 +56,10 @@ pricing.  Defaults to today's usage.  Use --date for a specific day,
 				if err != nil {
 					return fmt.Errorf("query daily totals: %w", err)
 				}
-				return util.EmitPretty(ds)
+				if err := util.EmitPretty(ds); err != nil {
+					return err
+				}
+				return printConfirmedReport(cmd.OutOrStdout(), store, time.Now(), time.Local)
 			}
 		},
 	}

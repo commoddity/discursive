@@ -253,7 +253,7 @@ per-provider change needed unless this provider adds configurable models
 **File:** `internal/usageui/server.go`
 
 - [ ] If the provider has special response shape needs (like DeepSeek's
-  `pickDeepSeekAmount`), add parsing helpers.
+  `pickDeepSeekInfo` in `internal/usageui/balance.go`), add parsing helpers.
 
 **Verify:** `go build ./internal/usageui/...`
 

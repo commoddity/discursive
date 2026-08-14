@@ -86,14 +86,19 @@ type CompressorConfig struct {
 	ChatURL string
 	// GetAPIKey is a callback that returns the DeepSeek API key (or "", false).
 	GetAPIKey func() (string, bool)
+	// RecordUsage is an optional best-effort usage meter called after each
+	// successful summarizer call with the real model id, prompt/completion
+	// token counts, and round-trip latency. May be nil (disabled).
+	RecordUsage func(model string, promptTokens, completionTokens uint64, latency time.Duration)
 	// ChatURLOverride is for test use only.
 	ChatURLOverride string
 }
 
 // Compressor compresses verbose tool results and long conversation histories.
 type Compressor struct {
-	cfg    CompressorConfig
-	client *http.Client
+	cfg         CompressorConfig
+	client      *http.Client
+	recordUsage func(model string, promptTokens, completionTokens uint64, latency time.Duration)
 
 	cache sync.Map           // sha256(content) → cacheEntry
 	sfg   singleflight.Group // deduplicate concurrent calls for the same hash
@@ -121,8 +126,9 @@ func NewCompressor(cfg CompressorConfig, client *http.Client) *Compressor {
 		client = &http.Client{Timeout: 8 * time.Second}
 	}
 	return &Compressor{
-		cfg:    cfg,
-		client: client,
+		cfg:         cfg,
+		client:      client,
+		recordUsage: cfg.RecordUsage,
 	}
 }
 
@@ -388,6 +394,9 @@ func (c *Compressor) compressChatURL() string {
 	return "https://api.deepseek.com/chat/completions"
 }
 
+// compressModel is the real DeepSeek model id used for tool-result summarization.
+const compressModel = "deepseek-v4-flash"
+
 // summarizeContent calls deepseek-v4-flash to summarize the given content.
 // Uses a brief system prompt for compression.
 func (c *Compressor) summarizeContent(ctx context.Context, content string) (string, error) {
@@ -397,7 +406,7 @@ func (c *Compressor) summarizeContent(ctx context.Context, content string) (stri
 	}
 
 	reqBody := map[string]any{
-		"model": "deepseek-v4-flash",
+		"model": compressModel,
 		"messages": []map[string]any{
 			{"role": "system", "content": toolResultSummarizePrompt},
 			{"role": "user", "content": content},
@@ -418,6 +427,7 @@ func (c *Compressor) summarizeContent(ctx context.Context, content string) (stri
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
 
+	start := time.Now()
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("compress: send request: %w", err)
@@ -439,6 +449,7 @@ func (c *Compressor) summarizeContent(ctx context.Context, content string) (stri
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage map[string]any `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &chatResp); err != nil {
 		return "", fmt.Errorf("compress: unmarshal response: %w", err)
@@ -454,6 +465,12 @@ func (c *Compressor) summarizeContent(ctx context.Context, content string) (stri
 	if len(summary) >= len(content) {
 		slog.Warn("compress: summary is not shorter than original — skipping", "content_len", len(content), "summary_len", len(summary))
 		return "", fmt.Errorf("compress: summary not shorter than original (%d >= %d)", len(summary), len(content))
+	}
+
+	// Best-effort usage metering; never fail the primary request on a record error.
+	if c.recordUsage != nil && chatResp.Usage != nil {
+		tu := parseUsageObject(chatResp.Usage)
+		c.recordUsage(compressModel, tu.PromptTokens, tu.CompletionTokens, time.Since(start))
 	}
 	return summary, nil
 }

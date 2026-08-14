@@ -17,6 +17,7 @@ type BalanceSnapshot struct {
 	Amount      float64         `json:"amount"`      // raw provider value
 	Currency    string          `json:"currency"`    // "USD", "CNY", "credits"
 	USDAmount   float64         `json:"usdAmount"`   // USD-equivalent (0 for credits)
+	ToppedUp    float64         `json:"toppedUp"`    // native currency added by top-up (0 = unknown)
 }
 
 const (
@@ -36,12 +37,12 @@ func AllPeriodBases() []string {
 func (s *Store) InsertBalanceSnapshot(snap BalanceSnapshot) error {
 	_, err := s.db.Exec(
 		`INSERT OR REPLACE INTO balance_snapshots
-		(provider, basis, period_start, captured_at, amount, currency, usd_amount)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		(provider, basis, period_start, captured_at, amount, currency, usd_amount, topped_up_amount)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		string(snap.Provider), snap.Basis,
 		snap.PeriodStart.UTC().Format(time.RFC3339),
 		snap.CapturedAt.UTC().Format(time.RFC3339Nano),
-		snap.Amount, snap.Currency, snap.USDAmount,
+		snap.Amount, snap.Currency, snap.USDAmount, snap.ToppedUp,
 	)
 	if err != nil {
 		return fmt.Errorf("insert balance snapshot: %w", err)

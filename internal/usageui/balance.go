@@ -37,7 +37,11 @@ type ProviderBalance struct {
 	// (Z.AI GLM Coding Plan). Each entry is {label, remaining, percentage}.
 	Credits     []CreditBucket `json:"credits,omitempty"`
 	IsAvailable *bool          `json:"is_available,omitempty"` // DeepSeek only
-	Error       string         `json:"error,omitempty"`
+	// ToppedUp is the native-currency portion of the balance that came from a
+	// manual top-up rather than granted/earned balance (DeepSeek only). It is
+	// used to net out recharge increases when computing confirmed spend.
+	ToppedUp float64 `json:"topped_up,omitempty"`
+	Error    string  `json:"error,omitempty"`
 }
 
 // CreditBucket is one quota window (e.g. 5-hour vs weekly) for credit-based providers.
@@ -270,16 +274,17 @@ func fetchDeepSeekBalance(client *http.Client, getKey func() (string, bool)) Pro
 	}
 
 	avail := resp.IsAvailable
-	if usdAmt, ok := pickDeepSeekAmount(resp.BalanceInfos, "USD"); ok {
+	if usdAmt, usdTopped, ok := pickDeepSeekInfo(resp.BalanceInfos, "USD"); ok {
 		return ProviderBalance{
 			Configured:   true,
 			AvailableUSD: &usdAmt,
 			Amount:       &usdAmt,
 			Currency:     "USD",
 			IsAvailable:  &avail,
+			ToppedUp:     usdTopped,
 		}
 	}
-	cnyAmt, ok := pickDeepSeekAmount(resp.BalanceInfos, "CNY")
+	cnyAmt, cnyTopped, ok := pickDeepSeekInfo(resp.BalanceInfos, "CNY")
 	if !ok {
 		return ProviderBalance{Configured: true, IsAvailable: &avail, Error: "no balance info"}
 	}
@@ -291,6 +296,7 @@ func fetchDeepSeekBalance(client *http.Client, getKey func() (string, bool)) Pro
 			Amount:      &cnyAmt,
 			Currency:    "CNY",
 			IsAvailable: &avail,
+			ToppedUp:    cnyTopped,
 		}
 	}
 	usd := cnyAmt / rate
@@ -300,20 +306,25 @@ func fetchDeepSeekBalance(client *http.Client, getKey func() (string, bool)) Pro
 		Amount:       &cnyAmt,
 		Currency:     "CNY",
 		IsAvailable:  &avail,
+		ToppedUp:     cnyTopped,
 	}
 }
 
-func pickDeepSeekAmount(infos []deepSeekBalanceInfo, currency string) (float64, bool) {
+// pickDeepSeekInfo parses the total balance and topped-up balance for the given
+// currency from the DeepSeek balance_infos list.
+func pickDeepSeekInfo(infos []deepSeekBalanceInfo, currency string) (amount, toppedUp float64, ok bool) {
 	for _, info := range infos {
-		if strings.EqualFold(info.Currency, currency) {
-			v, err := strconv.ParseFloat(info.TotalBalance, 64)
-			if err != nil {
-				return 0, false
-			}
-			return v, true
+		if !strings.EqualFold(info.Currency, currency) {
+			continue
 		}
+		v, err := strconv.ParseFloat(info.TotalBalance, 64)
+		if err != nil {
+			return 0, 0, false
+		}
+		tp, _ := strconv.ParseFloat(info.ToppedUpBalance, 64)
+		return v, tp, true
 	}
-	return 0, false
+	return 0, 0, false
 }
 
 func fetchUSDtoCNY(client *http.Client) (float64, error) {

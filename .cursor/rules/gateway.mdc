@@ -125,19 +125,31 @@ describes every image via the vision worker.
 
 | Symptom | Cause | Fix |
 | ------- | ----- | ---- |
-| Image request fails with a clear `vision_error` before the text model is reached | Vision worker key not configured, or the vision model rejected the image upstream | This is **fail-fast by design**. Configure a Z.AI key (`discursive set --zai-key <key>`) and restart the gateway. The error message surfaced to the user states exactly what is wrong. |
+| Image cannot be described (vision model key missing, 5-hour rate-limit hit, or upstream rejection) | The vision worker (`glm-4.6v`) is the only path for images, and it is temporarily or permanently unavailable | **Graceful fallback.** The image is replaced with an honest placeholder note (`[An image could not be described …]`) and the request proceeds to the text model — a rate-limited vision provider never blocks the conversation. Historical images still resolve from the durable cache with no vision call. |
 | Image request succeeds but the text model responds with an image description | Image content was translated to text by the vision worker (Z.AI `glm-4.6v`) before proxying | Expected. Vision applies to **all providers** (moonshot/deepseek/zai/thaura), even ones with native vision support. Text models never receive raw `image_url` parts. |
 | Remote `https://` image URLs | Fetch happens upstream-side by the vision model | Hashed by URL string for caching; data URIs are hashed by decoded bytes |
-| Repeated identical images | Content-hash cache (SHA-256, 10 min TTL, singleflight-deduped) | Second identical image within TTL is served from cache with no upstream call |
+| Repeated identical images | Content-hash cache (SHA-256) — in-memory 10 min TTL + a **durable** SQLite cache (`{dataRoot}/usage/vision_cache.db`); `singleflight`-deduped | Second identical image within TTL is served from cache with no upstream call; a historical image already described on any prior turn/process is reused **without** a vision call |
+| A previously-sent image seems to be re-described every turn | Cursor resends raw `image_url` parts in message history, so the gateway must resolve each image again; the content hash should match a cached entry and skip the vision call | Confirm the image hash is stable (logged via `vision_image_unavailable` / `vision_call_failed` `image_hash`). If the hash changes each turn (fresh data URI / signed URL), content-hash caching cannot dedupe it — investigate why Cursor varies the payload. Identical bytes (same hash) are served from the durable cache with no vision call. |
 
-`vision.Describer.ReplaceImages` is the single pre-proxy pass in
-`handleChatCompletions`, after `SanitizeRequest` and before `OptimizeRequest`.
-It is installed for every provider; there is **no** provider gate. On any hard
-failure it returns an error that the HTTP layer surfaces to the user as
-`vision_error` (HTTP 400) — images are never silently dropped.
+`vision.Describer.ReplaceImages` is the single pre-proxy pass, invoked from
+`handleChatCompletions` (call site `internal/gateway/proxy.go`), after
+`SanitizeRequest` and before `OptimizeRequest`.
+It is installed for every provider; there is **no** provider gate. Descriptions
+are persisted to a durable cache (`{dataRoot}/usage/vision_cache.db`), so an
+image already described on a prior turn is reused without re-calling the vision
+model. `ReplaceImages` is **graceful**: it never returns a fatal error for an
+image it cannot describe. Historical images resolve from cache with no vision
+call, and a new image that cannot be described (missing key, rate limit,
+network, upstream rejection) is replaced with an honest placeholder note so the
+request proceeds — a rate-limited vision model no longer blocks any turn,
+whether or not it carries images.
 
-> **Do not** reintroduce the old strip-images behavior (`[image omitted]`
-> placeholder). Silent stripping is deprecated; fail-fast is the contract.
+> **Do not** reintroduce the old fail-fast behavior for images (surface
+> `vision_error` / HTTP 400 and abort the request). The honest-placeholder
+> fallback is the contract; the previous `[image omitted]` silent-strip behavior
+> is also deprecated. The image hash is logged (`vision_image_unavailable`,
+> `vision_call_failed` `image_hash`) to diagnose whether Cursor is resending
+> stable or varying image bytes.
 
 ### `Cursor masks the real user prompt in XML and structured tags`
 
@@ -164,7 +176,7 @@ when the model has a mapped cheaper variant:
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
 | "fix linter errors in some files" stays on the expensive model instead of flash | `isStrongEditing` matches "fix" and blocks the `automation` downgrade | Let lint tasks classify as automation even with a strong-editing word present (`isLintTask` → bypass the `!isStrongEditing` guard) |
-| `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultFlashModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.2` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.2`), uncomment the entry in `modelOverrideMap` — it takes priority over the universal fallback. |
+| `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultFlashModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.2` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.2`), **add** an entry to `modelOverrideMap` (it currently only holds `"deepseek-v4-pro": "deepseek-v4-flash"` — there is nothing to uncomment). Entries take priority over the universal fallback. |
 
 #### Verbosity control — model-keyed request-side transforms
 

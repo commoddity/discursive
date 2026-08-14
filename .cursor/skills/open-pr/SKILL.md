@@ -6,7 +6,7 @@ description: >
     and non-technical summary from the git diff.   Supports draft mode.
 model: deepseek-v4-flash
 disable-model-invocation: true
-allowed-tools: Bash, Read
+allowed-tools: Bash, Read, AskQuestion
 ---
 
 # /open-pr — Create a GitHub Pull Request

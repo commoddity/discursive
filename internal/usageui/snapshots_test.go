@@ -377,19 +377,22 @@ func TestSnapshotControllerCapture_InsertsSnapshots(t *testing.T) {
 	ctx := context.Background()
 	ctrl.capture(ctx)
 
-	// Should have at least 4 bases × 3 providers = 12 snapshots.
+	// Should have one 'sample' snapshot per provider = 3 snapshots.
 	snaps, err := store.LatestBalanceSnapshots()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(snaps) < 12 {
-		t.Fatalf("got %d latest snapshots, want at least 12", len(snaps))
+	if len(snaps) < 3 {
+		t.Fatalf("got %d latest snapshots, want at least 3", len(snaps))
 	}
 
-	// Verify we have all three providers.
+	// Verify we have all three providers and only 'sample' basis rows.
 	provs := map[string]bool{}
 	for _, s := range snaps {
 		provs[string(s.Provider)] = true
+		if s.Basis != "sample" {
+			t.Errorf("got basis %q, want only sample", s.Basis)
+		}
 	}
 	if !provs["moonshot"] || !provs["deepseek"] || !provs["zai"] {
 		t.Fatalf("missing providers in snapshots: %v", provs)
@@ -445,9 +448,9 @@ func TestSnapshotControllerCapture_IgnoresFailedBalances(t *testing.T) {
 			t.Errorf("unexpected provider %s in snapshots (only DeepSeek should succeed)", s.Provider)
 		}
 	}
-	// 4 bases for DeepSeek = 4 snapshots.
-	if len(snaps) != 4 {
-		t.Errorf("got %d snapshots, want 4 (only deepseek succeeded)", len(snaps))
+	// 1 sample basis for DeepSeek = 1 snapshot.
+	if len(snaps) != 1 {
+		t.Errorf("got %d snapshots, want 1 (only deepseek succeeded)", len(snaps))
 	}
 }
 

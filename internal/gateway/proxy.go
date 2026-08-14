@@ -37,9 +37,11 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	restoreClientStream(sanitized.Body, wantsStream)
 
 	// Describe images via glm-4.6v for ALL providers before the text model
-	// sees them. Fail fast: if the vision key is missing or the vision model
-	// rejects the image, surface a clear error to the user instead of
-	// silently stripping or passing raw images through.
+	// sees them. Graceful: historical images are reused from the durable
+	// cache, and any image the vision model cannot describe (rate-limited,
+	// missing key, network, rejection) is replaced with a placeholder note so
+	// the turn proceeds. ReplaceImages no longer returns a fatal error for an
+	// image it cannot describe; the error branch below is defensive only.
 	if _, err := s.vision.ReplaceImages(r.Context(), sanitized.Body); err != nil {
 		logRequest(requestID, "status", http.StatusBadRequest, "error", "vision", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
 		writeJSONError(w, http.StatusBadRequest, err.Error(), "vision_error")

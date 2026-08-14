@@ -1,8 +1,9 @@
 // Package usageui — snapshot controller
 //
 // Periodically fetches provider balances (Moonshot, DeepSeek, Z.AI) and stores
-// balance snapshots with bases "sample", "day", "week", and "month".  Thaura
-// does not expose a balance API and is skipped.
+// 'sample' balance snapshots.  Thaura does not expose a balance API and is
+// skipped. A staleness watchdog backstops the periodic ticker so a provider
+// never goes longer than snapshotInterval without a fresh sample.
 //
 // Confirmed spend per period is computed by the /api/balance-spend handler in
 // balance.go using the snapshots stored here.
@@ -15,11 +16,16 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/commoddity/discursive/internal/config"
 	"github.com/commoddity/discursive/internal/usage"
 )
 
-const snapshotInterval = 15 * time.Minute
+const (
+	snapshotInterval  = 15 * time.Minute
+	stalenessInterval = 30 * time.Second
+)
 
 // StartSnapshots begins periodic balance snapshot capture on the server.  The
 // key source must be configured before this is called.  The parent context
@@ -45,6 +51,7 @@ type SnapshotController struct {
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+	sfg    singleflight.Group // dedupes overlapping captures (ticker + watchdog)
 }
 
 // NewSnapshotController creates a controller with the given dependencies.
@@ -71,6 +78,8 @@ func (c *SnapshotController) Start(ctx context.Context) {
 
 	c.wg.Add(1)
 	go c.loop(ctx)
+	c.wg.Add(1)
+	go c.stalenessWatchdog(ctx)
 }
 
 // Stop gracefully terminates the loop.  Blocks until the goroutine exits.
@@ -101,13 +110,21 @@ func (c *SnapshotController) loop(ctx context.Context) {
 	}
 }
 
-// capture fetches all provider balances and stores one snapshot row per
-// provider × basis (sample, day, week, month).
+// capture fetches all provider balances and stores one 'sample' snapshot row per
+// provider. It is wrapped in a singleflight so overlapping triggers (periodic
+// ticker + staleness watchdog) collapse into a single fetch.
 func (c *SnapshotController) capture(ctx context.Context) {
+	_, _, _ = c.sfg.Do("capture", func() (any, error) {
+		c.captureOnce(ctx)
+		return nil, nil
+	})
+}
+
+func (c *SnapshotController) captureOnce(ctx context.Context) {
 	now := time.Now().UTC()
 	log := c.log.With("ts", now.Format(time.RFC3339))
 
-	var moonUSD, dsUSD float64
+	var moonUSD, moonTopped, dsUSD, dsTopped float64
 	var moonOK, dsOK bool
 	var zaiCredits float64
 	var zaiOK bool
@@ -121,6 +138,7 @@ func (c *SnapshotController) capture(ctx context.Context) {
 		bal := fetchMoonshotBalance(c.client, c.ks.Moonshot)
 		if bal.AvailableUSD != nil {
 			moonUSD = *bal.AvailableUSD
+			moonTopped = bal.ToppedUp
 			moonOK = true
 		} else {
 			log.Warn("moonshot balance no USD", "err", bal.Error)
@@ -132,6 +150,7 @@ func (c *SnapshotController) capture(ctx context.Context) {
 		bal := fetchDeepSeekBalance(c.client, c.ks.DeepSeek)
 		if bal.AvailableUSD != nil {
 			dsUSD = *bal.AvailableUSD
+			dsTopped = bal.ToppedUp
 			dsOK = true
 		} else {
 			log.Warn("deepseek balance no USD", "err", bal.Error)
@@ -153,24 +172,79 @@ func (c *SnapshotController) capture(ctx context.Context) {
 
 	now = time.Now().UTC() // grab a fresh timestamp after the fetches
 
+	samp := sampleBasis(now)
 	if moonOK {
-		for _, b := range basesForTime(now) {
-			c.storeSnapshot(config.ProviderMoonshot, b, now, moonUSD, "USD", moonUSD)
-		}
+		c.storeSnapshot(config.ProviderMoonshot, samp, now, moonUSD, "USD", moonUSD, moonTopped)
 	}
 	if dsOK {
-		for _, b := range basesForTime(now) {
-			c.storeSnapshot(config.ProviderDeepSeek, b, now, dsUSD, "USD", dsUSD)
-		}
+		c.storeSnapshot(config.ProviderDeepSeek, samp, now, dsUSD, "USD", dsUSD, dsTopped)
 	}
 	if zaiOK {
-		for _, b := range basesForTime(now) {
-			c.storeSnapshot(config.ProviderZai, b, now, zaiCredits, "credits", 0)
+		c.storeSnapshot(config.ProviderZai, samp, now, zaiCredits, "credits", 0, 0)
+	}
+}
+
+// stalenessWatchdog polls for providers whose newest 'sample' snapshot is older
+// than snapshotInterval and triggers an immediate capture when any is stale.
+func (c *SnapshotController) stalenessWatchdog(ctx context.Context) {
+	defer c.wg.Done()
+
+	ticker := time.NewTicker(stalenessInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if c.staleProvider(ctx, time.Now().UTC()) {
+				c.log.Info("snapshot stale, triggering capture")
+				c.capture(ctx)
+			}
 		}
 	}
 }
 
-func (c *SnapshotController) storeSnapshot(prov config.Provider, b basisEntry, capturedAt time.Time, amount float64, currency string, usd float64) {
+// staleProvider reports whether any key-configured provider lacks a 'sample'
+// snapshot fresher than snapshotInterval.
+func (c *SnapshotController) staleProvider(ctx context.Context, now time.Time) bool {
+	providers := []config.Provider{config.ProviderMoonshot, config.ProviderDeepSeek, config.ProviderZai}
+	for _, prov := range providers {
+		if !c.providerConfigured(prov) {
+			continue
+		}
+		points, err := c.store.SampleSeries(prov, now.Add(-snapshotInterval))
+		if err != nil {
+			c.log.Warn("snapshot staleness check failed", "provider", prov, "err", err)
+			continue
+		}
+		if len(points) == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *SnapshotController) providerConfigured(prov config.Provider) bool {
+	var get func() (string, bool)
+	switch prov {
+	case config.ProviderMoonshot:
+		get = c.ks.Moonshot
+	case config.ProviderDeepSeek:
+		get = c.ks.DeepSeek
+	case config.ProviderZai:
+		get = c.ks.Zai
+	default:
+		return false
+	}
+	if get == nil {
+		return false
+	}
+	_, ok := get()
+	return ok
+}
+
+func (c *SnapshotController) storeSnapshot(prov config.Provider, b basisEntry, capturedAt time.Time, amount float64, currency string, usd, toppedUp float64) {
 	snap := usage.BalanceSnapshot{
 		Provider:    prov,
 		Basis:       b.basis,
@@ -179,6 +253,7 @@ func (c *SnapshotController) storeSnapshot(prov config.Provider, b basisEntry, c
 		Amount:      amount,
 		Currency:    currency,
 		USDAmount:   usd,
+		ToppedUp:    toppedUp,
 	}
 	if err := c.store.InsertBalanceSnapshot(snap); err != nil {
 		c.log.Warn("insert snapshot failed",
@@ -191,6 +266,11 @@ func (c *SnapshotController) storeSnapshot(prov config.Provider, b basisEntry, c
 type basisEntry struct {
 	basis       string
 	periodStart time.Time
+}
+
+// sampleBasis returns the single 'sample' basis entry used by capture.
+func sampleBasis(t time.Time) basisEntry {
+	return basisEntry{basis: "sample", periodStart: t.Truncate(time.Minute)}
 }
 
 func basesForTime(t time.Time) []basisEntry {

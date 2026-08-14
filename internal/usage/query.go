@@ -464,6 +464,60 @@ func scanSessionInfoRow(rows *sql.Rows) (SessionInfo, error) {
 	return si, nil
 }
 
+// ProviderEstBucket aggregates estimated usage per provider in a time bucket.
+type ProviderEstBucket struct {
+	Bucket       string
+	Provider     string
+	EstUSD       float64
+	RequestCount uint64
+	TokensIn     uint64
+	TokensOut    uint64
+}
+
+// QueryProviderEstSince returns estimated spend grouped by provider in buckets
+// since a given time. bucketMinutes > 0 buckets by that interval; 0 buckets by
+// calendar day (local time).
+func (s *Store) QueryProviderEstSince(since time.Time, bucketMinutes int) ([]ProviderEstBucket, error) {
+	var bucketExpr string
+	var args []any
+	if bucketMinutes > 0 {
+		bucketSecs := bucketMinutes * 60
+		bucketExpr = `strftime('%Y-%m-%dT%H:%M:00',
+		 datetime((CAST(strftime('%s', timestamp) AS INTEGER) / ?) * ?, 'unixepoch'))`
+		args = []any{bucketSecs, bucketSecs}
+	} else {
+		bucketExpr = "date(timestamp, 'localtime')"
+	}
+	args = append(args, since.Format(time.RFC3339))
+	q := `SELECT ` + bucketExpr + ` as bucket, provider,
+	 COUNT(*),
+	 COALESCE(SUM(prompt_tokens),0),
+	 COALESCE(SUM(completion_tokens),0),
+	 COALESCE(SUM(est_usd),0)
+	 FROM events WHERE timestamp >= ?
+	 GROUP BY bucket, provider
+	 ORDER BY bucket ASC`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query provider est since: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []ProviderEstBucket
+	for rows.Next() {
+		var b ProviderEstBucket
+		if err := rows.Scan(&b.Bucket, &b.Provider, &b.RequestCount,
+			&b.TokensIn, &b.TokensOut, &b.EstUSD); err != nil {
+			return nil, fmt.Errorf("scan provider est bucket: %w", err)
+		}
+		b.EstUSD = RoundUSD(b.EstUSD)
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return out, nil
+}
+
 // DBStats holds database-level statistics.
 type DBStats struct {
 	EventCount   int64  `json:"event_count"`

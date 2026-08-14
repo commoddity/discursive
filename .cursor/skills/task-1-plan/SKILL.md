@@ -6,7 +6,7 @@ description: >
   a large model for this skill.   Manual only — /task-1-plan TXX.
 model: deepseek-v4-pro
 disable-model-invocation: true
-allowed-tools: Bash, Read, Grep, Glob, Edit, Write
+allowed-tools: Bash, Read, Grep, Glob, Edit, Write, CreatePlan
 ---
 
 # /task-1-plan — Plan one atomic MVP task

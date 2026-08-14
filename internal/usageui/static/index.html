@@ -114,6 +114,98 @@
       box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.18);
     }
 
+    .peak-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      font-size: 0.78rem;
+      font-weight: 600;
+      position: relative;
+      cursor: help;
+      white-space: nowrap;
+    }
+
+    .peak-indicator .peak-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .peak-indicator.peak {
+      border-color: rgba(255, 179, 102, 0.45);
+      background: rgba(255, 179, 102, 0.1);
+      color: #ffb366;
+    }
+
+    .peak-indicator.peak .peak-dot {
+      background: #ffb366;
+      box-shadow: 0 0 8px rgba(255, 179, 102, 0.8);
+    }
+
+    .peak-indicator.offpeak {
+      border-color: rgba(94, 205, 128, 0.45);
+      background: rgba(94, 205, 128, 0.1);
+      color: #5ecd80;
+    }
+
+    .peak-indicator.offpeak .peak-dot {
+      background: #5ecd80;
+      box-shadow: 0 0 8px rgba(94, 205, 128, 0.8);
+    }
+
+    .peak-tooltip {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      z-index: 100;
+      display: none;
+      min-width: 260px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #161b22;
+      color: var(--text);
+      font-size: 0.76rem;
+      font-weight: 400;
+      line-height: 1.55;
+      white-space: normal;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+    }
+
+    .peak-indicator:hover .peak-tooltip,
+    .peak-indicator:focus-within .peak-tooltip {
+      display: block;
+    }
+
+    .peak-tooltip .pk-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .peak-tooltip .pk-label {
+      color: var(--text-muted);
+    }
+
+    .peak-tooltip .pk-value {
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+    }
+
+    .peak-tooltip .pk-note {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.72rem;
+    }
+
     .card-header {
       display: flex;
       align-items: center;
@@ -1293,7 +1385,13 @@
 <body>
   <div class="header">
     <img src="/static/discursive.png" alt="Discursive">
-    <div class="providers" id="provider-indicators"></div>
+    <div class="peak-indicator offpeak" id="peak-indicator" tabindex="0" role="status" aria-live="polite"
+         style="margin-left:auto">
+      <span class="peak-dot"></span>
+      <span id="peak-indicator-label">Off-peak</span>
+      <div class="peak-tooltip" id="peak-tooltip"></div>
+    </div>
+    <div class="providers" id="provider-indicators" style="margin-left:0"></div>
   </div>
 
   <div class="card" id="health-card">
@@ -1367,10 +1465,10 @@
     <div class="period-summary" id="period-summary" style="display:none"></div>
     <div class="chart-legend" id="by-period-legend" style="display:none">
       <div class="chart-legend-item">
-        <div class="chart-legend-swatch" style="background:var(--accent)"></div> Cache miss
+        <div class="chart-legend-swatch" style="background:#2563eb"></div> Confirmed (Moonshot + DeepSeek)
       </div>
       <div class="chart-legend-item">
-        <div class="chart-legend-swatch" style="background:var(--accent); opacity:0.35"></div> Cache hit
+        <div class="chart-legend-swatch" style="background:#ec4899"></div> Estimated (Z.AI + Thaura)
       </div>
     </div>
     <div class="chart-box"><canvas id="chart-by-day"></canvas></div>
@@ -1391,6 +1489,7 @@
       <div>
         <h2>🏢 Spend by Provider</h2>
         <div class="chart-box"><canvas id="chart-by-provider"></canvas></div>
+        <div id="by-provider-note"></div>
       </div>
     </div>
   </div>
@@ -1474,7 +1573,7 @@
     let zaiMtdUsage = null; // { requests, tokens_in, tokens_out } MTD stats for hover tooltips
     let zaiBalance = null;  // latest /api/balances zai payload, for the Z.AI card hover tooltip
     let zaiTipTimer = null; // 1s interval refreshing the weekly-reset countdown
-    let balanceSpend = null; // latest /api/balance-spend payload, for confirmed-spend card tooltips
+    let balanceSpend = null; // { moonshot: {day,week,month}, deepseek: {day,week,month} } confirmed deltas
 
     async function fetchZaiFlatFee() {
       try {
@@ -1737,14 +1836,22 @@
     // Pricing per 1M tokens in USD (source: usage.mdc rules)
     // { model: { cache_hit: price, input: price, output: price } }
     // Thaura has no cache tier.
+    // DeepSeek switched to peak/off-peak billing 2026-08-16 16:00 UTC:
+    // off_peak = new base rates; peak (01:00–04:00, 06:00–10:00 UTC) = 2x off_peak.
     const PRICING = {
       moonshot: {
         'kimi-k3': { cache_hit: 0.30, input: 3.00, output: 15.00 },
         'kimi-k2.7-code': { cache_hit: 0.19, input: 0.95, output: 4.00 },
       },
       deepseek: {
-        'deepseek-v4-flash': { cache_hit: 0.0028, input: 0.14, output: 0.28 },
-        'deepseek-v4-pro': { cache_hit: 0.003625, input: 0.435, output: 0.87 },
+        'deepseek-v4-flash': {
+          off_peak: { cache_hit: 0.007, input: 0.22, output: 0.66 },
+          peak: { cache_hit: 0.014, input: 0.44, output: 1.32 },
+        },
+        'deepseek-v4-pro': {
+          off_peak: { cache_hit: 0.022, input: 0.66, output: 1.98 },
+          peak: { cache_hit: 0.044, input: 1.32, output: 3.96 },
+        },
       },
       thaura: {
         'thaura': { input: 0.50, output: 2.00 },
@@ -1761,9 +1868,20 @@
       let lines = [];
       for (const [model, p] of Object.entries(models)) {
         let row = '<strong>' + escapeHtml(model) + '</strong><br>';
-        if (p.cache_hit !== undefined) row += 'Cache hit: ' + fmtMoneyUSD(p.cache_hit) + '/MTok<br>';
-        row += 'Input: ' + fmtMoneyUSD(p.input) + '/MTok<br>';
-        row += 'Output: ' + fmtMoneyUSD(p.output) + '/MTok';
+        if (p.off_peak && p.peak) {
+          row += 'Peak (01–04, 06–10 UTC):<br>' +
+            'Cache hit: ' + fmtMoneyUSD(p.peak.cache_hit) + '/MTok<br>' +
+            'Input: ' + fmtMoneyUSD(p.peak.input) + '/MTok<br>' +
+            'Output: ' + fmtMoneyUSD(p.peak.output) + '/MTok<br>' +
+            'Off-peak (all other hours):<br>' +
+            'Cache hit: ' + fmtMoneyUSD(p.off_peak.cache_hit) + '/MTok<br>' +
+            'Input: ' + fmtMoneyUSD(p.off_peak.input) + '/MTok<br>' +
+            'Output: ' + fmtMoneyUSD(p.off_peak.output) + '/MTok';
+        } else {
+          if (p.cache_hit !== undefined) row += 'Cache hit: ' + fmtMoneyUSD(p.cache_hit) + '/MTok<br>';
+          row += 'Input: ' + fmtMoneyUSD(p.input) + '/MTok<br>';
+          row += 'Output: ' + fmtMoneyUSD(p.output) + '/MTok';
+        }
         lines.push(row);
       }
       let html = lines.join('<br><br>');
@@ -1807,56 +1925,58 @@
 
     // Time range resolution
     // Returns { since: ISO-string, until: ISO-string|null, buckets: number, bucketMins: string }
-    // All dates are UTC midnight to avoid timezone offset causing bucket boundary misalignment.
+    // Day boundaries follow the user's LOCAL timezone (new Date(y, m, d)). since/until
+    // are emitted as local-midnight ISO strings (no Z suffix) so the backend parses them
+    // as instants at the user's local midnight.
 
-    function utcMidnight(y, m, d) {
+    function localMidnight(y, m, d) {
       // m is 0-based month
-      return new Date(Date.UTC(y, m, d)).toISOString();
+      return new Date(y, m, d);
     }
 
     function timeRangeParams(val) {
       if (val === 'today') {
         const now = new Date();
-        const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const hoursSinceMidnight = Math.max(1, Math.ceil((now.getTime() - midnight.getTime()) / 3600000));
         return { since: midnight.toISOString(), until: null, buckets: hoursSinceMidnight, bucketMins: '1h' };
       }
       if (val === 'yesterday') {
         const now = new Date();
-        const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const yesterdayMidnight = new Date(todayMidnight.getTime() - 86400000);
         return { since: yesterdayMidnight.toISOString(), until: todayMidnight.toISOString(), buckets: 24, bucketMins: '1h' };
       }
       if (val === 'this-week') {
         const now = new Date();
-        const dayOfWeek = now.getUTCDay(); // 0=Sun
-        const utcToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const dayOfWeek = now.getDay(); // 0=Sun
+        const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const mondayOffset = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
-        const monday = new Date(utcToday.getTime() + mondayOffset * 86400000);
+        const monday = new Date(localToday.getTime() + mondayOffset * 86400000);
         const sunday = new Date(monday.getTime() + 6 * 86400000);
         return { since: monday.toISOString(), until: sunday.toISOString(), buckets: 7, bucketMins: '1d' };
       }
       if (val === 'last-week') {
         const now = new Date();
-        const dayOfWeek = now.getUTCDay();
-        const utcToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const dayOfWeek = now.getDay();
+        const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const mondayOffset = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
-        const thisMonday = new Date(utcToday.getTime() + mondayOffset * 86400000);
+        const thisMonday = new Date(localToday.getTime() + mondayOffset * 86400000);
         const lastMonday = new Date(thisMonday.getTime() - 7 * 86400000);
         const lastSunday = new Date(lastMonday.getTime() + 6 * 86400000);
         return { since: lastMonday.toISOString(), until: lastSunday.toISOString(), buckets: 7, bucketMins: '1d' };
       }
       if (val === 'this-month') {
         const now = new Date();
-        const since = utcMidnight(now.getUTCFullYear(), now.getUTCMonth(), 1);
-        // until = last day of month (Date.UTC with day 0 gives last day of previous month)
-        const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+        const since = localMidnight(now.getFullYear(), now.getMonth(), 1);
+        // until = last day of month (new Date with day 0 gives last day of previous month)
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         return { since: since, until: lastDay.toISOString(), buckets: 0, bucketMins: '1d' };
       }
       if (val === 'last-month') {
         const now = new Date();
-        const since = utcMidnight(now.getUTCFullYear(), now.getUTCMonth() - 1, 1);
-        const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+        const since = localMidnight(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
         return { since: since, until: lastDay.toISOString(), buckets: 0, bucketMins: '1d' };
       }
       const now = new Date();
@@ -2265,39 +2385,36 @@
         const div = document.getElementById('mtd-summary');
         div.style.display = 'grid';
 
-        // MTD spend prefers confirmed balance-delta spend (month level) from /api/balance-spend.
-        // Falls back to estimated token-cost sum (excluding Z.AI).
-        let mtdCost, isConfirmedMtd = false;
-        if (balanceSpend) {
-          const cm = balanceSpend.moonshot && balanceSpend.moonshot.month;
-          const cd = balanceSpend.deepseek && balanceSpend.deepseek.month;
-          if ((cm != null) || (cd != null)) {
-            mtdCost = (cm || 0) + (cd || 0);
-            isConfirmedMtd = true;
+        // Blended MTD spend from /api/spend (local month start, daily buckets):
+        // confirmed = Moonshot + DeepSeek (billing confirmed), estimated = Z.AI + Thaura (token-estimated).
+        let confirmedMtd = 0, estimatedMtd = 0;
+        try {
+          const now = new Date();
+          const since = localMidnight(now.getFullYear(), now.getMonth(), 1).toISOString();
+          const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+          const sp = await api('/api/spend?since=' + encodeURIComponent(since) + '&until=' + encodeURIComponent(lastDay) + '&bucket=1d');
+          for (const b of (sp.buckets || [])) {
+            confirmedMtd += b.confirmed || 0;
+            estimatedMtd += b.estimated || 0;
           }
-        }
-        if (!isConfirmedMtd) {
-          mtdCost = s.est_usd || 0;
-          if (s.by_model) {
-            for (const m of s.by_model) if (m.provider === 'zai') mtdCost -= m.est_usd || 0;
-          }
-        }
+        } catch (e) { /* fall back to estimates below */ }
+        const mtdCost = confirmedMtd + estimatedMtd;
 
-        const mtdLabel = isConfirmedMtd ? 'EUR (confirmed)' : moneyLabel();
-        const mtdTooltip = isConfirmedMtd
-          ? 'Confirmed balance-delta spend for this month. Excludes Z.AI subscription fee.'
-          : 'Z.AI is subscription-based — its per-request token costs are excluded. Z.AI flat monthly subscription ($' + (zaiFlatFeeUsd != null && zaiFlatFeeUsd > 0 ? zaiFlatFeeUsd : '14.40') + ' USD) is added only to the Month Projection.';
+        const mtdLabel = 'MTD Spend';
+        const mtdTooltip = 'Confirmed (Moonshot + DeepSeek, billing confirmed) plus Estimated (Thaura, token-estimated) for this month. Z.AI is excluded (flat-fee coding plan).';
+        const estMarker = estimatedMtd > 0
+          ? ' <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500">includes ' + fmtMoney(estimatedMtd) + ' est.</span>'
+          : '';
 
         div.innerHTML =
           '<div class="stat"><div class="label">Requests</div><div class="value">' + fmtNum(s.request_count) + '</div></div>' +
           '<div class="stat"><div class="label">Tokens In</div><div class="value">' + (s.tokens_in >= 1e6 ? (s.tokens_in / 1e6).toFixed(2) + 'M' : fmtNum(s.tokens_in)) + '</div></div>' +
           '<div class="stat"><div class="label">Tokens Out</div><div class="value">' + (s.tokens_out >= 1e6 ? (s.tokens_out / 1e6).toFixed(2) + 'M' : fmtNum(s.tokens_out)) + '</div></div>' +
           '<div class="stat"><div class="label">Cache Hits</div><div class="value">' + (s.cache_hit_tokens >= 1e6 ? (s.cache_hit_tokens / 1e6).toFixed(2) + 'M' : fmtNum(s.cache_hit_tokens)) + '</div></div>' +
-          '<div class="stat"><div class="label">' + mtdLabel + ' <span class="health-info" data-tip="' + mtdTooltip + '">?</span></div><div class="value">' + fmtMoney(mtdCost) + '</div></div>';
+          '<div class="stat"><div class="label">' + mtdLabel + ' <span class="health-info" data-tip="' + mtdTooltip + '">?</span></div><div class="value">' + fmtMoney(mtdCost) + estMarker + '</div></div>';
 
-        // Projection uses same MTD payload (zero-spend days included in avg).
-        // Pass by_model so renderProjection can exclude Z.AI from daily average.
-        await renderProjection(s.est_usd || 0, s.by_model || []);
+        // Projection uses the blended MTD payload (zero-spend days included in avg).
+        await renderProjection(confirmedMtd, estimatedMtd, s.by_model || []);
       } catch (e) {
         document.getElementById('mtd-loading').style.display = 'none';
         document.getElementById('mtd-error').style.display = 'block';
@@ -2433,9 +2550,9 @@
     async function loadBalances() {
       try {
         const data = await api('/api/balances');
-        // Fetch confirmed spend (balance deltas) concurrently-ish for card tooltips.
+        // Derive confirmed spend (balance deltas) per provider for card tooltips.
         try {
-          balanceSpend = await api('/api/balance-spend');
+          balanceSpend = await loadConfirmedSpendForCards();
         } catch (_) { balanceSpend = null; }
         // Fetch Z.AI MTD token usage for balance-card hover tooltips
         try {
@@ -2526,6 +2643,36 @@
       if (tip) tip.style.display = 'none';
     }
 
+    // Derive confirmed (balance-delta) spend per USD provider for the balance
+    // card tooltips from /api/spend. Returns { moonshot: {day,week,month}, deepseek: {...} }.
+    async function loadConfirmedSpendForCards() {
+      const now = new Date();
+      const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      // Monday start (local).
+      const dow = now.getDay();
+      const mondayOffset = dow === 0 ? -6 : -(dow - 1);
+      const weekStart = new Date(dayStart.getTime() + mondayOffset * 86400000);
+
+      const perProv = (since) =>
+        api('/api/spend?since=' + encodeURIComponent(since.toISOString()) + '&bucket=1d')
+          .then((res) => {
+            const m = { moonshot: 0, deepseek: 0 };
+            for (const x of (res.buckets || [])) {
+              m.moonshot += (x.moonshot || 0);
+              m.deepseek += (x.deepseek || 0);
+            }
+            return m;
+          });
+
+      const [d, w, mo] = await Promise.all([perProv(dayStart), perProv(weekStart), perProv(monthStart)]);
+
+      return {
+        moonshot: { day: d.moonshot, week: w.moonshot, month: mo.moonshot },
+        deepseek: { day: d.deepseek, week: w.deepseek, month: mo.deepseek },
+      };
+    }
+
     // Confirmed-spend tooltip for USD balance cards (Moonshot, DeepSeek).
     // Shows actual day/week/month spend derived from balance-snapshot deltas.
     function confirmedTipBody(provider) {
@@ -2569,82 +2716,49 @@
       if (tip) tip.style.display = 'none';
     }
 
-    async function renderProjection(mtdUsd, byModel) {
+    async function renderProjection(confirmedMtd, estimatedMtd, byModel) {
       document.getElementById('projection-loading').style.display = 'none';
       document.getElementById('projection-error').style.display = 'none';
       const now = new Date();
-      const dayOfMonth = now.getUTCDate(); // MTD is UTC — include today + prior zero days
-      const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+      const dayOfMonth = now.getDate(); // MTD is local — include today + prior zero days
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-      // Z.AI is subscription-based — exclude its usage from daily-average computation.
-      // Compute Z.AI MTD cost from the per-model breakdown.
-      let zaiMtdUsd = 0;
-      if (byModel) {
-        for (const m of byModel) {
-          if (m.provider === 'zai') zaiMtdUsd += m.est_usd || 0;
-        }
-      }
-      // Z.AI flat monthly fee is added to projection only (not to daily average).
+      // Blended MTD is the sum of confirmed (Moonshot + DeepSeek) and estimated
+      // (Z.AI + Thaura, token-estimated). Daily average is computed on this blended
+      // total. The Z.AI flat monthly subscription is added only to the projection.
+      const blendedMtdUsd = (confirmedMtd || 0) + (estimatedMtd || 0);
       const flatFee = (zaiFlatFeeUsd != null && zaiFlatFeeUsd > 0) ? zaiFlatFeeUsd : 0;
 
-      const nonZaiMtdUsd = Math.max(0, mtdUsd - zaiMtdUsd);
-
-      // Check whether confirmed spend data from balance snapshots is authoritative.
-      // It is only authoritative when the month period is "covered" — i.e., we have
-      // a boundary snapshot near midnight on the 1st of the month. Until then,
-      // confirmed deltas are partial and we fall back to estimates.
-      let confirmedMtd = null;
-      let confirmedCovered = false;
-      try {
-        const bs = await api('/api/balance-spend');
-        // Both providers must be covered for the combined confirmed total to be reliable.
-        const moonCovered = bs && bs.moonshot && bs.moonshot.covered;
-        const dsCovered = bs && bs.deepseek && bs.deepseek.covered;
-        confirmedCovered = !!(moonCovered && dsCovered);
-        if (confirmedCovered) {
-          const moon = bs && bs.moonshot && bs.moonshot.month;
-          const ds = bs && bs.deepseek && bs.deepseek.month;
-          if ((moon != null) || (ds != null)) {
-            confirmedMtd = (moon || 0) + (ds || 0);
-          }
-        }
-      } catch (_) { /* fall back to estimates */ }
-
-      let avgDaily, projected, projectedFrom;
-      if (confirmedMtd != null) {
-        // Authoritative confirmed spend: use confirmed M+S daily rate.
-        // Z.AI is flat subscription only — its token cost is excluded.
-        avgDaily = confirmedMtd / dayOfMonth;
-        projected = avgDaily * daysInMonth + flatFee;
-        projectedFrom = 'confirmed';
-      } else {
-        // Fallback: all estimates-based projection (M+S tokens only; Z.AI flat fee).
-        avgDaily = nonZaiMtdUsd / dayOfMonth;
-        projected = nonZaiMtdUsd / dayOfMonth * daysInMonth + flatFee;
-        projectedFrom = 'estimated';
+      let avgDaily = blendedMtdUsd / dayOfMonth;
+      let projected = avgDaily * daysInMonth + flatFee;
+      let projectedFrom = (blendedMtdUsd > 0) ? 'blended' : 'none';
+      if (projectedFrom === 'none') {
+        avgDaily = 0;
+        projected = flatFee;
       }
 
-      // Previous calendar month total (excl. Z.AI) — "No Data" when no usage.
+      // Previous calendar month total (confirmed + estimated, blended).
+      // The comparison is only valid when we have a *complete* previous month of
+      // balance-snapshot coverage; otherwise show an empty indicator instead of a
+      // bogus % (e.g. "+13354.2%" when only a couple of days of data exist).
       let prevTotal = null;
       try {
-        const since = utcMidnight(now.getUTCFullYear(), now.getUTCMonth() - 1, 1);
-        const until = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).toISOString();
-        const rows = await api('/api/by-day-model?since=' + encodeURIComponent(since) +
+        const since = localMidnight(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+        const until = new Date(now.getFullYear(), now.getMonth(), 0).toISOString();
+        const sp = await api('/api/spend?since=' + encodeURIComponent(since) +
           '&until=' + encodeURIComponent(until) + '&bucket=1d');
-        let cost = 0, reqs = 0;
-        for (const r of rows) {
-          if (r.provider === 'zai') continue; // exclude Z.AI from prev-month comparison
-          cost += r.est_usd || 0;
-          reqs += r.request_count || 0;
+        let cost = 0;
+        for (const b of (sp.buckets || [])) {
+          cost += (b.confirmed || 0) + (b.estimated || 0);
         }
-        if (reqs > 0 || cost > 0) prevTotal = cost;
+        if (sp.covered === true && cost > 0) prevTotal = cost;
       } catch (e) { /* leave prevTotal null */ }
 
       // Single comparison: projected month vs previous month total.
       let vsHtml;
       if (prevTotal == null || prevTotal === 0) {
-        vsHtml = '<div class="value bal-blue" style="font-size:1.1rem">No Data</div>' +
-          '<div class="sub">previous month</div>';
+        vsHtml = '<div class="value" style="font-size:1.1rem">&mdash;</div>' +
+          '<div class="sub">insufficient history</div>';
       } else {
         const pct = ((projected - prevTotal) / prevTotal * 100).toFixed(1);
         const cls = projected < prevTotal ? 'cmp-down' : 'cmp-up';
@@ -2655,15 +2769,12 @@
 
       // Build the tooltip text for the projection label.
       let tipText;
-      if (projectedFrom === 'confirmed') {
-        tipText = 'Based on actual balance deltas for Moonshot + DeepSeek extrapolated to ' + daysInMonth +
-          ' days, plus Z.AI flat subscription of ' + fmtMoney(flatFee) +
-          '. Z.AI is flat-rate only — no token costs. Avg Daily Spend covers M+S only.';
+      if (projectedFrom === 'blended') {
+        tipText = 'Based on blended MTD spend — Confirmed (Moonshot + DeepSeek) and Estimated (Z.AI + Thaura, token-estimated) — extrapolated to ' +
+          daysInMonth + ' days, plus Z.AI flat subscription of ' + fmtMoney(flatFee) + '.';
       } else {
-        tipText = 'Based on estimated token costs for Moonshot + DeepSeek extrapolated to ' +
-          daysInMonth + ' days, plus Z.AI flat subscription of ' +
-          fmtMoney(flatFee) + '. Z.AI is flat-rate only — no token costs. ' +
-          'Confirmed spend data will be available next month when the full period is covered.';
+        tipText = 'No MTD spend yet for this month. Projection shows only the Z.AI flat subscription of ' +
+          fmtMoney(flatFee) + '.';
       }
 
       const div = document.getElementById('projection-summary');
@@ -2696,24 +2807,24 @@
 
       if (range === 'today') {
         // Same time yesterday
-        const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const yesterdayMidnight = new Date(todayMidnight.getTime() - 86400000);
         const elapsed = now.getTime() - todayMidnight.getTime();
         prevSince = yesterdayMidnight.toISOString();
         prevUntil = new Date(yesterdayMidnight.getTime() + elapsed).toISOString();
       } else if (range === 'this-week') {
-        // Mon midnight UTC → now elapsed; compare with last Mon → same elapsed
-        const dayOfWeek = now.getUTCDay();
-        const utcToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        // Mon midnight local → now elapsed; compare with last Mon → same elapsed
+        const dayOfWeek = now.getDay();
+        const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const mondayOffset = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
-        const thisMonday = new Date(utcToday.getTime() + mondayOffset * 86400000);
+        const thisMonday = new Date(localToday.getTime() + mondayOffset * 86400000);
         const lastMonday = new Date(thisMonday.getTime() - 7 * 86400000);
         const elapsed = now.getTime() - thisMonday.getTime();
         prevSince = lastMonday.toISOString();
         prevUntil = new Date(lastMonday.getTime() + elapsed).toISOString();
       } else if (range === 'this-month') {
-        const startOfThisMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-        const startOfLastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+        const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const elapsed = now.getTime() - startOfThisMonth.getTime();
         prevSince = startOfLastMonth.toISOString();
         prevUntil = new Date(startOfLastMonth.getTime() + elapsed).toISOString();
@@ -2752,38 +2863,45 @@
         const params = timeRangeParams(range);
         const since = params.since;
         const bucket = timeRangeToBucket(range);
-        let url = '/api/by-day-model?since=' + encodeURIComponent(since) + '&bucket=' + bucket;
+        let url = '/api/by-day-model?since=' + encodeURIComponent(since) + '\u0026bucket=' + bucket;
         if (params.until) {
-          url += '&until=' + encodeURIComponent(params.until);
+          url += '\u0026until=' + encodeURIComponent(params.until);
         }
         const rows = await api(url);
 
-        // For current periods (today/this-week/this-month), compare vs same time point
-        // in the previous period. Only applicable when using estimated costs (not confirmed),
-        // since we don't have historical confirmed-spend baseline data.
-        const isCurrentPeriod = ['today', 'this-week', 'this-month'].includes(range);
-        let refCost = null;
-        // We'll set useConfirmed later; skip estimated comparison when using confirmed.
-        const confirmedRangeKey = periodToBalanceSpendKey(range);
-        let useConfirmed = false;
-        if (confirmedRangeKey && balanceSpend) {
-          const m = balanceSpend.moonshot && balanceSpend.moonshot[confirmedRangeKey];
-          const d = balanceSpend.deepseek && balanceSpend.deepseek[confirmedRangeKey];
-          if ((m != null) || (d != null)) {
-            useConfirmed = true;
+        // Fetch blended confirmed+estimated totals from /api/spend for the summary card.
+        let confirmedTotal = 0, estimatedTotal = 0;
+        let spendBuckets = [];
+        try {
+          let spendUrl = '/api/spend?since=' + encodeURIComponent(since) + '\u0026bucket=' + bucket;
+          if (params.until) {
+            spendUrl += '\u0026until=' + encodeURIComponent(params.until);
           }
+          const spend = await api(spendUrl);
+          spendBuckets = spend.buckets || [];
+        } catch (e) { spendBuckets = []; }
+        for (const b of spendBuckets) {
+          confirmedTotal += b.confirmed || 0;
+          estimatedTotal += b.estimated || 0;
         }
 
-        if (isCurrentPeriod && !useConfirmed) {
+        // For current periods (today/this-week/this-month), compare vs same time point
+        // in the previous period, using the blended confirmed+estimated total.
+        const isCurrentPeriod = ['today', 'this-week', 'this-month'].includes(range);
+        let refCost = null;
+        if (isCurrentPeriod) {
           const prevComp = getPrevPeriodComparison(range);
           if (prevComp) {
             try {
-              const refUrl = '/api/by-day-model?since=' + encodeURIComponent(prevComp.since) + '&until=' + encodeURIComponent(prevComp.until) + '&bucket=' + bucket;
-              const refRows = await api(refUrl);
-              refCost = refRows.reduce((s, r) => s + (r.provider === 'zai' ? 0 : (r.est_usd || 0)), 0);
+              const refUrl = '/api/spend?since=' + encodeURIComponent(prevComp.since) + '\u0026until=' + encodeURIComponent(prevComp.until) + '\u0026bucket=' + bucket;
+              const refSpend = await api(refUrl);
+              const refBuckets = refSpend.buckets || [];
+              refCost = refBuckets.reduce((s, b) => s + ((b.confirmed || 0) + (b.estimated || 0)), 0);
             } catch (e) { /* ref cost stays null */ }
           }
         }
+
+        const tCost = confirmedTotal + estimatedTotal;
 
         // Populate period summary stats (aggregate across all rows).
         // Token counts / requests still come from estimates (events table).
@@ -2797,18 +2915,6 @@
           tHit += r.cache_hit_tokens || 0;
         }
 
-        let tCost;
-        if (useConfirmed) {
-          const m = balanceSpend.moonshot && balanceSpend.moonshot[confirmedRangeKey];
-          const d = balanceSpend.deepseek && balanceSpend.deepseek[confirmedRangeKey];
-          tCost = (m || 0) + (d || 0);
-        } else {
-          tCost = 0;
-          for (const r of rows) {
-            if (r.provider !== 'zai') tCost += r.est_usd || 0;
-          }
-        }
-
         let changeHtml = '';
         if (refCost !== null && refCost !== 0) {
           const pct = ((tCost - refCost) / refCost * 100).toFixed(1);
@@ -2820,13 +2926,12 @@
 
         psum.style.display = 'grid';
         const estValClass = changeHtml ? 'value value-flex' : 'value';
-        const spendLabel = useConfirmed ? 'EUR (confirmed)' : moneyLabel();
         psum.innerHTML =
-          '<div class="stat"><div class="label">Requests</div><div class="value">' + fmtNum(reqs) + '</div></div>' +
-          '<div class="stat"><div class="label">Tokens In</div><div class="value">' + (tIn >= 1e6 ? (tIn / 1e6).toFixed(2) + 'M' : fmtNum(tIn)) + '</div></div>' +
-          '<div class="stat"><div class="label">Tokens Out</div><div class="value">' + (tOut >= 1e6 ? (tOut / 1e6).toFixed(2) + 'M' : fmtNum(tOut)) + '</div></div>' +
-          '<div class="stat"><div class="label">Cache Hits</div><div class="value">' + (tHit >= 1e6 ? (tHit / 1e6).toFixed(2) + 'M' : fmtNum(tHit)) + '</div></div>' +
-          '<div class="stat"><div class="label">' + spendLabel + '</div><div class="' + estValClass + '">' + fmtMoney(tCost) + changeHtml + '</div></div>';
+          '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003eRequests\u003c/div\u003e\u003cdiv class="value"\u003e' + fmtNum(reqs) + '\u003c/div\u003e\u003c/div\u003e' +
+          '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003eTokens In\u003c/div\u003e\u003cdiv class="value"\u003e' + (tIn >= 1e6 ? (tIn / 1e6).toFixed(2) + 'M' : fmtNum(tIn)) + '\u003c/div\u003e\u003c/div\u003e' +
+          '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003eTokens Out\u003c/div\u003e\u003cdiv class="value"\u003e' + (tOut >= 1e6 ? (tOut / 1e6).toFixed(2) + 'M' : fmtNum(tOut)) + '\u003c/div\u003e\u003c/div\u003e' +
+          '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003eCache Hits\u003c/div\u003e\u003cdiv class="value"\u003e' + (tHit >= 1e6 ? (tHit / 1e6).toFixed(2) + 'M' : fmtNum(tHit)) + '\u003c/div\u003e\u003c/div\u003e' +
+          '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003e' + moneyLabel() + '\u003c/div\u003e\u003cdiv class="' + estValClass + '"\u003e' + fmtMoney(tCost) + changeHtml + '\u003c/div\u003e\u003c/div\u003e';
 
         // Build bucket→models map: { bucket: [{provider, model, cost}, ...] }
         const bucketMap = {};
@@ -2950,24 +3055,24 @@
 
           // Build tooltip HTML
           let html = '';
-          html += '<div class="tt-title">' + escapeHtml(label) + '</div>';
+          html += '\u003cdiv class="tt-title"\u003e' + escapeHtml(label) + '\u003c/div\u003e';
 
           let firstProv = true;
           for (const [prov, provItems] of Object.entries(byProvider)) {
             const logoSrc = LOGO_URLS[prov] || '';
             if (!firstProv) {
-              html += '<div style="margin-top:10px"></div>';
+              html += '\u003cdiv style="margin-top:10px"\u003e\u003c/div\u003e';
             }
             firstProv = false;
-            html += '<div class="tt-logo-row" style="margin-bottom:0">' +
-              '<div style="width:80px;height:33px"><img src="' + logoSrc + '" style="width:80px;height:33px;object-fit:contain" alt="' + escapeHtml(prov) + '"></div>' +
-              '</div>';
+            html += '\u003cdiv class="tt-logo-row" style="margin-bottom:0"\u003e' +
+              '\u003cdiv style="width:80px;height:33px"\u003e\u003cimg src="' + logoSrc + '" style="width:80px;height:33px;object-fit:contain" alt="' + escapeHtml(prov) + '"\u003e\u003c/div\u003e' +
+              '\u003c/div\u003e';
             for (const item of provItems) {
-              html += '<div class="tt-row" style="padding-left:0">' + escapeHtml(item.model) + ': ' + fmtMoney(item.cost) + '</div>';
+              html += '\u003cdiv class="tt-row" style="padding-left:0"\u003e' + escapeHtml(item.model) + ': ' + fmtMoney(item.cost) + '\u003c/div\u003e';
             }
           }
 
-          html += '<div class="tt-row tt-total">Total: ' + fmtMoney(total) + '</div>';
+          html += '\u003cdiv class="tt-row tt-total"\u003eTotal: ' + fmtMoney(total) + '\u003c/div\u003e';
 
           // Position and show
           let el = document.getElementById('custom-tooltip');
@@ -2985,7 +3090,6 @@
         },
       };
     }
-
     // --- DB Stats ---
     async function loadStats() {
       try {
@@ -3062,31 +3166,38 @@
     }
 
     // --- By Provider ---
+    // Shows each provider's spend for the selected period. Moonshot/DeepSeek are
+    // billing-confirmed; Z.AI/Thaura are token-estimated ("Est. USD").
     async function loadByProvider() {
       try {
         const range = getSavedRange();
-        const since = timeRangeToSince(range);
-        const provs = (await api('/api/by-provider?since=' + encodeURIComponent(since))).filter(p => p.provider !== 'zai');
+        const params = timeRangeParams(range);
+        const since = params.since;
+        const bucket = timeRangeToBucket(range);
+        let url = '/api/spend?since=' + encodeURIComponent(since) + '&bucket=' + bucket;
+        if (params.until) {
+          url += '&until=' + encodeURIComponent(params.until);
+        }
+        const spend = await api(url);
+        const buckets = spend.buckets || [];
 
+        const order = ['moonshot', 'deepseek', 'zai', 'thaura'];
+        const totals = { moonshot: 0, deepseek: 0, zai: 0, thaura: 0 };
+        for (const b of buckets) {
+          totals.moonshot += b.moonshot || 0;
+          totals.deepseek += b.deepseek || 0;
+          totals.zai += b.zai || 0;
+          totals.thaura += b.thaura || 0;
+        }
+        const provs = order.filter(p => totals[p] > 0);
         const hasData = provs.length > 0;
-        const provLabels = hasData ? provs.map(p => p.provider) : ['No data'];
-        const provColors = hasData ? provs.map(p => providerColor(p.provider)) : ['#8b949e'];
-        const provLight = hasData ? provs.map(p => providerLight(p.provider)) : ['#c9d1d9'];
 
-        const missData = hasData ? provs.map(p => {
-          const denom = p.cache_miss_tokens + p.cache_hit_tokens;
-          if (denom === 0) return p.est_usd;
-          return Number((p.est_usd * p.cache_miss_tokens / denom).toFixed(6));
-        }) : [0];
-        const hitData = hasData ? provs.map(p => {
-          const denom = p.cache_miss_tokens + p.cache_hit_tokens;
-          if (denom === 0) return 0;
-          return Number((p.est_usd * p.cache_hit_tokens / denom).toFixed(6));
-        }) : [0];
+        const provLabels = hasData ? provs : ['No data'];
+        const provColors = hasData ? provs.map(p => providerColor(p)) : ['#8b949e'];
+        const values = hasData ? provs.map(p => totals[p]) : [0];
 
         const ctxProv = document.getElementById('chart-by-provider').getContext('2d');
-        const provMissGradients = provColors.map(c => makeGradient(ctxProv, c));
-        const provHitGradients = provLight.map(c => makeGradient(ctxProv, c));
+        const grad = hasData ? provColors.map(c => makeGradient(ctxProv, c)) : ['rgba(139,148,158,0.2)'];
 
         if (chartByProv) chartByProv.destroy();
         chartByProv = new Chart(document.getElementById('chart-by-provider'), {
@@ -3094,8 +3205,7 @@
           data: {
             labels: provLabels,
             datasets: [
-              { label: 'Cache miss', data: missData, backgroundColor: provMissGradients, borderRadius: 4 },
-              { label: 'Cache hit', data: hitData, backgroundColor: provHitGradients, borderRadius: 0 },
+              { label: 'Spend', data: values, backgroundColor: grad, borderRadius: 4 },
             ]
           },
           options: {
@@ -3103,7 +3213,7 @@
             responsive: true, maintainAspectRatio: false,
             plugins: {
               legend: { display: false },
-              tooltip: hasData ? makeCacheTooltip(i => provs[i].provider) : { enabled: false },
+              tooltip: hasData ? makeProviderSpendTooltip(provs, totals) : { enabled: false },
             },
             scales: {
               x: { stacked: true, ticks: { color: '#8b949e' } },
@@ -3111,7 +3221,55 @@
             }
           }
         });
+
+        // "includes est." note when Z.AI or Thaura contribute.
+        let noteHtml = '';
+        if (hasData && (totals.zai > 0 || totals.thaura > 0)) {
+          noteHtml = '<div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-top:6px">' +
+            'Includes est. USD (Z.AI + Thaura). Moonshot/DeepSeek are billing-confirmed.</div>';
+        }
+        document.getElementById('by-provider-note').innerHTML = noteHtml;
       } catch (e) { /* chart stays empty */ }
+    }
+
+    // Tooltip for Spend by Provider: label confirmed (Moonshot/DeepSeek) vs est. (Z.AI/Thaura).
+    function makeProviderSpendTooltip(provs, totals) {
+      return {
+        mode: 'index',
+        intersect: false,
+        enabled: false,
+        external: function (context) {
+          const { chart, tooltip } = context;
+          if (tooltip.opacity === 0) {
+            const el = document.getElementById('custom-tooltip');
+            if (el) el.style.display = 'none';
+            return;
+          }
+          const i = tooltip.dataPoints[0].dataIndex;
+          const prov = provs[i];
+          const name = prov.charAt(0).toUpperCase() + prov.slice(1);
+          const isConfirmed = prov === 'moonshot' || prov === 'deepseek';
+          const val = totals[prov] || 0;
+
+          let html = '';
+          html += '<div class="tt-title">' + escapeHtml(name) + '</div>';
+          html += '<div class="tt-row">' + (isConfirmed ? 'Confirmed: ' : 'Est. USD: ') + fmtMoney(val) + '</div>';
+          if (!isConfirmed) html += '<div class="tt-row">token-estimated from usage</div>';
+
+          let el = document.getElementById('custom-tooltip');
+          if (!el) {
+            el = document.createElement('div');
+            el.id = 'custom-tooltip';
+            document.body.appendChild(el);
+          }
+          const rect = chart.canvas.getBoundingClientRect();
+          el.innerHTML = html;
+          el.style.display = 'block';
+          el.style.position = 'fixed';
+          el.style.left = (rect.left + tooltip.caretX + 10) + 'px';
+          el.style.top = (rect.top + tooltip.caretY - 10) + 'px';
+        },
+      };
     }
 
     // --- Sessions ---
@@ -3358,9 +3516,78 @@
       reloadGraphs();
     }
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) { stopPolling(); stopUptimeTicker(); }
-      else { refreshAll(); startPolling(); startUptimeTicker(); }
+      if (document.hidden) {
+        stopPolling(); stopUptimeTicker();
+        if (_peakInterval) { clearInterval(_peakInterval); _peakInterval = null; }
+      }
+      else { refreshAll(); startPolling(); startUptimeTicker(); renderPeakIndicator(); _peakInterval = setInterval(renderPeakIndicator, 1000); }
     });
+
+    // --- DeepSeek Peak / Off-peak indicator ---
+    // Peak windows (UTC): 01:00–04:00 and 06:00–10:00 (half-open: hours
+    // 1,2,3 and 6,7,8,9). Off-peak is everything else. Peak bills at 2x the
+    // off-peak rate. This is a live schedule independent of the pricing
+    // cutover date, so the pill always shows today's current state.
+
+    function deepseekIsPeak(utcMs) {
+      const h = new Date(utcMs).getUTCHours();
+      return (h >= 1 && h < 4) || (h >= 6 && h < 10);
+    }
+
+    // Next UTC transition instant, as milliseconds since epoch, strictly after
+    // utcMs. Peak windows are half-open [1,4) and [6,10); transitions occur at
+    // the top of each boundary hour.
+    function deepseekNextBoundary(utcMs) {
+      const d = new Date(utcMs);
+      const y = d.getUTCFullYear();
+      const mo = d.getUTCMonth();
+      const day = d.getUTCDate();
+      const h = d.getUTCHours();
+
+      if (h < 1)  return Date.UTC(y, mo, day, 1, 0, 0);   // 01:00 peak starts
+      if (h < 4)  return Date.UTC(y, mo, day, 4, 0, 0);   // 04:00 peak ends
+      if (h < 6)  return Date.UTC(y, mo, day, 6, 0, 0);   // 06:00 peak starts
+      if (h < 10) return Date.UTC(y, mo, day, 10, 0, 0);  // 10:00 peak ends
+      return Date.UTC(y, mo, day + 1, 1, 0, 0);           // tomorrow 01:00 peak starts
+    }
+
+    function fmtPeakDur(ms) {
+      const total = Math.max(0, Math.ceil(ms / 1000));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      if (h > 0) return h + 'h ' + m + 'm';
+      if (m > 0) return m + 'm ' + s + 's';
+      return s + 's';
+    }
+
+    function peakLocalTime(utcMs) {
+      return new Date(utcMs).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      });
+    }
+
+    function renderPeakIndicator() {
+      const el = document.getElementById('peak-indicator');
+      const label = document.getElementById('peak-indicator-label');
+      const tip = document.getElementById('peak-tooltip');
+      const now = Date.now();
+      const peak = deepseekIsPeak(now);
+      const boundary = deepseekNextBoundary(now);
+      const nextStr = peak ? 'Off-peak' : 'Peak';
+
+      el.classList.toggle('peak', peak);
+      el.classList.toggle('offpeak', !peak);
+      label.textContent = peak ? 'Peak' : 'Off-peak';
+
+      tip.innerHTML =
+        '<div class="pk-row"><span class="pk-label">Status</span><span class="pk-value">' + (peak ? 'Peak (2× rate)' : 'Off-peak (0.5× rate)') + '</span></div>' +
+        '<div class="pk-row"><span class="pk-label">' + nextStr + ' starts in</span><span class="pk-value">' + fmtPeakDur(boundary - now) + '</span></div>' +
+        '<div class="pk-row"><span class="pk-label">' + nextStr + ' at (local)</span><span class="pk-value">' + peakLocalTime(boundary) + '</span></div>' +
+        '<div class="pk-note">Peak hours: 01:00–04:00 &amp; 06:00–10:00 UTC. All other hours are off-peak. Applies to DeepSeek only.</div>';
+    }
 
     // --- Init ---
     document.addEventListener('DOMContentLoaded', async () => {
@@ -3404,6 +3631,10 @@
       // Start 15-second auto-refresh (paused when tab is hidden)
       startPolling();
       startUptimeTicker();
+
+      // Peak/off-peak indicator (live; recalculates every second)
+      renderPeakIndicator();
+      _peakInterval = setInterval(renderPeakIndicator, 1000);
     });
   </script>
 </body>

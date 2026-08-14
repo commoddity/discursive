@@ -95,6 +95,28 @@ func (s *Server) recordUsage(provider config.Provider, model, effort, requestID 
 	}
 }
 
+// recordAuxUsage records usage for auxiliary worker calls (vision description,
+// tool-result compression). These use their own fixed sentinel session ids so
+// they meter into the per-day/provider/model aggregates but form their own
+// session row in the UI (never the active chat session). Best-effort: errors
+// are logged, never propagated to the primary request.
+func (s *Server) recordAuxUsage(sessionID string, provider config.Provider, model, requestID string, lat time.Duration, u tokenUsage) {
+	ev := usage.Event{
+		SessionID:        sessionID,
+		Provider:         provider,
+		Model:            model,
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		CacheHitTokens:   u.CacheHitTokens,
+		CacheMissTokens:  u.CacheMissTokens,
+		RequestID:        requestID,
+		LatencyMS:        uint64(lat.Milliseconds()),
+	}
+	if err := s.store.RecordAndObserve(s.agg, ev); err != nil {
+		slog.Warn("aux usage record failed", "request_id", requestID, "provider", string(provider), "model", model, "err", err)
+	}
+}
+
 // sseUsageScanner extracts usage from streamed SSE chunks.
 type sseUsageScanner struct {
 	buf   strings.Builder
