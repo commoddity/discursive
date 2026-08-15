@@ -667,11 +667,11 @@ func TestSubAgentRouter_UnknownProviderDefaultFallback(t *testing.T) {
 	}
 }
 
-func TestSubAgentRouter_Glm52ToFlashViaDefault(t *testing.T) {
-	// glm-5.2 is NOT in the override map (line is commented out), so it
+func TestSubAgentRouter_Glm53ToFlashViaDefault(t *testing.T) {
+	// glm-5.3 is NOT in the override map, so it
 	// falls back to the universal default (deepseek-v4-flash).
 	body := map[string]any{
-		"model": "glm-5.2",
+		"model": "glm-5.3",
 		"messages": []any{
 			map[string]any{"role": "system", "content": longSystemPrompt},
 			map[string]any{"role": "user", "content": "search for all test files"},
@@ -680,7 +680,7 @@ func TestSubAgentRouter_Glm52ToFlashViaDefault(t *testing.T) {
 	r := NewSubAgentRouter(SubAgentRouterConfig{Enabled: true})
 	result := r.ClassifyAndOverride(body, "req_test")
 	if !result.OverrideApplied {
-		t.Errorf("glm-5.2 should be overridden (not in map → default), got class=%q", result.RequestClass)
+		t.Errorf("glm-5.3 should be overridden (not in map → default), got class=%q", result.RequestClass)
 	}
 	if stringField(body, "model") != defaultFlashModel {
 		t.Errorf("expected default %q, got %q", defaultFlashModel, stringField(body, "model"))
@@ -846,7 +846,7 @@ internal/config/    → settings, paths, validation
 - o1 → DeepSeek deepseek-v4-pro (hard execution)
 - o3-mini → DeepSeek deepseek-v4-flash (cheap execution)
 - gpt-5-nano → Thaura thaura (ethical AI)
-- gpt-4.1-turbo → Z.AI glm-5.2 (planning, cheaper than K3)
+- gpt-4.1-turbo → Z.AI glm-5.3 (planning, cheaper than K3)
 - gpt-4.1 → Z.AI glm-4.7 (cheap execution)
 
 ## Coding Standards

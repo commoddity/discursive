@@ -26,15 +26,15 @@ func TestNormalizeReasoningEffort(t *testing.T) {
 		{name: "ds medium maps to high", model: ModelDeepSeekV4Pro, effort: "medium", want: "high"},
 		{name: "ds xhigh maps to max", model: ModelDeepSeekV4Pro, effort: "xhigh", want: "max"},
 		{name: "ds garbage", model: ModelDeepSeekV4Pro, effort: "turbo", wantErr: true},
-		{name: "zai off", model: ModelZaiGLM52, effort: "off", want: "off"},
-		{name: "zai HIGH", model: ModelZaiGLM52, effort: "HIGH", want: "high"},
-		{name: "zai max", model: ModelZaiGLM52, effort: "max", want: "max"},
-		{name: "zai low maps to high", model: ModelZaiGLM52, effort: "low", want: "high"},
-		{name: "zai medium maps to high", model: ModelZaiGLM52, effort: "medium", want: "high"},
-		{name: "zai xhigh maps to max", model: ModelZaiGLM52, effort: "xhigh", want: "max"},
-		{name: "zai none maps to off", model: ModelZaiGLM52, effort: "none", want: "off"},
-		{name: "zai minimal maps to off", model: ModelZaiGLM52, effort: "minimal", want: "off"},
-		{name: "zai garbage", model: ModelZaiGLM52, effort: "turbo", wantErr: true},
+		{name: "zai off maps to low", model: ModelZaiGLM53, effort: "off", want: "low"},
+		{name: "zai none maps to low", model: ModelZaiGLM53, effort: "none", want: "low"},
+		{name: "zai minimal maps to low", model: ModelZaiGLM53, effort: "minimal", want: "low"},
+		{name: "zai low", model: ModelZaiGLM53, effort: "low", want: "low"},
+		{name: "zai HIGH", model: ModelZaiGLM53, effort: "HIGH", want: "high"},
+		{name: "zai max", model: ModelZaiGLM53, effort: "max", want: "max"},
+		{name: "zai medium maps to high", model: ModelZaiGLM53, effort: "medium", want: "high"},
+		{name: "zai xhigh maps to max", model: ModelZaiGLM53, effort: "xhigh", want: "max"},
+		{name: "zai garbage", model: ModelZaiGLM53, effort: "turbo", wantErr: true},
 		{name: "unknown model", model: "thaura", effort: "low", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -64,13 +64,13 @@ func TestNormalizeReasoningEffortMapDefaults(t *testing.T) {
 	if got[ModelDeepSeekV4Pro] != EffortOff {
 		t.Fatalf("pro default: %q", got[ModelDeepSeekV4Pro])
 	}
-	if got[ModelZaiGLM52] != EffortOff {
-		t.Fatalf("zai glm-5.2 default: %q", got[ModelZaiGLM52])
+	if got[ModelZaiGLM53] != "low" {
+		t.Fatalf("zai glm-5.3 default: %q", got[ModelZaiGLM53])
 	}
 	got = NormalizeReasoningEffortMap(map[string]string{
 		ModelKimiK3:          "max",
 		ModelDeepSeekV4Flash: "medium", // legacy alias → high
-		ModelZaiGLM52:        "high",
+		ModelZaiGLM53:        "high",
 		"thaura":             "low",
 	})
 	if got[ModelKimiK3] != "max" {
@@ -79,8 +79,8 @@ func TestNormalizeReasoningEffortMapDefaults(t *testing.T) {
 	if got[ModelDeepSeekV4Flash] != "high" {
 		t.Fatalf("flash medium→high: %q", got[ModelDeepSeekV4Flash])
 	}
-	if got[ModelZaiGLM52] != "high" {
-		t.Fatalf("zai glm-5.2: %q", got[ModelZaiGLM52])
+	if got[ModelZaiGLM53] != "high" {
+		t.Fatalf("zai glm-5.3: %q", got[ModelZaiGLM53])
 	}
 	if _, ok := got["thaura"]; ok {
 		t.Fatal("thaura should be dropped")

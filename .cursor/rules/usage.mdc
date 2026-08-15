@@ -68,10 +68,25 @@ Source: https://docs.z.ai/guides/overview/pricing
 
 | Model     | Cache hit / MTok | Input / MTok | Output / MTok |
 | --------- | ---------------- | ------------ | ------------- |
-| `glm-5.2` | $0.26            | $1.40        | $4.40         |
+| `glm-5.3` | $0.26            | $1.40        | $4.40         |
 | `glm-4.7` | $0.11            | $0.60        | $2.20         |
 
-`glm-5.2` supports reasoning_effort + prompt caching; `glm-4.7` uses `thinking: {type: enabled|disabled}`.
+> **PROVISIONAL — `glm-5.3` has no published per-token rate yet.** Z.AI's rate
+> card still lists GLM-5.2 as its newest row and the GLM-5.3 docs say "API is
+> coming soon". The `glm-5.3` row is GLM-5.2's card carried forward as a
+> stand-in. **Update `pricing.go` + JS `PRICING` + this file + tests the moment
+> Z.AI publishes GLM-5.3 pricing** ([docs.z.ai pricing](https://docs.z.ai/guides/overview/pricing)).
+
+> **GLM-5.3 Coding Plan quota is points-based (as of 2026-08).** Model calls
+> consume credits via multipliers per 10k tokens: input 6.9, cached input 1.7,
+> output 24. Off-peak (all hours except Mon–Fri 14:00–18:00 +08:00) consumes
+> 50% of standard credits. The balance panel already parses `data.limits[]`
+> `CREDIT_LIMIT` buckets from `/api/monitor/usage/quota/limit` generically. The
+> Go `ZaiFlatFeeUSD` constant / `/api/zai-flat-fee` still reflect the legacy
+> flat $14.40/mo model used for month projections — revisit if projections
+> should switch to points.
+
+`glm-5.3` always thinks (reasoning_effort `low`\|`high`\|`max` + prompt caching); `glm-4.7` uses `thinking: {type: enabled|disabled}`.
 
 ## Usage UI (dashboard)
 
@@ -160,7 +175,7 @@ Default: summary stats row for the selected time range (sessions, requests, toke
 - **Agent-task window** = consecutive events until idle (`DefaultIdleTimeout` = 30s, override `DISCURSIVE_USAGE_IDLE`). Logged at INFO as `msg=usage_summary`.
 - Pauses >30s mid-agent may split one task → set `DISCURSIVE_USAGE_IDLE=5m` for longer window.
 - Session id = gateway process run or explicit CLI session id.
-- Persist JSONL under app data (`usage/events.jsonl`).
+- Persist usage events to SQLite under app data (`{dataRoot}/usage/usage.db`) via `internal/usage/store.go` (schema keepalive: `internal/usage`). No JSONL persistence.
 - Log level: `DISCURSIVE_LOG_LEVEL=debug|info|warn|error` (default `info`). Never log secrets.
 
 ### CLI spend report (`discursive usage`)

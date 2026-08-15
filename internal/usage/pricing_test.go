@@ -123,9 +123,9 @@ func TestEstimateUSD(t *testing.T) {
 			wantErr:  true,
 		},
 		{
-			name:     "zai_glm52_mixed",
+			name:     "zai_glm53_mixed",
 			provider: config.ProviderZai,
-			model:    "glm-5.2",
+			model:    "glm-5.3",
 			tokens: UsageTokens{
 				CacheHitTokens:   1_000_000,
 				CacheMissTokens:  500_000,
@@ -134,16 +134,16 @@ func TestEstimateUSD(t *testing.T) {
 			want: perMillion(1_000_000, 0.26) + perMillion(500_000, 1.40) + perMillion(100_000, 4.40),
 		},
 		{
-			name:     "zai_glm52_cache_hit_only",
+			name:     "zai_glm53_cache_hit_only",
 			provider: config.ProviderZai,
-			model:    "glm-5.2",
+			model:    "glm-5.3",
 			tokens:   UsageTokens{CacheHitTokens: 1_000_000},
 			want:     0.26,
 		},
 		{
-			name:     "zai_glm52_input_only",
+			name:     "zai_glm53_input_only",
 			provider: config.ProviderZai,
-			model:    "glm-5.2",
+			model:    "glm-5.3",
 			tokens:   UsageTokens{PromptTokens: 1_000_000},
 			want:     1.40,
 		},

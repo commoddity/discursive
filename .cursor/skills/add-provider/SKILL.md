@@ -122,7 +122,7 @@ per-provider change needed unless this provider adds configurable models
 
 - [ ] Add test cases for the new policy (strip behavior, effort injection).
 
-**Verify:** `go test ./internal/gateway/... -run TestSanitizeRequest`
+**Verify:** `go test ./internal/gateway/... -run TestSanitizeRequest` (substring-match picks up the `TestSanitizeRequest_*` cases)
 
 ### 6. Proxy key dispatch
 
@@ -264,27 +264,28 @@ per-provider change needed unless this provider adds configurable models
 This is the largest touchpoint. Search for each `<Name>`-specific location
 below and add the new provider entry.
 
-- [ ] **CSS variables** (~line 18): Add `--<name>: #<hex>;` and
+- [ ] **CSS variables** (~line 25): Add `--<name>: #<hex>;` and
   `--<name>-light: #<hex>;`. Choose a distinct color not used by
   moonshot (#7c3aed), deepseek (#2563eb), or thaura (#059669).
-- [ ] **Provider CSS classes** (~line 224): Add `.<name> { color: var(--<name>); }`.
-- [ ] **Effort provider border** (~line 282): Add `.effort-provider.<name> { border-color: ...; }`.
-- [ ] **Effort save button** (~line 315): Add `.effort-save-btn.<name>` +
+- [ ] **Provider CSS classes** (~line 707): Add `.<name> { color: var(--<name>); }`.
+- [ ] **Effort provider border** (~line 1046, next to `.effort-provider.moonshot`):
+  Add `.effort-provider.<name> { border-color: ...; }`.
+- [ ] **Effort save button** (~line 1161): Add `.effort-save-btn.<name>` +
   `.effort-save-btn.<name>:hover:not(:disabled)` rules.
-- [ ] **PROVIDER_COLORS** (line 677): Add `<name>: '#<hex>'`.
-- [ ] **PROVIDER_LIGHT** (line 678): Add `<name>: '#<hex>'`.
-- [ ] **MODEL_COLORS** (line 684): Add `'<name>::<model-id>': '#<hex>'`
+- [ ] **PROVIDER_COLORS** (line 1709): Add `<name>: '#<hex>'`.
+- [ ] **PROVIDER_LIGHT** (line 1710): Add `<name>: '#<hex>'`.
+- [ ] **MODEL_COLORS** (line 1716): Add `'<name>::<model-id>': '#<hex>'`
   for each model.
-- [ ] **Logo map** `LOGO_URLS` (line 708): Add `<name>: '/static/<name>.svg'` (or `png`).
-- [ ] **PRICING_URLS** (line 790): Add `<name>: 'https://...docs/pricing'`.
-- [ ] **TOPUP_URLS** (line 798): Add `<name>: 'https://...top-up'` if available.
-- [ ] **PRICING** object (line 807): Add `<name>:` block with model pricing
+- [ ] **Logo map** `LOGO_URLS` (line 1740): Add `<name>: '/static/<name>.svg'` (or `png`).
+- [ ] **PRICING_URLS** (line 1822): Add `<name>: 'https://...docs/pricing'`.
+- [ ] **TOPUP_URLS** (line 1830): Add `<name>: 'https://...top-up'` if available.
+- [ ] **PRICING** object (line 1841): Add `<name>:` block with model pricing
   entries (format matches the provider's token tiers).
-- [ ] **PROVIDER_NAMES** (line 1067): Add `<name>: '<display-name>'`.
-- [ ] **EFFORT_DOC_URLS** (line 1068): Add `<name>: 'https://...docs/thinking'`
+- [ ] **PROVIDER_NAMES** (line 2121): Add `<name>: '<display-name>'`.
+- [ ] **EFFORT_DOC_URLS** (line 2122): Add `<name>: 'https://...docs/thinking'`
   if supported.
-- [ ] **Provider status grid** (line 1007): Add `{ id: '<name>', name: '<Display>', logo: '/static/<name>.svg', ok: h.has_<name>_key }`.
-- [ ] **Balance stat rendering** (line 1345): Add `renderBalanceStat('<name>', data.<name>)`
+- [ ] **Provider status grid** (line 2065): Add `{ id: '<name>', name: '<Display>', logo: '/static/<name>.svg', ok: h.has_<name>_key }`.
+- [ ] **Balance stat rendering** (line 2581): Add `renderBalanceStat('<name>', data.<name>)`
   to the balances HTML builder.
 - [ ] **Health API fields**: The `HealthInfo` schema in JS expects
   `has_<name>_key` (snake_case). Ensure the JSON field matches what

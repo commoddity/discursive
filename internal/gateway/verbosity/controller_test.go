@@ -146,8 +146,8 @@ func TestController_ApplyRequest_UnknownModelNoOp(t *testing.T) {
 	c := NewController(VerbosityConfig{
 		Models: map[string]ModelConfig{"deepseek-v4-flash": {MaxTokens: 4096}},
 	})
-	body := map[string]any{"messages": []any{}, "model": "glm-5.2", "max_tokens": json.Number("5000")}
-	c.ApplyRequest(body, "glm-5.2")
+	body := map[string]any{"messages": []any{}, "model": "glm-5.3", "max_tokens": json.Number("5000")}
+	c.ApplyRequest(body, "glm-5.3")
 	if v, _ := body["max_tokens"].(json.Number); v.String() != "5000" {
 		t.Fatalf("expected no mutation for unknown model, got %v", body["max_tokens"])
 	}

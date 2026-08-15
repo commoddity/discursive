@@ -59,8 +59,9 @@ const (
 //	On-demand:   POST https://api.z.ai/api/paas/v4/chat/completions
 //
 // Z.AI uses thinking: {type: enabled|disabled} for glm-4.7 and
-// glm-5.2 supports reasoning_effort (none|minimal|low|medium|high|xhigh|max)
-// with normalization: low|medium → high, xhigh → max, none|minimal disable.
+// glm-5.3 always thinks (disabled is not supported): it supports
+// reasoning_effort (low|high|max) with normalization: off/none/minimal → low,
+// medium → high, xhigh → max.
 // Local OpenAI schema reference (do not vendor into the binary):
 // examples/openai-openapi/
 //

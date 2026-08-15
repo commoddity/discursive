@@ -11,7 +11,7 @@ const (
 	ModelKimiK27         = "kimi-k2.7-code"
 	ModelDeepSeekV4Pro   = "deepseek-v4-pro"
 	ModelDeepSeekV4Flash = "deepseek-v4-flash"
-	ModelZaiGLM52        = "glm-5.2"
+	ModelZaiGLM53        = "glm-5.3"
 )
 
 // EffortOff disables thinking (DeepSeek / Z.AI). Not used for Kimi (K3 and
@@ -37,9 +37,10 @@ type ReasoningEffortSpec struct {
 // low|high|max (API default is max; product default is low for cost).
 // Kimi K2.7 Code always thinks — no effort selector (not in this catalog).
 //
-// Z.AI glm-5.2 options follow https://docs.z.ai/guides/capabilities/thinking :
-// none|minimal|low|medium|high|xhigh|max. low|medium → high, xhigh → max
-// by upstream. We expose off|high|max for consistency with DeepSeek UX.
+// Z.AI glm-5.3 options follow https://docs.z.ai/guides/capabilities/thinking :
+// thinking is always on (disabled is not supported); reasoning_effort
+// low|high|max (default max upstream). low|medium → high, xhigh → max by
+// upstream. We expose low|high|max (no "off") and default to low for cost.
 func ReasoningEffortCatalog() []ReasoningEffortSpec {
 	return []ReasoningEffortSpec{
 		{
@@ -64,11 +65,11 @@ func ReasoningEffortCatalog() []ReasoningEffortSpec {
 			Default:  EffortOff,
 		},
 		{
-			Model:    ModelZaiGLM52,
+			Model:    ModelZaiGLM53,
 			Provider: ProviderZai,
-			Label:    "GLM-5.2",
-			Options:  []string{EffortOff, "high", "max"},
-			Default:  EffortOff,
+			Label:    "GLM-5.3",
+			Options:  []string{"low", "high", "max"},
+			Default:  "low",
 		},
 	}
 }
@@ -127,24 +128,24 @@ func isDeepSeekModel(model string) bool {
 }
 
 func isZaiModel(model string) bool {
-	return model == ModelZaiGLM52
+	return model == ModelZaiGLM53
 }
 
-// normalizeZaiEffort maps Z.AI effort values per official docs:
-// off stays off (disables thinking). high|max are real.
-// low|medium → high, xhigh → max, none|minimal → off (disable thinking).
+// normalizeZaiEffort maps Z.AI effort values for glm-5.3 (always thinks):
+// thinking cannot be disabled, so off/none/minimal collapse to the minimum
+// effort level "low". high|max are real, medium → high, xhigh → max.
 func normalizeZaiEffort(effort string) (string, error) {
 	switch effort {
-	case EffortOff, "none", "minimal":
-		return EffortOff, nil
+	case EffortOff, "none", "minimal", "low":
+		return "low", nil
 	case "high", "max":
 		return effort, nil
-	case "low", "medium":
+	case "medium":
 		return "high", nil
 	case "xhigh":
 		return "max", nil
 	default:
-		return "", fmt.Errorf("invalid reasoning effort %q for Z.AI (want off|high|max)", effort)
+		return "", fmt.Errorf("invalid reasoning effort %q for Z.AI (want low|high|max)", effort)
 	}
 }
 

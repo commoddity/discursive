@@ -25,10 +25,10 @@ func TestResolveModel(t *testing.T) {
 		{name: "real deepseek flash", request: "deepseek-v4-flash", provider: config.ProviderDeepSeek, model: "deepseek-v4-flash", policy: PolicyDeepSeek},
 		{name: "thaura alias", request: "gpt-5-nano", provider: config.ProviderThaura, model: "thaura", policy: PolicyThaura},
 		{name: "real thaura", request: "thaura", provider: config.ProviderThaura, model: "thaura", policy: PolicyThaura},
-		{name: "zai glm-5.2 alias", request: "gpt-4.1-turbo", provider: config.ProviderZai, model: "glm-5.2", policy: PolicyZai},
-		{name: "zai gpt-4-turbo alias", request: "gpt-4-turbo", provider: config.ProviderZai, model: "glm-5.2", policy: PolicyZai},
+		{name: "zai glm-5.3 alias", request: "gpt-4.1-turbo", provider: config.ProviderZai, model: "glm-5.3", policy: PolicyZai},
+		{name: "zai gpt-4-turbo alias", request: "gpt-4-turbo", provider: config.ProviderZai, model: "glm-5.3", policy: PolicyZai},
 		{name: "zai glm-4.7 alias", request: "gpt-4.1", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
-		{name: "real glm-5.2", request: "glm-5.2", provider: config.ProviderZai, model: "glm-5.2", policy: PolicyZai},
+		{name: "real glm-5.3", request: "glm-5.3", provider: config.ProviderZai, model: "glm-5.3", policy: PolicyZai},
 		{name: "real glm-4.7", request: "glm-4.7", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
 		{name: "unknown", request: "gpt-3.5-turbo", wantErr: true},
 	}

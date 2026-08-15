@@ -1719,7 +1719,7 @@
       'moonshot::kimi-k3': '#7c3aed', // deep purple
       'moonshot::kimi-k2.7-code': '#e879f9', // hot pink / magenta
       'thaura::thaura': '#059669', // emerald green
-      'zai::glm-5.2': '#ec4899', // hot pink
+      'zai::glm-5.3': '#ec4899', // hot pink
       'zai::glm-4.7': '#f472b6', // light pink
     };
     function modelColor(provider, modelName) {
@@ -1857,7 +1857,10 @@
         'thaura': { input: 0.50, output: 2.00 },
       },
       zai: {
-        'glm-5.2': { cache_hit: 0.26, input: 1.40, output: 4.40 },
+        // PROVISIONAL: GLM-5.3 has no published per-token rate yet — GLM-5.2's
+        // card is a stand-in. UPDATE when Z.AI publishes 5.3 pricing
+        // (https://docs.z.ai/guides/overview/pricing).
+        'glm-5.3': { cache_hit: 0.26, input: 1.40, output: 4.40 },
         'glm-4.7': { input: 0.60, output: 2.20 },
       }
     };

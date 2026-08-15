@@ -136,9 +136,9 @@ Change the model alias in Cursor's model picker — no restart needed:
 | `o1`            | DeepSeek | `deepseek-v4-pro`   | Harder execution                                          |
 | `o3-mini`       | DeepSeek | `deepseek-v4-flash` | Cheap execution                                           |
 | `gpt-5-nano`    | Thaura   | `thaura`            | Ethical AI; optional provider                             |
-| `gpt-4.1-turbo` | Z.AI     | `glm-5.2`           | Planning; cheaper than K3                                 |
+| `gpt-4.1-turbo` | Z.AI     | `glm-5.3`           | Planning; always thinks; cheaper than K3                 |
 | `gpt-4.1`       | Z.AI     | `glm-4.7`           | Cheap execution                                           |
-| `gpt-4-turbo`   | Z.AI     | `glm-5.2`           | Compat alias (Cursor may rewrite `gpt-4.1-turbo` to this) |
+| `gpt-4-turbo`   | Z.AI     | `glm-5.3`           | Compat alias (Cursor may rewrite `gpt-4.1-turbo` to this) |
 
 
 
@@ -293,7 +293,7 @@ logs include an `effort` field on request/response/usage lines.
 | --------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------- |
 | `kimi-k3`                               | `low`, `high`, `max` | `low` (API default is `max`; we default lower for cost)                                  |
 | `deepseek-v4-pro` / `deepseek-v4-flash` | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
-| `glm-5.2`                               | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
+| `glm-5.3`                               | `low`, `high`, `max` | `low` (always thinks; `disabled` is not supported; we default lower for cost) |
 
 
 - Lower effort usually means fewer thinking tokens and lower cost. `thaura` does not
@@ -380,11 +380,25 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 
 | API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                                                     |
 | ------------ | ---------------- | ------------ | ------------- | ------------------------------------------------------------------------ |
-| `glm-5.2`    | $0.26            | $1.40        | $4.40         | Planning model; reasoning_effort + cache                                 |
+| `glm-5.3`    | $0.26            | $1.40        | $4.40         | Planning model; always thinks; reasoning_effort + cache |
 | `glm-4.7`    | $0.11            | $0.60        | $2.20         | Budget execution; thinking on/off                                        |
 | `glm-4.6v`   | $0.05            | $0.30        | $0.90         | Vision worker — describes images for ALL providers (not user-selectable) |
 
+> **PROVISIONAL — `glm-5.3` has no published per-token rate yet.** Z.AI's rate card
+> still lists GLM-5.2 as its newest row and the GLM-5.3 docs say "The GLM-5.3 API
+> is coming soon". The `glm-5.3` row above is GLM-5.2's card carried forward as a
+> stand-in. Update `internal/usage/pricing.go` + `internal/usageui/static/index.html`
+> (`PRICING`) + the pricing tests + `.cursor/rules/usage.mdc` and `zai.mdc` once
+> Z.AI publishes GLM-5.3 pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing).
 
+
+> **GLM-5.3 Coding Plan quota is points-based (2026-08).** Model calls consume
+> credits via multipliers per 10k tokens (input 6.9, cached input 1.7, output
+> 24); off-peak hours consume 50% of standard credits. The dashboard balance
+> panel reads Z.AI quota buckets (`data.limits[]`) generically, so the new
+> points model displays automatically. `discursive usage` still excludes Z.AI
+> from MTD/Today totals (flat-fee coding plan).
+>
 > **Image routing:** any request (any provider) that contains image content is
 > intercepted by the gateway and each image is described by Z.AI `glm-4.6v`
 > (coding-plan endpoint) before the selected text model is called. A Z.AI API
@@ -400,10 +414,10 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 - API key: [https://z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) (GLM Coding Plan key)
 
 
-| Parameter          | `glm-5.2`                                                     | `glm-4.7`               |
+| Parameter          | `glm-5.3`                                                     | `glm-4.7`               |
 | ------------------ | ------------------------------------------------------------- | ----------------------- |
-| `thinking`         | `{type: "enabled"}` when reasoning; else `{type: "disabled"}` | `{type: "enabled"       |
-| `reasoning_effort` | Normalized → `off`/`high`/`max`                               | Deleted (not supported) |
+| `thinking`         | Always `{type: "enabled"}` (`disabled` is not supported)      | `{type: "enabled"       |
+| `reasoning_effort` | Always sent → `low`/`high`/`max`                              | Deleted (not supported) |
 
 
 ---

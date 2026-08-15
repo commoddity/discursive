@@ -35,7 +35,7 @@ When stuck on tunnel/cloudflared behavior, start here (do not invent flags):
 | `none` | BYO `PublicBaseURL`; no cloudflared | Yes (if front door supports SSE) |
 | `quick` | TryCloudflare ephemeral `*.trycloudflare.com` | **No** (no SSE; 200 in-flight cap) |
 
-Secrets: tunnel token via `set-tunnel-token` → encrypted `config.json` only — never env SoT, never slog raw token.
+Secrets: tunnel token via `discursive set --tunnel-token <token>` → encrypted `config.json` only — never env SoT, never slog raw token.
 
 ## Operations
 

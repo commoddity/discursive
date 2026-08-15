@@ -74,7 +74,7 @@ broken test/build.
 - [ ] Add case in `stripUnsupportedParams()` (~line 220) if needed to delete
   provider-incompatible thinking params.
 
-**Verify:** `go test ./internal/gateway/... -run TestSanitizeRequest`
+**Verify:** `go test ./internal/gateway/... -run TestSanitizeRequest` (substring-match picks up the `TestSanitizeRequest_*` cases)
 
 ### 4. Pricing
 
@@ -85,8 +85,8 @@ broken test/build.
 
 **File:** `internal/usageui/static/index.html`
 
-- [ ] Add entry to `MODEL_COLORS` object (line 684): `'provider::modelid': '#hex'`.
-- [ ] Add entry to `PRICING` object (line 807) under the correct provider key.
+- [ ] Add entry to `MODEL_COLORS` object (line ~1716): `'provider::modelid': '#hex'`.
+- [ ] Add entry to `PRICING` object (line ~1841) under the correct provider key.
 
 **Verify:** `go test ./internal/usage/...`
 

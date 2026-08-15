@@ -62,9 +62,9 @@ and pricing row.
 | `o1`             | deepseek | `deepseek-v4-pro`   | Harder execution    |
 | `o3-mini`        | deepseek | `deepseek-v4-flash` | Cheap execution     |
 | `gpt-5-nano`     | thaura   | `thaura`            | Ethical AI; optional provider |
-| `gpt-4.1-turbo`  | zai      | `glm-5.2`           | Planning; cheaper than K3    |
+| `gpt-4.1-turbo`  | zai      | `glm-5.3`           | Planning; always thinks; cheaper than K3 |
 | `gpt-4.1`        | zai      | `glm-4.7`           | Cheap execution              |
-| `gpt-4-turbo`    | zai      | `glm-5.2`           | **Compat alias** — Cursor sometimes rewrites `gpt-4.1-turbo` → `gpt-4-turbo` |
+| `gpt-4-turbo`    | zai      | `glm-5.3`           | **Compat alias** — Cursor sometimes rewrites `gpt-4.1-turbo` → `gpt-4-turbo` |
 
 Set the alias manually in Cursor Settings → Models. The gateway maps it and
 picks the right base URL + API key. No auto-application to Cursor's state.vscdb
@@ -74,7 +74,7 @@ picks the right base URL + API key. No auto-application to Cursor's state.vscdb
 
 | Symptom | Cause | Fix |
 | ------- | ----- | ---- |
-| Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.2`). Do not treat the rewritten name as a gateway bug. |
+| Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.3`). Do not treat the rewritten name as a gateway bug. |
 
 ## Sanitizer order (preserve)
 
@@ -176,7 +176,7 @@ when the model has a mapped cheaper variant:
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
 | "fix linter errors in some files" stays on the expensive model instead of flash | `isStrongEditing` matches "fix" and blocks the `automation` downgrade | Let lint tasks classify as automation even with a strong-editing word present (`isLintTask` → bypass the `!isStrongEditing` guard) |
-| `glm-5.2` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultFlashModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.2` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.2`), **add** an entry to `modelOverrideMap` (it currently only holds `"deepseek-v4-pro": "deepseek-v4-flash"` — there is nothing to uncomment). Entries take priority over the universal fallback. |
+| `glm-5.3` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultFlashModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.3` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.3`), **add** an entry to `modelOverrideMap` (it currently only holds `"deepseek-v4-pro": "deepseek-v4-flash"` — there is nothing to uncomment). Entries take priority over the universal fallback. |
 
 #### Verbosity control — model-keyed request-side transforms
 

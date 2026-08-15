@@ -74,8 +74,8 @@ func TestConfirmedSpendReport(t *testing.T) {
 			},
 			estEvents: map[config.Provider][]estEventFor{
 				config.ProviderZai: {
-					{ts: time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC), tokensIn: 1_000_000, model: "glm-5.2"},
-					{ts: time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC), tokensIn: 0, model: "glm-5.2"},
+					{ts: time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC), tokensIn: 1_000_000, model: "glm-5.3"},
+					{ts: time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC), tokensIn: 0, model: "glm-5.3"},
 				},
 				config.ProviderThaura: {
 					{ts: time.Date(2026, 8, 14, 11, 0, 0, 0, time.UTC), tokensIn: 1_000_000, model: "thaura"},

@@ -68,7 +68,7 @@ When a task spans multiple areas, read every applicable rule file before startin
   configured manually with the gateway API key (never upstream provider keys)
 - **Providers**: Moonshot (`kimi-k3`, `kimi-k2.7-code`) and
  DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`) and
- Thaura (`thaura`) and Z.AI (`glm-5.2`, `glm-4.7`). Switching is **setting the
+ Thaura (`thaura`) and Z.AI (`glm-5.3`, `glm-4.7`). Switching is **setting the
  Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
 - **Runtime**: Go **1.26.5+**; host process — **not** Docker-primary, **not** Wails/Vue/Tauri
 - **CLI**: [Cobra](https://cobra.dev/) (`internal/cli/`); **no Viper** — config in `internal/config`
@@ -376,6 +376,7 @@ details, and GitHub Actions deprecation guidance.
 | ---- | --- | ---- |
 | `/add-model` | `.cursor/skills/add-model/SKILL.md` | Add a model within an existing provider (Moonshot/Kimi or DeepSeek) end-to-end |
 | `/add-provider` | `.cursor/skills/add-provider/SKILL.md` | Add an entire new AI provider end-to-end (superset of `/add-model`) |
+| `/change-model` | `.cursor/skills/change-model/SKILL.md` | Retarget an existing Cursor alias to a different model (rename + thinking/effort/pricing revalidation) |
 | `/dialectic-of-cognition` | `.cursor/skills/dialectic-of-cognition/SKILL.md` | Capture session learnings into `.cursor/rules/*.mdc` |
 | `/open-pr` | `.cursor/skills/open-pr/SKILL.md` | Create a GitHub PR from current branch with diff summary and review guidance |
 | `/task-1-plan` | `.cursor/skills/task-1-plan/SKILL.md` | Plan/re-plan one `planning/TXX` task |

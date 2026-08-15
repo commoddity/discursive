@@ -50,7 +50,7 @@ func ListAdvertisedModels() []AdvertisedModel {
 		{ID: "deepseek-v4-pro", Provider: config.ProviderDeepSeek},
 		{ID: "deepseek-v4-flash", Provider: config.ProviderDeepSeek},
 		{ID: "thaura", Provider: config.ProviderThaura},
-		{ID: "glm-5.2", Provider: config.ProviderZai},
+		{ID: "glm-5.3", Provider: config.ProviderZai},
 		{ID: "glm-4.7", Provider: config.ProviderZai},
 	}
 }
@@ -78,14 +78,14 @@ func ResolveModel(requested string) (Route, error) {
 	case "thaura":
 		return Route{config.ProviderThaura, "thaura", PolicyThaura}, nil
 	case "gpt-4.1-turbo":
-		return Route{config.ProviderZai, "glm-5.2", PolicyZai}, nil
+		return Route{config.ProviderZai, "glm-5.3", PolicyZai}, nil
 	case "gpt-4-turbo":
 		// Cursor sometimes rewrites gpt-4.1-turbo → gpt-4-turbo.
-		return Route{config.ProviderZai, "glm-5.2", PolicyZai}, nil
+		return Route{config.ProviderZai, "glm-5.3", PolicyZai}, nil
 	case "gpt-4.1":
 		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil
-	case "glm-5.2":
-		return Route{config.ProviderZai, "glm-5.2", PolicyZai}, nil
+	case "glm-5.3":
+		return Route{config.ProviderZai, "glm-5.3", PolicyZai}, nil
 	case "glm-4.7":
 		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil
 	default:

@@ -31,13 +31,13 @@ Primary Agent-safe aliases (see `gateway.mdc` for full map):
 | `o1`             | DeepSeek `deepseek-v4-pro` (execution)         |
 | `o3-mini`        | DeepSeek `deepseek-v4-flash` (cheap execution) |
 | `gpt-5-nano`     | Thaura `thaura` (ethical AI; optional)         |
-| `gpt-4.1-turbo`  | Z.AI `glm-5.2` (planning; cheaper than K3)    |
+| `gpt-4.1-turbo`  | Z.AI `glm-5.3` (planning; always thinks; cheaper than K3) |
 | `gpt-4.1`        | Z.AI `glm-4.7` (cheap execution)              |
-| `gpt-4-turbo`    | Z.AI `glm-5.2` (**compat** — Cursor may rewrite `gpt-4.1-turbo` to this) |
+| `gpt-4-turbo`    | Z.AI `glm-5.3` (**compat** — Cursor may rewrite `gpt-4.1-turbo` to this) |
 
 > **Heads-up:** Cursor sometimes rewrites `gpt-4.1-turbo` → `gpt-4-turbo` before
 > sending (client-side model-name matching). That is expected and handled — the
-> gateway accepts `gpt-4-turbo` as an alias for `glm-5.2`. If you see
+> gateway accepts `gpt-4-turbo` as an alias for `glm-5.3`. If you see
 > `unknown model alias` in the gateway log, check the exact name Cursor sent
 > (not what the picker displayed).
 

@@ -115,7 +115,12 @@ type zaiRates struct {
 }
 
 var zaiPricing = map[string]zaiRates{
-	"glm-5.2":  {0.26, 1.40, 4.40},
+	// PROVISIONAL: GLM-5.3 has NO published per-token rate yet (the Z.AI API
+	// pricing table still lists GLM-5.2 as its newest row, and docs.z.ai say
+	// "GLM-5.3 API is coming soon"). The values below are GLM-5.2's rate card
+	// carried forward as a stand-in. UPDATE when Z.AI publishes GLM-5.3 pricing:
+	// https://docs.z.ai/guides/overview/pricing
+	"glm-5.3":  {0.26, 1.40, 4.40},
 	"glm-4.7":  {0.11, 0.60, 2.20},
 	"glm-4.6v": {0.05, 0.30, 0.90},
 }

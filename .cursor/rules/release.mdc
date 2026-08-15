@@ -18,7 +18,8 @@ alwaysApply: false
   - **Release** job (tag pushes only): GoReleaser builds and publishes binaries
     via `.goreleaser.yml`. Uses the built-in `secrets.GITHUB_TOKEN` (no custom PAT needed).
 - Binary name: `discursive`. GoReleaser config: `.goreleaser.yml`.
-- Ldflags inject version/commit/date at build time via `main.version`.
+- Ldflags inject the version via `internal/cli.Version` at build time
+  (`.goreleaser.yml` `-X github.com/commoddity/discursive/internal/cli.Version={{.Version}}`). No commit/date injected.
 
 ## Problem Classes
 

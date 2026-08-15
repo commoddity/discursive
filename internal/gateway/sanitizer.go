@@ -153,7 +153,8 @@ func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
 		delete(body, "thinking")
 		delete(body, "reasoning_effort")
 	case PolicyZai:
-		// glm-5.2: thinking + reasoning_effort (like DeepSeek).
+		// glm-5.3: thinking is ALWAYS enabled (disabled is not supported);
+		// choice is reasoning_effort low|high|max.
 		// glm-4.7: thinking on/off only (no reasoning_effort).
 		if route.RealModel == "glm-4.7" {
 			delete(body, "reasoning_effort")
@@ -163,20 +164,13 @@ func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
 				body["thinking"] = map[string]any{"type": "enabled"}
 			}
 		} else {
-			// glm-5.2 and other Z.AI models supporting reasoning_effort.
-			if effort == "" || effort == config.EffortOff {
-				body["thinking"] = map[string]any{"type": "disabled"}
-				delete(body, "reasoning_effort")
-			} else {
-				norm, err := config.NormalizeReasoningEffort(route.RealModel, effort)
-				if err != nil || norm == config.EffortOff {
-					body["thinking"] = map[string]any{"type": "disabled"}
-					delete(body, "reasoning_effort")
-				} else {
-					body["thinking"] = map[string]any{"type": "enabled"}
-					body["reasoning_effort"] = norm
-				}
+			// glm-5.3 always thinks — no "thinking: disabled".
+			norm, err := config.NormalizeReasoningEffort(route.RealModel, effort)
+			if err != nil {
+				norm = "low" // minimum thinking level as a safe fallback
 			}
+			body["thinking"] = map[string]any{"type": "enabled"}
+			body["reasoning_effort"] = norm
 		}
 	}
 }

@@ -591,6 +591,7 @@ func assertNoImageOmittedPlaceholder(t *testing.T, v any) {
 }
 
 func TestSanitizeRequest_ZaiEffortFromConfig(t *testing.T) {
+	// glm-5.3 always thinks (disabled is not supported); effort is low|high|max.
 	tests := []struct {
 		name       string
 		effort     string
@@ -598,7 +599,8 @@ func TestSanitizeRequest_ZaiEffortFromConfig(t *testing.T) {
 		wantEffort any // nil means absent
 		logEffort  string
 	}{
-		{name: "off", effort: "off", wantThink: "disabled", wantEffort: nil, logEffort: "off"},
+		{name: "off maps to low", effort: "off", wantThink: "enabled", wantEffort: "low", logEffort: "low"},
+		{name: "low", effort: "low", wantThink: "enabled", wantEffort: "low", logEffort: "low"},
 		{name: "high", effort: "high", wantThink: "enabled", wantEffort: "high", logEffort: "high"},
 		{name: "max", effort: "max", wantThink: "enabled", wantEffort: "max", logEffort: "max"},
 		{name: "medium maps to high", effort: "medium", wantThink: "enabled", wantEffort: "high", logEffort: "high"},
@@ -607,9 +609,9 @@ func TestSanitizeRequest_ZaiEffortFromConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := testConfig()
-			cfg.EffortByModel = map[string]string{config.ModelZaiGLM52: tt.effort}
+			cfg.EffortByModel = map[string]string{config.ModelZaiGLM53: tt.effort}
 			body := map[string]any{
-				"model":    "glm-5.2",
+				"model":    "glm-5.3",
 				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 			}
 			res, err := SanitizeRequest(body, cfg)
@@ -638,7 +640,7 @@ func TestSanitizeRequest_ZaiEffortFromConfig(t *testing.T) {
 func TestSanitizeRequest_ZaiGLM47Thinking(t *testing.T) {
 	// glm-4.7 uses thinking type only, no reasoning_effort
 	cfg := testConfig()
-	cfg.EffortByModel = map[string]string{config.ModelZaiGLM52: "off"}
+	cfg.EffortByModel = map[string]string{config.ModelZaiGLM53: "off"}
 
 	// default = off
 	body := map[string]any{

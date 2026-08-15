@@ -13,7 +13,7 @@ Models: GLM series with thinking support.
 
 | Cursor alias     | Real model | Description                                          |
 | ---------------- | ---------- | ---------------------------------------------------- |
-| `gpt-4.1-turbo`  | `glm-5.2`  | Planning model; reasoning_effort + prompt caching    |
+| `gpt-4.1-turbo`  | `glm-5.3`  | Planning model; always thinks; reasoning_effort + prompt caching |
 | `gpt-4.1`        | `glm-4.7`  | Budget execution; thinking on/off only               |
 | (internal)       | `glm-4.6v` | **Vision worker** only — describes images for ALL providers. Not user-selectable; not in `/v1/models`. Runs on the coding-plan endpoint. |
 
@@ -32,17 +32,23 @@ usage bills under `zai::glm-4.6v`.
 
 Source: https://docs.z.ai/guides/overview/pricing
 
+> **PROVISIONAL — `glm-5.3` has no published per-token rate yet.** Z.AI's rate
+> card still lists GLM-5.2 as its newest row and the GLM-5.3 docs say "The
+> GLM-5.3 API is coming soon". The `glm-5.3` row below is GLM-5.2's card carried
+> forward as a stand-in. **Update `internal/usage/pricing.go` + usageui JS
+> `PRICING` + this table + tests once Z.AI publishes GLM-5.3 pricing.**
+
 | Model     | Cache hit / MTok | Input / MTok | Output / MTok |
 | --------- | ---------------- | ------------ | ------------- |
-| `glm-5.2` | $0.26            | $1.40        | $4.40         |
+| `glm-5.3` | $0.26            | $1.40        | $4.40         |
 | `glm-4.7` | $0.11            | $0.60        | $2.20         |
 
 ## Sanitizer policy
 
 | Model     | Parameter          | Action                                                                                         |
 | --------- | ------------------ | ---------------------------------------------------------------------------------------------- |
-| `glm-5.2` | `thinking`         | Set `{type: "enabled"}` when reasoning is requested, else `{type: "disabled"}`                 |
-| `glm-5.2` | `reasoning_effort` | Normalized via `normalizeZaiEffort()` → `off`↦off (thinking disabled), `low`/`medium`↦high, `high` pass-through, `xhigh`↦max |
+| `glm-5.3` | `thinking`         | Always `{type: "enabled"}` — `disabled` is **not supported** and fails upstream                 |
+| `glm-5.3` | `reasoning_effort` | Always sent, `low`\|`high`\|`max`. Normalized via `normalizeZaiEffort()` → `off`/`none`/`minimal`↦`low`, `medium`↦`high`, `xhigh`↦`max`, `high`/`max` pass-through |
 | `glm-4.7` | `thinking`         | Set `{type: "enabled"|"disabled"}`; no reasoning_effort support                                |
 | `glm-4.7` | `reasoning_effort` | Deleted                                                                                        |
 
@@ -50,19 +56,20 @@ Apply `PolicyZai` case in `applyThinkingPolicy()` and `stripUnsupportedParams()`
 
 ## Reasoning effort normalization (Z.AI-specific)
 
-Z.AI accepts `reasoning_effort` values: `none`, `minimal`, `low`, `medium`, `high`, `max`.
-The gateway normalizes higher-level effort labels **down to what the catalog
-advertises** via `normalizeZaiEffort()` (only `off`, `high`, `max` are ever sent):
+`glm-5.3` always thinks — thinking cannot be disabled upstream, so the minimum
+effort level is `low`. The gateway normalizes effort via `normalizeZaiEffort()`
+to the values the catalog advertises (`low`, `high`, `max` are ever sent):
 
 | UI label        | Sent to Z.AI |
 | --------------- | ------------ |
-| Off / None      | `off` (thinking disabled) |
-| Low             | `high`  |
+| Off / None      | `low` (minimum thinking — `disabled` is unsupported) |
+| Low             | `low`  |
 | Medium          | `high`  |
 | High            | `high`  |
 | XHigh / Max     | `max`  |
 
-The `ReasoningEffortCatalog` entry for `glm-5.2` advertises: `Off`, `high`, `max`.
+The `ReasoningEffortCatalog` entry for `glm-5.3` advertises: `low`, `high`, `max`
+and defaults to `low` (cost-conscious, mirroring Kimi K3).
 `glm-4.7` does not appear in the catalog (no effort selection).
 
 ## Upstream config
@@ -91,6 +98,13 @@ credits via the quota API:
 
 Also checkable manually at https://z.ai/manage-apikey/billing.
 
+GLM-5.3 Coding Plan usage is **points-based** (2026-08): credits are consumed by
+token multipliers per 10k tokens — input 6.9, cached input 1.7, output 24 —
+split by peak/off-peak (off-peak = 50% of standard). The dashboard balance
+panel parses whatever `data.limits[]` buckets arrive, so no code change is
+required to display the new quota. `ZaiFlatFeeUSD` (Go) still reflects the
+legacy flat $14.40/mo projection model.
+
 ## Symptoms & fixes
 
 ### `vision_call_failed with 429 "Insufficient balance"`
@@ -110,5 +124,11 @@ Also checkable manually at https://z.ai/manage-apikey/billing.
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
 | Cursor request to Z.AI model appears to hang for over a minute with no response and no credits used | Z.AI GLM Coding Plan has higher latency (~5s to first token) than other providers (e.g., DeepSeek). Gateway proxy works fine (verify via curl to loopback), but Cursor client may timeout before first token arrives. | Verify gateway proxy works via direct curl test. If successful, inform user that Z.AI has higher latency and the "hang" may be Cursor-side timeout. No gateway fix required. |
+
+### `GLM-5.3 request fails after `thinking.type: "disabled"``
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Z.AI returns an error for a `glm-5.3` request that sends `thinking: {"type":"disabled"}` (or omits `reasoning_effort`) | GLM-5.3 no longer supports disabling thinking — only `enabled` is valid, and `reasoning_effort` must be set (`low`\|`high`\|`max`, default `max`). Migration from GLM-5.2 requires switching `disabled` → `enabled` + `reasoning_effort: low` | The gateway's `PolicyZai` sanitizer always emits `{type: "enabled"}` + `reasoning_effort` for `glm-5.3`, mapping `off`/`none`/`minimal` to `low`. Do not reintroduce a `disabled` path for `glm-5.3`. |
 
 <!-- last-verified: 2026-08 -->
