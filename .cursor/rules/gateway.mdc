@@ -17,7 +17,8 @@ Public reachability is via tunnel / BYO URL — see `tunnel.mdc`.
 | DeepSeek API key          | `deepseekKeyEncrypted` | App only → Authorization to DeepSeek |
 | Thaura AI API key         | `thauraKeyEncrypted`   | App only → Authorization to Thaura   |
 | Z.AI API key              | `zaiKeyEncrypted`      | App only → Authorization to Z.AI      |
-| Gateway key (`sk-{alnum}`) | `gatewayKey`           | Cursor as “OpenAI API Key”           |
+| Z.AI free tier key        | `zaiFreeKeyEncrypted`  | App only → Authorization to Z.AI on-demand (peak-hour fallback) |
+| Gateway key (`sk-{alnum}`) | `gatewayKey`           | Cursor as "OpenAI API Key"           |
 
 Never log or return upstream provider keys. Wrong gateway key → OpenAI-shaped 401.
 Routing picks which upstream key to use from the **model map** (alias → provider).
@@ -33,8 +34,9 @@ Hardcoded defaults + optional env overrides live in
 | deepseek | `https://api.deepseek.com`   |
 | thaura   | `https://backend.thaura.ai/v1` |
 | zai       | `https://api.z.ai/api/coding/paas/v4` |
+| zai-free  | `https://api.z.ai/api/paas/v4` |
 
-Use those helpers so Moonshot’s `/v1` and DeepSeek’s host root never produce
+Use those helpers so Moonshot's `/v1` and DeepSeek's host root never produce
 `/v1/v1/...`. Do not scatter raw URL string literals in the gateway proxy.
 
 ## Endpoints (MVP)
@@ -42,7 +44,7 @@ Use those helpers so Moonshot’s `/v1` and DeepSeek’s host root never produce
 | Endpoint                    | Purpose                                              |
 | --------------------------- | ---------------------------------------------------- |
 | `GET /health`               | Status, metrics, URLs, which provider keys present   |
-| `GET\|POST /v1/models`      | Advertise aliases + real ids (+ provider)            |
+| `GET|POST /v1/models`      | Advertise aliases + real ids (+ provider)            |
 | `POST /v1/chat/completions` | Main path                                            |
 | `POST /v1/responses`        | Same handler after Responses→Chat adapt              |
 | Other `/v1/*`               | Proxy when cheap (embeddings/files) — provider-aware |
@@ -55,16 +57,24 @@ and pricing row.
 
 ### Primary Cursor aliases (Agent-first)
 
-| Cursor alias     | Provider | Real model          | Typical use         |
-| ---------------- | -------- | ------------------- | ------------------- |
-| `gpt-4o`         | moonshot | `kimi-k3`           | Planning / flagship |
-| `gpt-4o-mini`    | moonshot | `kimi-k2.7-code`  | Coding; always thinks           |
-| `o1`             | deepseek | `deepseek-v4-pro`   | Harder execution    |
-| `o3-mini`        | deepseek | `deepseek-v4-flash` | Cheap execution     |
-| `gpt-5-nano`     | thaura   | `thaura`            | Ethical AI; optional provider |
-| `gpt-4.1-turbo`  | zai      | `glm-5.3`           | Planning; always thinks; cheaper than K3 |
-| `gpt-4.1`        | zai      | `glm-4.7`           | Cheap execution              |
-| `gpt-4-turbo`    | zai      | `glm-5.3`           | **Compat alias** — Cursor sometimes rewrites `gpt-4.1-turbo` → `gpt-4-turbo` |
+| Cursor alias    | Provider | Real model       | Typical use         |
+| --------------- | -------- | ---------------- | ------------------- |
+| `gpt-4o`        | moonshot | `kimi-k3`         | Planning / flagship |
+| `gpt-4o-mini`   | moonshot | `kimi-k2.7-code`  | Coding; always thinks |
+| `o1`            | deepseek | `deepseek-v4-pro` | Harder execution    |
+| `o3-mini`       | deepseek | `deepseek-v4-flash` | Cheap execution     |
+| `gpt-5-nano`    | thaura   | `thaura`          | Ethical AI; optional provider |
+| `gpt-4.1-turbo` | zai      | `glm-5.3[1m]`    | 1M context flagship; always thinks |
+| `gpt-4.1`       | zai      | `glm-4.7`         | Budget workhorse; thinking on/off |
+| `gpt-4-turbo`   | zai      | `glm-5.3[1m]`    | **Compat alias** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` |
+
+> **DeepSeek peak-hour hard guard.** When `PeakGuardEnabled` (live toggle, default
+> ON) is set and the final served model is a DeepSeek model during a DeepSeek peak
+> hour (01:00–04:00, 06:00–10:00 UTC), the gateway **redirects it** to `glm-4.7`.
+> This is the last word before provider resolve — it applies regardless of how the
+> DeepSeek model was chosen (alias, downgrade map, defaultFlashModel). The provider +
+> sanitizer thinking policy are re-applied for the redirect target. Logs
+> `peak_redirect` at INFO with from/to + request_id.
 
 Set the alias manually in Cursor Settings → Models. The gateway maps it and
 picks the right base URL + API key. No auto-application to Cursor's state.vscdb
@@ -74,13 +84,13 @@ picks the right base URL + API key. No auto-application to Cursor's state.vscdb
 
 | Symptom | Cause | Fix |
 | ------- | ----- | ---- |
-| Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.3`). Do not treat the rewritten name as a gateway bug. |
+| Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.3[1m]`). Do not treat the rewritten name as a gateway bug. |
 
 ## Sanitizer order (preserve)
 
 1. Map Cursor alias → **{provider, real model}** (table above)
 2. Apply **provider- and model-aware** thinking / sampling policy
-   (`kimi.mdc` or `deepseek.mdc`)
+   (`kimi.mdc` or `deepseek.mdc` or `zai.mdc`)
 3. Map `max_completion_tokens` → `max_tokens`; clamp per model context
 4. Strip incompatible OpenAI/Cursor sampling fields
 5. Adapt Responses `input`/`instructions` → `messages`
@@ -88,217 +98,103 @@ picks the right base URL + API key. No auto-application to Cursor's state.vscdb
 7. Seed empty probe message when tools present and messages empty
 8. Message role fixes (`developer`→`system`); reasoning placeholder for tool-call assistants when required
 
-Then proxy to the resolved provider base URL with that provider’s key. Stream
+Then proxy to the resolved provider base URL with that provider's key. Stream
 what Cursor asked for (passthrough SSE or synthesize). Retry once on upstream
 400s mentioning `tool_call_id` (when that provider returns them).
 
-Behavioral checklist (Moonshot-oriented reference):
-`examples/use-kimi-on-cursor/src-tauri/tests/`. DeepSeek: OpenAI shapes in
-`examples/openai-openapi/` + `deepseek.mdc`.
+Behavioral checklist: refer to provider-specific rules (`.cursor/rules/kimi.mdc`,
+`.cursor/rules/deepseek.mdc`, `.cursor/rules/thaura.mdc`, `.cursor/rules/zai.mdc`) for
+model-specific quirks.
 
-### `Cursor Agent tool schema rejected`
-
-| Symptom                                   | Cause                                                    | Fix                                              |
-| ----------------------------------------- | -------------------------------------------------------- | ------------------------------------------------ |
-| Upstream 400 on tools / empty Agent turns | MCP names, deep schemas, Responses shape, empty messages | Run full sanitizer order; seed probe; repair ids |
-
-### `Wrong upstream after alias switch`
-
-| Symptom                                                       | Cause                                                | Fix                                                            |
-| ------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------- |
-| Request hits Moonshot while alias is DeepSeek (or vice versa) | Alias map missing provider field; hardcoded base URL | Resolve provider from map every request; select base URL + key |
-
-### Go sanitizer library (`internal/gateway`)
-
-Code SoT for alias resolve + request sanitize (T04+): `ResolveModel`,
-`SanitizeRequest` → `SanitizeResult` with `Provider`, `Model`, and sanitized
-`Body`. Unknown Cursor alias → error (HTTP layer maps to 400). **Strip order:**
-apply provider thinking policy **before** stripping `reasoning_effort` — K3 must
-keep `reasoning_effort: "max"`; do not copy reference K2 “strip effort then
-inject thinking” blindly. K3: no `reasoning_content` placeholder injection.
-
-### `Image content in a request (all providers)`
-
-Cursor Agent resends screenshots / image content (`image_url`, `input_image`,
-`image_file`) in message history. The gateway no longer strips images — it
-describes every image via the vision worker.
+## Quota-exhaustion fallback
 
 | Symptom | Cause | Fix |
 | ------- | ----- | ---- |
-| Image cannot be described (vision model key missing, 5-hour rate-limit hit, or upstream rejection) | The vision worker (`glm-4.6v`) is the only path for images, and it is temporarily or permanently unavailable | **Graceful fallback.** The image is replaced with an honest placeholder note (`[An image could not be described …]`) and the request proceeds to the text model — a rate-limited vision provider never blocks the conversation. Historical images still resolve from the durable cache with no vision call. |
-| Image request succeeds but the text model responds with an image description | Image content was translated to text by the vision worker (Z.AI `glm-4.6v`) before proxying | Expected. Vision applies to **all providers** (moonshot/deepseek/zai/thaura), even ones with native vision support. Text models never receive raw `image_url` parts. |
-| Remote `https://` image URLs | Fetch happens upstream-side by the vision model | Hashed by URL string for caching; data URIs are hashed by decoded bytes |
-| Repeated identical images | Content-hash cache (SHA-256) — in-memory 10 min TTL + a **durable** SQLite cache (`{dataRoot}/usage/vision_cache.db`); `singleflight`-deduped | Second identical image within TTL is served from cache with no upstream call; a historical image already described on any prior turn/process is reused **without** a vision call |
-| A previously-sent image seems to be re-described every turn | Cursor resends raw `image_url` parts in message history, so the gateway must resolve each image again; the content hash should match a cached entry and skip the vision call | Confirm the image hash is stable (logged via `vision_image_unavailable` / `vision_call_failed` `image_hash`). If the hash changes each turn (fresh data URI / signed URL), content-hash caching cannot dedupe it — investigate why Cursor varies the payload. Identical bytes (same hash) are served from the durable cache with no vision call. |
+| Z.AI plan returns 429 (code 1305 "overloaded" / 1113 "insufficient balance") for `glm-5.3`/`glm-4.7` | Coding plan quota exhausted or service rejecting plan traffic. | Detect 429 + code in `isZaiQuotaError()`, retry once with fallback lane: **DeepSeek peak hours** → free `glm-4.7-flash` (on-demand endpoint, free tier key); **DeepSeek off-peak** → `deepseek-v4-flash`. Implemented in `internal/gateway/fallback.go`. |
+| No free-tier fallback when Z.AI plan exhausted during DeepSeek peak hours | Free-tier Z.AI key not configured (`zaiFreeKeyEncrypted` missing). | Set free key via `discursive set --zai-free-key <key>`. Fallback auto-downgrades to `deepseek-v4-flash` when key missing. |
 
-`vision.Describer.ReplaceImages` is the single pre-proxy pass, invoked from
-`handleChatCompletions` (call site `internal/gateway/proxy.go`), after
-`SanitizeRequest` and before `OptimizeRequest`.
-It is installed for every provider; there is **no** provider gate. Descriptions
-are persisted to a durable cache (`{dataRoot}/usage/vision_cache.db`), so an
-image already described on a prior turn is reused without re-calling the vision
-model. `ReplaceImages` is **graceful**: it never returns a fatal error for an
-image it cannot describe. Historical images resolve from cache with no vision
-call, and a new image that cannot be described (missing key, rate limit,
-network, upstream rejection) is replaced with an honest placeholder note so the
-request proceeds — a rate-limited vision model no longer blocks any turn,
-whether or not it carries images.
-
-> **Do not** reintroduce the old fail-fast behavior for images (surface
-> `vision_error` / HTTP 400 and abort the request). The honest-placeholder
-> fallback is the contract; the previous `[image omitted]` silent-strip behavior
-> is also deprecated. The image hash is logged (`vision_image_unavailable`,
-> `vision_call_failed` `image_hash`) to diagnose whether Cursor is resending
-> stable or varying image bytes.
-
-### `Cursor masks the real user prompt in XML and structured tags`
+## Concurrency limiter (Z.AI)
 
 | Symptom | Cause | Fix |
-| ------- | ----- | --- |
-| Content-based request classification (e.g. `simple_lookup` vs `complex_reasoning`) never fires for main-agent traffic — all requests classify as `complex_reasoning`, `editing`, or `unknown`, and `stripped_len = 0` | Cursor sends each user message as an **array of content parts**: part 0 is a huge context block (`<open_and_recently_viewed_files>`, `<attached_files>`, `<code_selection>`, `<terminal_selection>`) and part 1 holds `<timestamp>` + the real prompt wrapped in `<user_query>...</user_query>`. Blanket XML stripping removes `<user_query>` including its content, leaving nothing to classify. A summary block (`[Previous conversation summary]…`) is also inserted when Cursor compacts long chats | Extract the prompt from `<user_query>` **before** stripping noise: 1. Concatenate all text parts. 2. If `<user_query>…</user_query>` exists, keep only its inner text (`regexp.MustCompile`(`(?s)<user_query>\s*(.*?)\s*</user_query>`)). 3. Then strip remaining XML blocks + the `[Previous conversation summary]` block. 4. If the result is empty, classify as `unknown` (conservative: keep the model). **Do not** walk backwards through older messages to find a non-empty one — that misclassifies on stale content |
-| Cursor subagents appear indistinguishable from main agent at the HTTP level — same system prompt length (~15k chars), same `has_tools=true`, same message structure | Cursor does not expose any HTTP-level signal (header, metadata, timestamp gap, model alias) that reliably identifies subagent traffic. The system prompt is the same for both subagent and main agent in current Cursor versions | Do not attempt heuristic subagent detection (message count, prompt length). Route all traffic through content-based classification — a subagent asking "find all test files" will correctly hit `code_search` and downgrade. Subagents send independent chat-completion requests, so their operation request is classified on its own |
+| ------- | ----- | ---- |
+| Z.AI returns 429 "service overloaded" intermittently under heavy subagent load | Concurrent Z.AI requests exceed plan capacity (concurrency limits, not just token quota). | Acquire semaphore slot before Z.AI upstream call (`s.acquireZaiSlot()`, 4-slot limit in `NewServer()`), release after response (`defer releaseZaiSlot()`). Retry once on 429 with 1s delay (`doUpstreamWithRetry()`). |
 
-### `Classify-and-override: precedence decides whether a downgrade fires`
-
-Content-based classifier (`SubAgentRouter`) must pick the intent, then downgrade only
-when the model has a mapped cheaper variant:
-
-- Check order: structured output (`json_object`) → automation → editing → complex
-  reasoning → code search → simple lookup. Classify on the **stripped** prompt
-  (see `Cursor masks…` above), never raw.
-- Downgrade-safe classes: `simple_lookup`, `code_search`, `structured_extraction`,
-  `automation`. Keep the model for `editing` and `complex_reasoning`.
-- A word like "fix" is a **strong-editing** signal and blocks automation → if a
-  refactor needs pro, "refactor and create a PR" stays on the original model.
-  Mechanical work (lint/PR/git/scripts) still downgrades even when "fix" co-occurs
-  (`isLintTask` bypasses the strong-editing guard).
+## Retry logic (transient Z.AI errors)
 
 | Symptom | Cause | Fix |
-| ------- | ----- | --- |
-| "fix linter errors in some files" stays on the expensive model instead of flash | `isStrongEditing` matches "fix" and blocks the `automation` downgrade | Let lint tasks classify as automation even with a strong-editing word present (`isLintTask` → bypass the `!isStrongEditing` guard) |
-| `glm-5.3` / `kimi-k3` never downgrade on automation tasks | Model has no mapped cheaper variant and falls back to `deepseek-v4-flash` (`defaultFlashModel`). Override also changes provider (re-resolved via `ResolveModel`), so cross-provider routing works: e.g. `glm-5.3` → `deepseek-v4-flash` routes to `provider=deepseek`, not Z.AI. To add a same-provider cheap variant (e.g. `glm-4.7` as flash for `glm-5.3`), **add** an entry to `modelOverrideMap` (it currently only holds `"deepseek-v4-pro": "deepseek-v4-flash"` — there is nothing to uncomment). Entries take priority over the universal fallback. |
+| ------- | ----- | ---- |
+| Z.AI request fails with 429 or 502, succeeds on immediate retry | Transient capacity issue or brief upstream hiccup. | Replace direct `doUpstream()` call with `doUpstreamWithRetry()` for Z.AI requests: on 429 (codes 1305/1113), retry once after 1s delay. Single retry avoids infinite loops while catching blips. |
 
-#### Verbosity control — model-keyed request-side transforms
-
-Verbosity control (`internal/gateway/verbosity/`, wired as `Server.verbosity`) is
-per-model and toggleable live from the **Output Verbosity** dashboard card
-(`GET/PUT /api/verbosity`). Each model's toggle is read per-request via
-`LiveSettings.VerbosityFor(model)` (`s.verbosityEnabledFor(model)`). The
-controller is always allocated and gated per-request on that per-model toggle.
-It coerces the model to be less verbose via two **request-side** mechanisms, all
-keyed on the **served model**. It **never edits response content** — both
-streaming and non-streaming replies pass through byte-for-byte:
-
-- **Directive injection** — appends `flashTersenessDirective` to the last
-  system/developer message (or prepends a new one). Constraints include a
-  reasoning-before-action rule ("state what you are about to do in one line,
-  then act; do not narrate your investigative process").
-- **Token cap** — lowers `max_tokens` to `flashVerbosityMaxTokens` (4096);
-  never raises.
-
-| Aspect | Detail |
-| ------ | ------ |
-| Runtime toggle | `/api/verbosity` → per-model, applies immediately, no restart |
-| Controller | Always allocated; per-request gate `s.verbosityEnabledFor(model)` |
-| Model key | Config map keys on the **real** model id (`deepseek-v4-flash`, `deepseek-v4-pro`), not alias |
-| Response handling | Both streaming and non-streaming replies pass through unchanged — verbosity only prompts/caps, never trims |
-| Fail-open | Unknown model / no config → passthrough unchanged |
-
-### `Model-dependent middlewares must run AFTER routing/downgrade`
-
-Request transforms that are keyed on the served model (verbosity, thinking
-shape, token caps) must be applied **after** the subagent-router
-`ClassifyAndOverride` downgrade reassigns the model — not at the point where the
-sanitizer first resolved the alias.
+## Tool-result compression tuning
 
 | Symptom | Cause | Fix |
-| ------- | ----- | --- |
-| Verbosity controls never fire on a turn the router downgraded to `deepseek-v4-flash` (directive absent, `max_tokens` uncapped) | `ApplyRequest` ran with the **original** resolved model (`deepseek-v4-pro` for `o1`); the controller config keys only on `deepseek-v4-flash`, so it early-returned | In `handleChatCompletions`, apply model-keyed request transforms **after** `ClassifyAndOverride` (and after the provider re-resolve) so they see the final served model |
+| ------- | ----- | ---- |
+| Compression fires on small tool results, paying 1-3s latency + flash cost for minimal token savings | Threshold too low (4000 chars); no token-budget awareness; empty-summary failures paid full cost then sent original | Raise `toolResultMaxLen` to 24000; add `compressMinTotalChars` (20000 chars aggregate gate); truncate on summarizer failure instead of fail-open; detect soft failures (empty/not-shorter) to truncate per-job without aborting batch |
 
-`<!-- last-verified: 2026-08 -->`
+<!-- last-verified: 2026-08 -->
 
-### `Compression + verbosity — opt-in, runtime-toggleable`
+## Router downgrade context-size gate
 
-Compression and verbosity are enabled via **live settings** read from the usage
-dashboard (`http://127.0.0.1:4002`) with **no restart**. The gateway reads the
-live value per-request via the `LiveSettings` mutex-guarded store; the
-compressor/verbosity controllers are always allocated and gated on the current
-toggle, so the off state adds zero hot-path cost.
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| Large-context "automation" requests (160k-800k tokens) downgraded to glm-4.7 take 20-45s each, serializing through 2-slot lane, while deepseek-v4-flash completes in ~2s | Router downgrades all "automation" class requests to glm-4.7 regardless of context size; glm-4.7's 2-slot plan concurrency + slow long-context prefill destroy performance | Add context-size gate (`downgradeMaxContextChars = 100_000`); skip downgrade when request payload exceeds threshold and log `subagent_router: downgrade skipped — context too large` |
 
-**Tool-result compression** (toggleable from the usage dashboard only, no CLI flag):
+<!-- last-verified: 2026-08 -->
 
-- `role:tool` output > `toolResultMaxLen` (4000) chars is summarized by flash
-- **Fail-open**: empty/error summaries → original content sent upstream
-- **Content-hash cache** + singleflight dedup: same content compressed only once
-- **Flash model** (`deepseek-v4-flash`) used for summarization
+## Lane state visibility
 
-**History compression** (`--history-compress`) was prototyped and **removed**
-(T10). See [Why history compression was dropped](#why-history-compression-was-dropped).
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| Cannot verify whether glm-4.7 downgrade lane overflow is firing correctly or if requests are unnecessarily waiting for slots | Channel doesn't expose current buffer depth; no visibility into in-flight count | Add `atomic.Int64` counter `glm47LaneInUse` alongside semaphore; log `in_use`/`capacity` on every routing decision in `selectDowngradeLane` |
 
-**Verbosity** (per-model, no CLI flag):
+<!-- last-verified: 2026-08 -->
 
+## Verbose output control
+
+- Purpose: coerce models to be terse (code-first, prose-light) during agentic loops.
 - Controlled per-model from the **Output Verbosity** dashboard card
-  (`GET/PUT /api/verbosity`); DeepSeek `deepseek-v4-flash` defaults on,
-  `deepseek-v4-pro` defaults off. Only DeepSeek models support verbosity.
+  (`GET/PUT /api/verbosity`); defaults: `deepseek-v4-flash` ON, `deepseek-v4-pro` OFF,
+  `glm-4.7` ON, `glm-5.3` OFF.
 - Three request-side mechanisms — **never edits response content**:
   1. **Directive injection** — appends `flashTersenessDirective` (10 enumerated
      mandatory constraints) to the last system/developer message
-  2. **Token cap** — lowers `max_tokens` to `flashVerbosityMaxTokens` (4096) or
-     `proVerbosityMaxTokens` (8192); never raises
+  2. **Token cap** — lowers `max_tokens` to model-specific ceiling:
+     - `deepseek-v4-flash`: 4096
+     - `deepseek-v4-pro`: 8192
+     - `glm-4.7`: 8192
+     - `glm-5.3` / `glm-5.3[1m]`: 16384
 - Verbosity is applied **after** the subagent-router downgrade so the final
   served model determines which controls fire
+
+## Runtime settings (no restart)
 
 | Aspect | Detail |
 | ------- | ------ |
 | Compression runtime toggles | `GET/PUT /api/settings` in usage UI → applies immediately, no restart |
-| Config fields | `ToolCompressionEnabled bool`, `Verbosity map[string]bool` (in `AppSettings`/`LiveSettings`) |
+| Config fields | `ToolCompressionEnabled bool`, `Verbosity map[string]bool`, `ThinkingEnabled map[string]bool` (in `AppSettings`/`LiveSettings`) |
 | Tool threshold | `toolResultMaxLen` (4000 chars) |
-| Failure / key-missing | Fail-open: original body returned unchanged |
+| Failure / key-missing | Soft failures (empty/not-shorter summary) truncate to `toolResultMaxLen`; hard errors fail-open with original body |
 
-#### Why history compression was dropped
+## Global subagent model sizing (flash fleet)
 
-History compression was prototyped in T10 as an automatic summarization of older
-conversation turns to reduce context bloat. It was removed for these reasons:
+The live subagent fleet lives in `/.cursor/agents/` (10 files).
+All agents now use `model: gpt-4.1` (GLM-4.7) for consistent plan-supported
+model with thinking auto-disabled on mechanical classes via request classifier.
+Free tier fallback handles peak-hour exhaustion automatically.
 
-1. **Poor cost/benefit ratio** — each compression pass required 10–12 upstream
-   flash calls (~96K tokens) for a 360K-char transcript. The token overhead
-   approached the actual savings, and the compressible span changes on every
-   request (defeating the content-hash cache).
-2. **Empty-summary upstream glitches** — `deepseek-v4-flash` frequently returns
-   blank content for tool-heavy transcript chunks, even with retry+fallback.
-   Each empty chunk aborts the entire compression pass as fail-open.
-3. **Latency tax** — chunked summarization added serial upstream calls on the
-   request-serving goroutine, directly slowing the user-visible turn.
-4. **Redundancy with tool compression** — tool-result compression already handles
-   the largest source of context bloat (verbose file reads, search results,
-   diffs). The marginal gain from also compressing old prose messages was low.
-5. **Summary quality risk** — even with identifier-preserving prompts, an
-   auto-generated summary of code-review conversation risks dropping file paths,
-   error messages, and decisions that matter.
+| Agent | model: | Rationale |
+| ----- | ------ | --------- |
+| explore-flash | `gpt-4.1` | Read-only search/read/cite; high volume |
+| browser-flash | `gpt-4.1` | Read-only fetch + extract + cite |
+| web-researcher-flash | `gpt-4.1` | Read-only search + cite synthesis |
+| doc-writer-flash | `gpt-4.1` | Prose generation from diffs |
+| bash-flash | `gpt-4.1` | Multi-step CLI loops; tool/agentic chops |
+| refactor-flash | `gpt-4.1` | Mechanical, must not break call-sites |
+| test-runner-flash | `gpt-4.1` | Runs tests + simple fixes |
+| implementer-flash | `gpt-4.1` | Writes working code |
+| code-reviewer-flash | `gpt-4.1` | Finds correctness bugs |
+| verifier-flash | `gpt-4.1` | Independent validation |
 
-The conclusion: tool-result compression is the high-leverage optimization.
-History compression adds complexity, latency, and upstream cost while saving
-marginal tokens. If context limits become a problem, prefer shorter sessions
-or manual summarization.
-
-#### Debugging compression from logs
-
-| Symptom | Cause | Fix |
-| ------- | ----- | --- |
-| `grep "compress"` returns no matches in gateway JSONL logs | Escaped JSON strings defeat literal grep | Parse with `python3 -c "import json,sys; [print(l.strip()) for l in sys.stdin if 'compress' in l.lower()]"` — use JSONL-aware parsing, not raw grep |
-| `compress: flash model returned empty summary (content N chars)` warning | Flash model occasionally fails to produce a summary for certain content | Expected — compression is fail-open so original content is sent upstream; no quality degradation. Tune if >20% failure rate. The HTTP client timeout for flash calls is 8s (fail-fast, don't block the user-visible turn). |
-| Compression saves no tokens (cache hits all misses) | Content-hash cache not warmed, or content is already under compression threshold | Expected for first request with unique content; significant savings appear on multi-turn sessions with repeated tool results |
-
-#### Performance: inline auxiliary API calls must fail fast
-
-Auxiliary API calls (compression, vision description) that run synchronously on
-the request-serving goroutine must use short timeouts so failures don't add
-latency to the user-visible turn:
-
-- HTTP client timeout ≤ 8s for flash/auxiliary summarizer calls
-- Fast-scan early-return before building expensive data structures: if a cheap
-  heuristic says no work is needed (e.g. all tool messages are verbatim file
-  reads), return immediately before allocating maps or marshaling payloads
-- Content-hash cache + singleflight before any outbound call (already done)
+Keep this table in sync when editing `/.cursor/agents/*.md`.
 
 <!-- last-verified: 2026-08 -->

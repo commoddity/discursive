@@ -152,7 +152,28 @@ func TestEstimateUSD(t *testing.T) {
 			provider: config.ProviderZai,
 			model:    "glm-4.7",
 			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
-			want:     0.60 + 2.20,
+			want:     0.46 + 1.60,
+		},
+		{
+			name:     "zai_glm47_flashx_input_output",
+			provider: config.ProviderZai,
+			model:    "glm-4.7-flashx",
+			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
+			want:     0.07 + 0.40,
+		},
+		{
+			name:     "zai_glm47_flashx_cache_only",
+			provider: config.ProviderZai,
+			model:    "glm-4.7-flashx",
+			tokens:   UsageTokens{CacheHitTokens: 1_000_000},
+			want:     0.01,
+		},
+		{
+			name:     "zai_glm47_flash_free",
+			provider: config.ProviderZai,
+			model:    "glm-4.7-flash",
+			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
+			want:     0,
 		},
 		{
 			name:     "unknown_zai_model",
@@ -166,14 +187,14 @@ func TestEstimateUSD(t *testing.T) {
 			provider: config.ProviderZai,
 			model:    "glm-4.6v",
 			tokens:   UsageTokens{PromptTokens: 1_000_000},
-			want:     0.30,
+			want:     0.12,
 		},
 		{
 			name:     "zai_glm46v_cache_hit_only",
 			provider: config.ProviderZai,
 			model:    "glm-4.6v",
 			tokens:   UsageTokens{CacheHitTokens: 1_000_000},
-			want:     0.05,
+			want:     0.03,
 		},
 		{
 			name:     "zai_glm46v_mixed",
@@ -184,7 +205,7 @@ func TestEstimateUSD(t *testing.T) {
 				CacheMissTokens:  500_000,
 				CompletionTokens: 100_000,
 			},
-			want: perMillion(1_000_000, 0.05) + perMillion(500_000, 0.30) + perMillion(100_000, 0.90),
+			want: perMillion(1_000_000, 0.03) + perMillion(500_000, 0.12) + perMillion(100_000, 0.27),
 		},
 	}
 

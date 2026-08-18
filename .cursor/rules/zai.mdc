@@ -6,52 +6,46 @@ alwaysApply: false
 
 # Z.AI Rules
 
-Z.AI (GLM) is an OpenAI-compatible provider at the **GLM Coding Plan** base URL `https://api.z.ai/api/coding/paas/v4`.
-Models: GLM series with thinking support.
+Z.AI (GLM) at **GLM Coding Plan** base URL `https://api.z.ai/api/coding/paas/v4`.
 
 ## Model table
 
-| Cursor alias     | Real model | Description                                          |
-| ---------------- | ---------- | ---------------------------------------------------- |
-| `gpt-4.1-turbo`  | `glm-5.3`  | Planning model; always thinks; reasoning_effort + prompt caching |
-| `gpt-4.1`        | `glm-4.7`  | Budget execution; thinking on/off only               |
-| (internal)       | `glm-4.6v` | **Vision worker** only — describes images for ALL providers. Not user-selectable; not in `/v1/models`. Runs on the coding-plan endpoint. |
+| Cursor alias    | Real model       | Description                                                         |
+| --------------- | ---------------- | ------------------------------------------------------------------- |
+| `gpt-4.1-turbo` | `glm-5.3[1m]`    | 1M context flagship; always thinks; reasoning_effort + prompt cache  |
+| `gpt-4.1`       | `glm-4.7`        | Budget workhorse; thinking on/off only                             |
+| (internal)      | `glm-4.6v`       | **Vision worker** only — describes images for ALL providers. Not user-selectable; not in `/v1/models`. Runs on the coding-plan endpoint. |
 
-`glm-4.6v` has **no Cursor alias** (level 1–2: label "Vision worker"; level 3:
-model `glm-4.6v`). It is invoked by `vision.Describer` in the gateway; vision
-usage bills under `zai::glm-4.6v`.
+`glm-4.6v` has **no Cursor alias**. Invoked by `vision.Describer`; usage bills under `zai::glm-4.6v`.
 
 ## API key
 
 - Key field: `zaiKeyEncrypted` in `config.AppSettings`
-- Set via: `discursive set --zai-key <key>` or `--zai-key` flag on `init`
-- Retrieved via: `settings.GetZaiKey(dataRoot)` in gateway/server.go
-- Z.AI is optional — the gateway works without it
+- Set via: `discursive set --zai-key <key>`
+- Retrieved via: `settings.GetZaiKey(dataRoot)`
+- Free tier key (peak-hour fallback): `zaiFreeKeyEncrypted`, set via `--zai-free-key <key>`
 
 ## Pricing (USD per 1M tokens)
 
 Source: https://docs.z.ai/guides/overview/pricing
-
-> **PROVISIONAL — `glm-5.3` has no published per-token rate yet.** Z.AI's rate
-> card still lists GLM-5.2 as its newest row and the GLM-5.3 docs say "The
-> GLM-5.3 API is coming soon". The `glm-5.3` row below is GLM-5.2's card carried
-> forward as a stand-in. **Update `internal/usage/pricing.go` + usageui JS
-> `PRICING` + this table + tests once Z.AI publishes GLM-5.3 pricing.**
 
 | Model     | Cache hit / MTok | Input / MTok | Output / MTok |
 | --------- | ---------------- | ------------ | ------------- |
 | `glm-5.3` | $0.26            | $1.40        | $4.40         |
 | `glm-4.7` | $0.11            | $0.60        | $2.20         |
 
+> `glm-4.7-flash` is **free on-demand only** (`/api/paas/v4`) — NOT on coding plan. Use as peak-hour fallback with separate key. Per-token rates TBD; treat as free for cost estimates.
+
 ## Sanitizer policy
 
-| Model     | Parameter          | Action                                                                                         |
-| --------- | ------------------ | ---------------------------------------------------------------------------------------------- |
-| `glm-5.3` | `thinking`         | Always `{type: "enabled"}` — `disabled` is **not supported** and fails upstream                 |
-| `glm-5.3` | `reasoning_effort` | Always sent, `low`\|`high`\|`max`. Normalized via `normalizeZaiEffort()` → `off`/`none`/`minimal`↦`low`, `medium`↦`high`, `xhigh`↦`max`, `high`/`max` pass-through |
-| `glm-4.7` | `thinking`         | Set `{type: "enabled"|"disabled"}`; no reasoning_effort support                                |
-| `glm-4.7` | `reasoning_effort` | Deleted                                                                                        |
+| Model     | Parameter          | Action                                                                                                                                                             |
+| --------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `glm-5.3` | `thinking`         | Always `{type: "enabled"}` — `disabled` is **not supported** and fails upstream                                                                                    |
+| `glm-5.3` | `reasoning_effort` | Always sent, `low`\\|`high`\\|`max`. Normalized via `normalizeZaiEffort()` → `off`/`none`/`minimal`↦`low`, `medium`↦`high`, `xhigh`↦`max`, `high`/`max` pass-through |
+| `glm-4.7` | `thinking`         | Set `{type: "enabled"\\|"disabled"}` (toggle, live `ThinkingEnabled` map); no reasoning_effort support                                                              |
+| `glm-4.7` | `reasoning_effort` | Deleted                                                                                                                                                            |
 
+The thinking-toggle set is a whitelist (`zaiThinkingToggle()`): `glm-4.7` only.
 Apply `PolicyZai` case in `applyThinkingPolicy()` and `stripUnsupportedParams()`.
 
 ## Reasoning effort normalization (Z.AI-specific)
@@ -60,13 +54,13 @@ Apply `PolicyZai` case in `applyThinkingPolicy()` and `stripUnsupportedParams()`
 effort level is `low`. The gateway normalizes effort via `normalizeZaiEffort()`
 to the values the catalog advertises (`low`, `high`, `max` are ever sent):
 
-| UI label        | Sent to Z.AI |
-| --------------- | ------------ |
-| Off / None      | `low` (minimum thinking — `disabled` is unsupported) |
-| Low             | `low`  |
-| Medium          | `high`  |
-| High            | `high`  |
-| XHigh / Max     | `max`  |
+| UI label    | Sent to Z.AI                                         |
+| ----------- | ---------------------------------------------------- |
+| Off / None  | `low` (minimum thinking — `disabled` is unsupported) |
+| Low         | `low`                                                |
+| Medium      | `high`                                               |
+| High        | `high`                                               |
+| XHigh / Max | `max`                                                |
 
 The `ReasoningEffortCatalog` entry for `glm-5.3` advertises: `low`, `high`, `max`
 and defaults to `low` (cost-conscious, mirroring Kimi K3).
@@ -74,15 +68,15 @@ and defaults to `low` (cost-conscious, mirroring Kimi K3).
 
 ## Upstream config
 
-| Item       | Value                           |
-| ---------- | ------------------------------- |
-| Default URL| `https://api.z.ai/api/coding/paas/v4` |
-| On-demand  | `https://api.z.ai/api/paas/v4`       |
-| Docs       | https://docs.z.ai                    |
-| API ref    | https://docs.z.ai/api-reference/llm/chat-completion |
-| Pricing    | https://docs.z.ai/guides/overview/pricing |
-| Coding plan| https://docs.z.ai/devpack/overview    |
-| Console    | https://z.ai/manage-apikey/billing    |
+| Item        | Value                                               |
+| ----------- | --------------------------------------------------- |
+| Default URL | `https://api.z.ai/api/coding/paas/v4`               |
+| On-demand   | `https://api.z.ai/api/paas/v4`                      |
+| Docs        | https://docs.z.ai                                   |
+| API ref     | https://docs.z.ai/api-reference/llm/chat-completion |
+| Pricing     | https://docs.z.ai/guides/overview/pricing           |
+| Coding plan | https://docs.z.ai/devpack/overview                  |
+| Console     | https://z.ai/manage-apikey/billing                  |
 
 ## Color (usage UI)
 
@@ -102,33 +96,20 @@ GLM-5.3 Coding Plan usage is **points-based** (2026-08): credits are consumed by
 token multipliers per 10k tokens — input 6.9, cached input 1.7, output 24 —
 split by peak/off-peak (off-peak = 50% of standard). The dashboard balance
 panel parses whatever `data.limits[]` buckets arrive, so no code change is
-required to display the new quota. `ZaiFlatFeeUSD` (Go) still reflects the
-legacy flat $14.40/mo projection model.
+required to display the new quota.
+
+Coding Plan tiers (2026-08): **Lite** = 2,000 / 5-hour, 10,000 / weekly;
+**Pro** = 12,000 / 5-hour, 60,000 / weekly (6x Lite). The user is on **Pro**
+($64/mo effective committed — 3 months upfront on an $80/mo list plan).
+`ZaiFlatFeeUSD` (Go) = `$64.00` and feeds the month-projection headline and the
+`/api/zai-flat-fee` endpoint; it is **not** used for per-token pricing estimates.
 
 ## Symptoms & fixes
 
-### `vision_call_failed with 429 "Insufficient balance"`
+### `Flash models return 429 \"service overloaded\" / 1113 \"insufficient balance\"`
 
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
-| Vision describer logs `vision_call_failed` with status 429 and body `"Insufficient balance or no resource package. Please recharge."` | The vision describer is hitting the on-demand endpoint (`/api/paas/v4`) but the Z.AI key is a GLM Coding Plan key — these are separate billing buckets and the on-demand bucket has no balance | Use the coding-plan endpoint (`/api/coding/paas/v4`) for `glm-4.6v` vision calls. `glm-4.6v` is available on the Coding Plan (see https://docs.z.ai/devpack/overview under "Credit Calculation" → GLM-4.6V（Vision MCP）). The vision describer in `server.go` now uses `ChatCompletionsURL(config.ProviderZai)` which resolves to the coding-plan base URL. |
-
-### `Z.AI request fails with Unauthorized`
-
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
-| Z.AI returns 401 or "Unauthorized" even with valid API key | Using wrong API endpoint for the user's plan type (e.g., on-demand API `/api/paas/v4` vs GLM Coding Plan API `/api/coding/paas/v4`) | Verify the user's Z.AI plan type (Coding Plan vs on-demand). For GLM Coding Plan, use `https://api.z.ai/api/coding/paas/v4`. For on-demand, use `https://api.z.ai/api/paas/v4`. |
-
-### `Z.AI request appears to hang or timeout`
-
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
-| Cursor request to Z.AI model appears to hang for over a minute with no response and no credits used | Z.AI GLM Coding Plan has higher latency (~5s to first token) than other providers (e.g., DeepSeek). Gateway proxy works fine (verify via curl to loopback), but Cursor client may timeout before first token arrives. | Verify gateway proxy works via direct curl test. If successful, inform user that Z.AI has higher latency and the "hang" may be Cursor-side timeout. No gateway fix required. |
-
-### `GLM-5.3 request fails after `thinking.type: "disabled"``
-
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
-| Z.AI returns an error for a `glm-5.3` request that sends `thinking: {"type":"disabled"}` (or omits `reasoning_effort`) | GLM-5.3 no longer supports disabling thinking — only `enabled` is valid, and `reasoning_effort` must be set (`low`\|`high`\|`max`, default `max`). Migration from GLM-5.2 requires switching `disabled` → `enabled` + `reasoning_effort: low` | The gateway's `PolicyZai` sanitizer always emits `{type: "enabled"}` + `reasoning_effort` for `glm-5.3`, mapping `off`/`none`/`minimal` to `low`. Do not reintroduce a `disabled` path for `glm-5.3`. |
+| Symptom                                                              | Cause                                                                                                                                                                                          | Fix                                                                                                                                                                                         |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Z.AI returns 429 (code 1305 \"overloaded\" / 1113 \"insufficient balance\") for `glm-4.7-flash` / `glm-4.7-flashx` | Flash models are **NOT on the coding plan endpoint** (`/api/coding/paas/v4`). They are **on-demand only** (`/api/paas/v4`) and require a separate API key. The gateway was routing flash requests to the plan endpoint, causing capacity/credit rejections. | Remap all flash model IDs (`glm-4.7-flash`, `glm-4.7-flashx`) and their aliases (`gpt-4.1-mini`, `gpt-4.1-nano`) to `glm-4.7` (plan-supported). Use the on-demand endpoint (`/api/paas/v4`) with a separate free-tier key only as peak-hour fallback when plan is exhausted. |
 
 <!-- last-verified: 2026-08 -->

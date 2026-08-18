@@ -17,6 +17,7 @@ type LiveSettings struct {
 func NewLiveSettings(dataRoot string, s AppSettings) *LiveSettings {
 	s.ReasoningEffort = NormalizeReasoningEffortMap(s.ReasoningEffort)
 	s.Verbosity = NormalizeVerbosityMap(s.Verbosity)
+	s.ThinkingEnabled = NormalizeThinkingEnabledMap(s.ThinkingEnabled)
 	return &LiveSettings{settings: s, dataRoot: dataRoot}
 }
 
@@ -131,6 +132,58 @@ func (l *LiveSettings) SetVerbosity(model string, enabled bool) error {
 	return nil
 }
 
+// ThinkingEnabledMap returns a copy of the normalized per-model thinking
+// (on/off) map for the GLM-4.7 family.
+func (l *LiveSettings) ThinkingEnabledMap() map[string]bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return NormalizeThinkingEnabledMap(l.settings.ThinkingEnabled)
+}
+
+// ThinkingEnabledFor returns the live thinking toggle for a real model id in
+// the thinking-enabled catalog (GLM-4.7 family). Unknown models return false.
+func (l *LiveSettings) ThinkingEnabledFor(model string) bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	norm := NormalizeThinkingEnabledMap(l.settings.ThinkingEnabled)
+	v, ok := norm[model]
+	return ok && v
+}
+
+// SetThinkingEnabled updates the live thinking toggle for model and persists.
+func (l *LiveSettings) SetThinkingEnabled(model string, enabled bool) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	norm := NormalizeThinkingEnabledMap(l.settings.ThinkingEnabled)
+	if _, ok := norm[model]; !ok {
+		return fmt.Errorf("model %q does not support a thinking toggle", model)
+	}
+	norm[model] = enabled
+	l.settings.ThinkingEnabled = norm
+	if err := Save(l.dataRoot, l.settings); err != nil {
+		return fmt.Errorf("save thinking-enabled: %w", err)
+	}
+	return nil
+}
+
+// PeakGuardEnabled returns the live DeepSeek peak-hour guard toggle.
+func (l *LiveSettings) PeakGuardEnabled() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.settings.PeakGuardEnabled
+}
+
+// SetPeakGuardEnabled updates the live peak-guard toggle and persists it.
+func (l *LiveSettings) SetPeakGuardEnabled(v bool) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.settings.PeakGuardEnabled = v
+	if err := Save(l.dataRoot, l.settings); err != nil {
+		return fmt.Errorf("save peak guard enabled: %w", err)
+	}
+	return nil
+}
+
 // HasMoonshotKey reports whether a Moonshot key is configured.
 func (l *LiveSettings) HasMoonshotKey() bool {
 	l.mu.RLock()
@@ -194,6 +247,13 @@ func (l *LiveSettings) GetZaiKey() (*string, error) {
 	return l.settings.GetZaiKey(l.dataRoot)
 }
 
+// GetZaiFreeKey decrypts the stored free-tier Z.AI key.
+func (l *LiveSettings) GetZaiFreeKey() (*string, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.settings.GetZaiFreeKey(l.dataRoot)
+}
+
 // GetTunnelToken decrypts the stored tunnel token.
 func (l *LiveSettings) GetTunnelToken() (*string, error) {
 	l.mu.RLock()
@@ -213,6 +273,12 @@ func cloneSettings(s AppSettings) AppSettings {
 		out.Verbosity = make(map[string]bool, len(s.Verbosity))
 		for k, v := range s.Verbosity {
 			out.Verbosity[k] = v
+		}
+	}
+	if s.ThinkingEnabled != nil {
+		out.ThinkingEnabled = make(map[string]bool, len(s.ThinkingEnabled))
+		for k, v := range s.ThinkingEnabled {
+			out.ThinkingEnabled[k] = v
 		}
 	}
 	return out

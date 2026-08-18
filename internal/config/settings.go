@@ -23,22 +23,27 @@ type AppSettings struct {
 	DeepSeekKeyEncrypted   *string           `json:"deepseekKeyEncrypted,omitempty"`
 	ThauraKeyEncrypted     *string           `json:"thauraKeyEncrypted,omitempty"`
 	ZaiKeyEncrypted        *string           `json:"zaiKeyEncrypted,omitempty"`
+	ZaiFreeKeyEncrypted    *string           `json:"zaiFreeKeyEncrypted,omitempty"` // free-tier on-demand key (peak-hour fallback)
 	GatewayKey             string            `json:"gatewayKey"`
 	ReasoningEffort        map[string]string `json:"reasoningEffort,omitempty"`    // real model id → effort
 	CompressionEnabled     bool              `json:"compressionEnabled,omitempty"` // legacy: maps to ToolCompressionEnabled
 	ToolCompressionEnabled bool              `json:"toolCompressionEnabled,omitempty"`
-	Verbosity              map[string]bool   `json:"verbosity,omitempty"` // real model id → enabled
+	Verbosity              map[string]bool   `json:"verbosity,omitempty"`        // real model id → enabled
+	ThinkingEnabled        map[string]bool   `json:"thinkingEnabled,omitempty"`  // real model id → thinking on/off (GLM-4.7 family)
+	PeakGuardEnabled       bool              `json:"peakGuardEnabled,omitempty"` // prevent routing to DeepSeek during peak hours
 }
 
 // DefaultSettings returns product defaults (no upstream secrets; empty gateway until Ensure).
 func DefaultSettings() AppSettings {
 	return AppSettings{
-		LocalPort:       DefaultPort,
-		RealModel:       DefaultRealModel,
-		AliasModel:      DefaultAliasModel,
-		TunnelMode:      DefaultTunnelMode,
-		ReasoningEffort: DefaultReasoningEffort(),
-		Verbosity:       DefaultVerbosity(),
+		LocalPort:        DefaultPort,
+		RealModel:        DefaultRealModel,
+		AliasModel:       DefaultAliasModel,
+		TunnelMode:       DefaultTunnelMode,
+		ReasoningEffort:  DefaultReasoningEffort(),
+		Verbosity:        DefaultVerbosity(),
+		ThinkingEnabled:  DefaultThinkingEnabled(),
+		PeakGuardEnabled: true,
 	}
 }
 
@@ -81,6 +86,7 @@ func Load(dataRoot string) (AppSettings, error) {
 	s.normalizeCompressionFlags()
 	s.ReasoningEffort = NormalizeReasoningEffortMap(s.ReasoningEffort)
 	s.Verbosity = NormalizeVerbosityMap(s.Verbosity)
+	s.ThinkingEnabled = NormalizeThinkingEnabledMap(s.ThinkingEnabled)
 	if err := s.EnsureGatewayKey(); err != nil {
 		return AppSettings{}, err
 	}
@@ -250,6 +256,33 @@ func (s *AppSettings) GetZaiKey(dataRoot string) (*string, error) {
 // HasZaiKey reports whether an encrypted Z.AI key is present.
 func (s AppSettings) HasZaiKey() bool {
 	return s.ZaiKeyEncrypted != nil && *s.ZaiKeyEncrypted != ""
+}
+
+// SetZaiFreeKey encrypts and stores the free-tier Z.AI on-demand API key.
+func (s *AppSettings) SetZaiFreeKey(dataRoot, plaintext string) error {
+	enc, err := crypto.Protect(dataRoot, plaintext)
+	if err != nil {
+		return err
+	}
+	s.ZaiFreeKeyEncrypted = &enc
+	return nil
+}
+
+// GetZaiFreeKey decrypts the stored free-tier Z.AI key, or nil if unset.
+func (s *AppSettings) GetZaiFreeKey(dataRoot string) (*string, error) {
+	if s.ZaiFreeKeyEncrypted == nil || *s.ZaiFreeKeyEncrypted == "" {
+		return nil, nil
+	}
+	plain, err := crypto.Unprotect(dataRoot, *s.ZaiFreeKeyEncrypted)
+	if err != nil {
+		return nil, err
+	}
+	return &plain, nil
+}
+
+// HasZaiFreeKey reports whether an encrypted free-tier Z.AI key is present.
+func (s AppSettings) HasZaiFreeKey() bool {
+	return s.ZaiFreeKeyEncrypted != nil && *s.ZaiFreeKeyEncrypted != ""
 }
 
 // SetTunnelToken encrypts and stores the Cloudflare tunnel token.

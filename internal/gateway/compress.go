@@ -27,8 +27,13 @@ import (
 
 const (
 	// toolResultMaxLen is the threshold (in chars) at which a tool message is
-	// compressed. Messages shorter than this are left verbatim.
-	toolResultMaxLen = 4000
+	// toolResultMaxLen is the threshold (in chars) at which a tool message is
+	// compressed. Messages shorter than this are left verbatim. Tuned to 24,000:
+	// a summarizer round-trip (1–3s + flash cost) only pays for itself on
+	// substantial results; below ~3k tokens of content the compressed form
+	// saves little, especially when the conversation prefix is mostly
+	// cache-hit input billed at a discount.
+	toolResultMaxLen = 24_000
 
 	// compressCacheTTL is the cache lifetime for tool-result summaries.
 	compressCacheTTL = 30 * time.Minute
@@ -36,6 +41,13 @@ const (
 	// compressMaxConcurrent is the semaphore limit for concurrent summarizer
 	// calls to deepseek-v4-flash.
 	compressMaxConcurrent = 4
+
+	// compressMinTotalChars is the minimum total characters across all
+	// compressible tool messages required to justify the summarizer
+	// round-trip. Below this threshold, the token savings (especially when
+	// the conversation prefix is mostly cache-hit input billed at a discount)
+	// do not offset the 1–3s latency and flash-model cost.
+	compressMinTotalChars = 20000
 
 	// compressRequestPath is the chat completions path appended to the flash
 	// model's base URL.
@@ -252,7 +264,12 @@ func (c *Compressor) Compress(ctx context.Context, body map[string]any) (Compres
 	// For requests where every tool result is either short or a named
 	// verbatim tool (file read, search, diff), we return immediately
 	// without paying the cost of buildToolNameMap.
+	//
+	// We also track the total compressible chars so we can skip marginal
+	// gains entirely — a 1–3s summarizer round-trip only pays for itself
+	// when there's substantial content to compress.
 	hasCandidate := false
+	var totalCompressibleChars int
 	for _, raw := range msgs {
 		msg, ok := raw.(map[string]any)
 		if !ok {
@@ -271,9 +288,18 @@ func (c *Compressor) Compress(ctx context.Context, body map[string]any) (Compres
 			continue
 		}
 		hasCandidate = true
-		break
+		totalCompressibleChars += len(content)
 	}
 	if !hasCandidate {
+		return CompressionStats{}, nil
+	}
+	// Skip compression entirely when the total compressible content is below
+	// the minimum — the summarizer round-trip doesn't pay for itself on small
+	// gains, especially when most conversation input is cache-hit (discounted).
+	if totalCompressibleChars < compressMinTotalChars {
+		slog.Debug("compress: skipped — total compressible below threshold",
+			"total_compressible", totalCompressibleChars,
+			"threshold", compressMinTotalChars)
 		return CompressionStats{}, nil
 	}
 
@@ -356,6 +382,13 @@ func (c *Compressor) Compress(ctx context.Context, body map[string]any) (Compres
 				return summary, nil
 			})
 			if err != nil {
+				// Empty/unshorter summaries are soft failures: leave a zero
+				// result so the caller truncates instead of failing open.
+				// Hard errors (network, auth, upstream) set firstErr to abort.
+				if softCompressFailure(err) {
+					results[idx] = ""
+					return
+				}
 				errOnce.Do(func() { firstErr = err })
 				return
 			}
@@ -364,14 +397,36 @@ func (c *Compressor) Compress(ctx context.Context, body map[string]any) (Compres
 	}
 	wg.Wait()
 
+	// Replace tool-result contents in-place. Summarizer failures (empty
+	// result) don't abort the batch — we truncate that message to a safe
+	// prefix instead of failing open, since we already paid the round-trip
+	// latency/cost. Hard errors (firstErr) still abort below.
 	if firstErr != nil {
 		return CompressionStats{}, firstErr
 	}
 
-	// Replace tool-result contents in-place.
+	// Replace tool-result contents in-place. For summarizer failures
+	// (empty results), fall back to truncation rather than failing open —
+	// we already paid the latency/cost of the round-trip, so truncate
+	// preserves some of the benefit without sending the full original.
 	for i, job := range jobs {
-		prefix := fmt.Sprintf("[Compressed tool result — %d chars original]\n", len(job.content))
 		summary := results[i]
+		if summary == "" {
+			// Summarizer returned empty — truncate to a safe prefix instead
+			// of failing open and sending the full original content.
+			trunc := job.content
+			if len(trunc) > toolResultMaxLen {
+				trunc = trunc[:toolResultMaxLen] + "\n... [truncated due to summarizer failure]"
+			}
+			msgs[job.idx].(map[string]any)["content"] = trunc
+			stats.CharsBefore += len(job.content)
+			stats.CharsAfter += len(trunc)
+			slog.Debug("compress: summarizer failed, truncated original",
+				"original_len", len(job.content),
+				"truncated_len", len(trunc))
+			continue
+		}
+		prefix := fmt.Sprintf("[Compressed tool result — %d chars original]\n", len(job.content))
 		msgs[job.idx].(map[string]any)["content"] = prefix + summary
 		stats.CharsBefore += len(job.content)
 		stats.CharsAfter += len(prefix) + len(summary)
@@ -473,6 +528,19 @@ func (c *Compressor) summarizeContent(ctx context.Context, content string) (stri
 		c.recordUsage(compressModel, tu.PromptTokens, tu.CompletionTokens, time.Since(start))
 	}
 	return summary, nil
+}
+
+// softCompressFailure reports whether a summarizer error is a "soft" failure
+// (empty summary, or summary not shorter than original) that should fall back
+// to truncating the original tool result rather than aborting the whole
+// compression batch. Hard errors (network, auth, upstream status) are not soft
+// and abort the batch. Returns false for nil.
+func softCompressFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "empty summary") ||
+		strings.Contains(err.Error(), "summary not shorter")
 }
 
 func trimTo(b []byte, maxLen int) string {

@@ -72,4 +72,4 @@ Do **not** introduce Viper. Parse flags in `RunE` / `PreRunE` and pass into
 | ----- | ---- | ----- |
 | Command blocks with no prompt | `io.ReadAll(stdin)` on empty/non-TTY stdin | Detect TTY; prompt with hidden input (`golang.org/x/term`); always support `--key` flag |
 
-<!-- last-verified: 2026-07 -->
+<!-- last-verified: 2026-08 -->

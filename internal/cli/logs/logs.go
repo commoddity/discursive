@@ -64,8 +64,19 @@ func followLogs(w io.Writer, logPath string) error {
 	}
 	defer func() { _ = watcher.Close() }()
 
-	if err := watcher.Add(dir); err != nil {
-		return fmt.Errorf("watch directory: %w", err)
+	// Retry: fsnotify's kqueue backend (macOS) stats every directory entry
+	// during Add; a concurrent config.json.tmp write+rename can make an entry
+	// vanish mid-Add, failing the whole watch with ENOENT.
+	var watchErr error
+	for range 3 {
+		watchErr = watcher.Add(dir)
+		if watchErr == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if watchErr != nil {
+		return fmt.Errorf("watch directory: %w", watchErr)
 	}
 
 	_, _ = fmt.Fprintf(w, "📄  Following %s  (Ctrl-C to stop)\n\n", logPath)

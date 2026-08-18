@@ -86,7 +86,8 @@ func ResolveModel(requested string) (Route, error) {
 		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil
 	case "glm-5.3":
 		return Route{config.ProviderZai, "glm-5.3", PolicyZai}, nil
-	case "glm-4.7":
+	case "glm-4.7", "glm-4.7-flash", "glm-4.7-flashx":
+		// glm-4.7-flash/flashx are NOT on the coding plan — resolve to glm-4.7.
 		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil
 	default:
 		return Route{}, fmt.Errorf("unknown model alias %q", requested)

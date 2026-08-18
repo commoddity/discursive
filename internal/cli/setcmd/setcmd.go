@@ -20,6 +20,7 @@ func NewCmd(portable func() bool) *cobra.Command {
 		deepseekKey string
 		thauraKey   string
 		zaiKey      string
+		zaiFreeKey  string
 		tunnelToken string
 		publicURL   string
 		gatewayKey  bool
@@ -35,6 +36,9 @@ func NewCmd(portable func() bool) *cobra.Command {
   # Set upstream API keys
   discursive set --moonshot-key sk-xxx --deepseek-key sk-yyy
 
+  # Free-tier Z.AI key (peak-hour fallback lane to glm-4.7-flash)
+  discursive set --zai-free-key <key>
+
   # Tunnel configuration
   discursive set --tunnel-token <token> --public-url https://my-host/v1
 
@@ -47,14 +51,15 @@ func NewCmd(portable func() bool) *cobra.Command {
 Omitting flags leaves the corresponding setting unchanged.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
-			return runSet(portable, moonshotKey, deepseekKey, thauraKey, zaiKey, tunnelToken, publicURL, gatewayKey, showKey, model)
+			return runSet(portable, moonshotKey, deepseekKey, thauraKey, zaiKey, zaiFreeKey, tunnelToken, publicURL, gatewayKey, showKey, model)
 		},
 	}
 
 	cmd.Flags().StringVar(&moonshotKey, "moonshot-key", "", "Moonshot/Kimi API key")
 	cmd.Flags().StringVar(&deepseekKey, "deepseek-key", "", "DeepSeek API key")
 	cmd.Flags().StringVar(&thauraKey, "thaura-key", "", "Thaura AI API key")
-	cmd.Flags().StringVar(&zaiKey, "zai-key", "", "Z.AI API key")
+	cmd.Flags().StringVar(&zaiKey, "zai-key", "", "Z.AI API key (coding plan)")
+	cmd.Flags().StringVar(&zaiFreeKey, "zai-free-key", "", "Z.AI free-tier on-demand API key (peak-hour fallback)")
 	cmd.Flags().StringVar(&tunnelToken, "tunnel-token", "", "Cloudflare tunnel token")
 	cmd.Flags().StringVar(&publicURL, "public-url", "", "public HTTPS base URL (https://<host>/v1)")
 	cmd.Flags().BoolVar(&gatewayKey, "rotate-gateway-key", false, "generate a new gateway API key")
@@ -68,7 +73,7 @@ Omitting flags leaves the corresponding setting unchanged.`,
 	return cmd
 }
 
-func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, tunnelToken, publicURL string, rotateGateway, showKey bool, modelID string) error {
+func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, zaiFreeKey, tunnelToken, publicURL string, rotateGateway, showKey bool, modelID string) error {
 	util.SetupLogger()
 
 	dataRoot, err := util.ResolveDataRoot(portable())
@@ -137,6 +142,21 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, t
 		}
 		slog.Info("saved upstream key",
 			"provider", "zai",
+			"key_masked", crypto.MaskSecret(plain),
+		)
+		anySet = true
+	}
+
+	if zaiFreeKey != "" {
+		plain := strings.TrimSpace(zaiFreeKey)
+		if plain == "" {
+			return fmt.Errorf("empty zai free key")
+		}
+		if err := s.SetZaiFreeKey(dataRoot, plain); err != nil {
+			return err
+		}
+		slog.Info("saved upstream key",
+			"provider", "zai-free",
 			"key_masked", crypto.MaskSecret(plain),
 		)
 		anySet = true

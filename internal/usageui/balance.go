@@ -96,7 +96,38 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 	}()
 	wg.Wait()
 
+	if err := s.annotateZaiHourlyReset(&zai); err != nil {
+		slog.Debug("zai hourly reset estimate failed", "error", err.Error())
+	}
+
 	writeJSON(w, BalancesResponse{Moonshot: moonshot, DeepSeek: deepseek, Zai: zai})
+}
+
+// zaiHourlyWindow is the rolling 5-hour Z.AI coding-plan credit window.
+const zaiHourlyWindow = 5 * time.Hour
+
+// annotateZaiHourlyReset fills NextResetMs on the Z.AI 5-Hour bucket from the
+// local usage store: the rolling window opens at the first spend inside the
+// window, so reset ≈ that timestamp + 5h. The provider API exposes no reset
+// time for this bucket. Best-effort: silent on any store/lookup failure.
+func (s *Server) annotateZaiHourlyReset(zai *ProviderBalance) error {
+	if s.store == nil {
+		return nil
+	}
+	first, ok, err := s.store.QueryFirstEventSince(string(config.ProviderZai), time.Now().UTC().Add(-zaiHourlyWindow))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil // no Z.AI spend in the window; bucket is full, nothing to count down
+	}
+	reset := first.Add(zaiHourlyWindow)
+	for i := range zai.Credits {
+		if zai.Credits[i].Label == "5-Hour" && zai.Credits[i].NextResetMs == 0 {
+			zai.Credits[i].NextResetMs = reset.UnixMilli()
+		}
+	}
+	return nil
 }
 
 // ---- /api/balance-spend ----
@@ -388,7 +419,7 @@ func fetchZaiBalance(client *http.Client, getKey func() (string, bool)) Provider
 		return ProviderBalance{Configured: true, Error: fmt.Sprintf("code %d: %s", resp.Code, resp.Msg)}
 	}
 
-	limits, ok := collectZaiCreditBuckets(resp.Data.Limits)
+	limits, ok := collectZaiCreditBuckets(resp.Data.Limits, time.Now().UTC())
 	if !ok {
 		return ProviderBalance{Configured: true, Error: "no credit quota"}
 	}
@@ -423,18 +454,23 @@ type zaiCreditLimit struct {
 
 // collectZaiCreditBuckets maps the Z.AI credit limits to labeled buckets and
 // returns them ordered weekly-first when both present (primary headline bucket
-// is the weekly allowance). The weekly bucket has a larger total allowance than
-// the 5-hour bucket.
-func collectZaiCreditBuckets(limits []zaiCreditLimit) ([]CreditBucket, bool) {
+// is the weekly allowance). The API carries no explicit window-type field; both
+// buckets carry nextResetTime, and the 5-hour bucket's reset always lands within
+// 5 hours while the weekly's lands within 7 days, so the reset distance is the
+// discriminator (allowance-size heuristics break when the 5-hour usage exceeds
+// 2000 on Pro plans).
+func collectZaiCreditBuckets(limits []zaiCreditLimit, now time.Time) ([]CreditBucket, bool) {
 	var buckets []CreditBucket
 	for _, l := range limits {
 		if l.Type != "CREDIT_LIMIT" {
 			continue
 		}
-		label := "5-Hour"
-		// Larger total allowance => weekly (per Z.AI plan docs: 5h=2k, weekly=10k on Lite).
-		if l.Usage > 2000 {
-			label = "Weekly"
+		label := "Weekly"
+		if l.NextResetTime > 0 {
+			reset := time.UnixMilli(l.NextResetTime)
+			if reset.After(now) && reset.Sub(now) <= 5*time.Hour+time.Minute {
+				label = "5-Hour"
+			}
 		}
 		buckets = append(buckets, CreditBucket{
 			Label:       label,

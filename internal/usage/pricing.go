@@ -24,8 +24,10 @@ import (
 var ErrUnknownModel = errors.New("unknown model for pricing")
 
 // ZaiFlatFeeUSD is the fixed monthly subscription cost for Z.AI GLM Coding Plan
-// (not token-based; USD 14.40/month). Used for month projections only.
-const ZaiFlatFeeUSD = 14.40
+// (not token-based) — used for month projections only. The user is on the Pro
+// tier: $64/mo effective (3 months prepaid on an $80/mo list plan), 6x Lite
+// usage (5-hour credits 12,000 / weekly 60,000).
+const ZaiFlatFeeUSD = 64.00
 
 // UsageTokens is token counts for a single request (real model id, post-alias).
 type UsageTokens struct {
@@ -115,14 +117,58 @@ type zaiRates struct {
 }
 
 var zaiPricing = map[string]zaiRates{
-	// PROVISIONAL: GLM-5.3 has NO published per-token rate yet (the Z.AI API
-	// pricing table still lists GLM-5.2 as its newest row, and docs.z.ai say
-	// "GLM-5.3 API is coming soon"). The values below are GLM-5.2's rate card
-	// carried forward as a stand-in. UPDATE when Z.AI publishes GLM-5.3 pricing:
-	// https://docs.z.ai/guides/overview/pricing
-	"glm-5.3":  {0.26, 1.40, 4.40},
-	"glm-4.7":  {0.11, 0.60, 2.20},
-	"glm-4.6v": {0.05, 0.30, 0.90},
+	// GLM-5.3 USD per MTok from GLM-5.2's published rates (carried forward per docs);
+	// GLM-4.7 USD per MTok derived from devpack credit multipliers (4.6/1.2/16 per 10k).
+	// Sources: https://docs.z.ai/guides/overview/pricing + https://docs.z.ai/devpack/overview
+	"glm-5.3":        {0.26, 1.40, 4.40}, // same USD as glm-5.2
+	"glm-5.2":        {0.26, 1.40, 4.40}, // deprecated, same as glm-5.3
+	"glm-4.7":        {0.12, 0.46, 1.60}, // from 4.6/1.2/16 per 10k credits
+	"glm-4.7-flash":  {0.00, 0.00, 0.00}, // free on-demand tier
+	"glm-4.7-flashx": {0.01, 0.07, 0.40}, // derived from 0.7/35/200 per 10k credits
+	"glm-4.6v":       {0.03, 0.12, 0.27}, // vision worker, from 1.2/0.3/2.7 per 10k credits
+}
+
+// zaiCreditsPerMTok holds official Coding Plan credit multipliers per 10k
+// tokens, expressed as credits per 1M tokens (multiplier × 100).
+// Source: https://docs.z.ai/devpack/overview (Credit Calculation table).
+var zaiCreditsPerMTok = map[string][3]float64{ // {cache_hit, input, output}
+	"glm-5.3":       {170, 690, 2400}, // 1.7 / 6.9 / 24
+	"glm-5.2":       {170, 690, 2400}, // routed to 5.3 upstream
+	"glm-5-turbo":   {150, 570, 2100}, // 1.5 / 5.7 / 21
+	"glm-4.7":       {120, 460, 1600}, // 1.2 / 4.6 / 16
+	"glm-4.7-flash": {0, 0, 0},        // free on-demand tier
+	"glm-4.6v":      {30, 120, 270},   // 0.3 / 1.2 / 2.7 (vision worker)
+}
+
+// ZaiCreditsAt computes coding-plan credits consumed by one usage event.
+// Off-peak hours (everything except Mon–Fri 14:00–18:00 SGT = 06:00–10:00 UTC)
+// bill at 50% of the standard credit rate. Unknown models return an error.
+func ZaiCreditsAt(model string, u UsageTokens, at time.Time) (float64, error) {
+	r, ok := zaiCreditsPerMTok[model]
+	if !ok {
+		return 0, fmt.Errorf("%w: zai credits %q", ErrUnknownModel, model)
+	}
+	rate := 1.0
+	if !ZaiPeakHours(at) {
+		rate = 0.5
+	}
+	hit, miss := splitPrompt(u)
+	return rate * (perMillion(hit, r[0]) +
+		perMillion(miss, r[1]) +
+		perMillion(u.CompletionTokens, r[2])), nil
+}
+
+// ZaiPeakHours reports whether the instant falls in the GLM Coding Plan peak
+// window: Monday–Friday 14:00–18:00 Singapore time (UTC+8), i.e. weekdays
+// 06:00–10:00 UTC. Off-peak usage bills at 50% of the standard credit rate.
+func ZaiPeakHours(at time.Time) bool {
+	utc := at.UTC()
+	wd := utc.Weekday()
+	if wd == time.Saturday || wd == time.Sunday {
+		return false
+	}
+	h := utc.Hour()
+	return h >= 6 && h < 10
 }
 
 // cursorComparisonUSD is REFERENCE ONLY — never used by EstimateUSD.

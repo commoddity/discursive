@@ -12,6 +12,9 @@ const (
 	ModelDeepSeekV4Pro   = "deepseek-v4-pro"
 	ModelDeepSeekV4Flash = "deepseek-v4-flash"
 	ModelZaiGLM53        = "glm-5.3"
+	ModelZaiGLM47        = "glm-4.7"
+	ModelZaiGLM47Flash   = "glm-4.7-flash"
+	ModelZaiGLM47FlashX  = "glm-4.7-flashx"
 )
 
 // EffortOff disables thinking (DeepSeek / Z.AI). Not used for Kimi (K3 and

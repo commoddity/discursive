@@ -143,7 +143,7 @@ func TestCompress_OverThreshold(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 	body := bodyWithMessages(shortToolResult(long))
 	stats, err := c.Compress(t.Context(), body)
 	if err != nil {
@@ -177,7 +177,7 @@ func TestCompress_CacheHit(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 
 	// First call — should hit flash.
 	body1 := bodyWithMessages(shortToolResult(long))
@@ -230,7 +230,7 @@ func TestCompress_CacheExpiry(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 	hash := hashString(long)
 
 	// Store an expired entry in the cache.
@@ -260,7 +260,7 @@ func TestCompress_NoDeepSeekKey(t *testing.T) {
 		},
 		client: &http.Client{},
 	}
-	long := longString(5000)
+	long := longString(30000)
 	body := bodyWithMessages(shortToolResult(long))
 	_, err := c.Compress(t.Context(), body)
 	if err == nil {
@@ -279,7 +279,7 @@ func TestCompress_FailOpen(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 	body := bodyWithMessages(shortToolResult(long))
 	_, err := c.Compress(t.Context(), body)
 	if err == nil {
@@ -302,7 +302,7 @@ func TestCompress_MultipleToolResults(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 	// Use content with a distinct suffix to produce different hashes.
 	long2 := long + "\nUNIQUE_APPENDIX_FOR_TEST"
 	body := bodyWithMessages(shortToolResult(long), shortToolResult(long2))
@@ -349,7 +349,9 @@ func TestCompress_JustOverThreshold(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	// Build a string of exactly toolResultMaxLen+1 chars.
+	// Build a tool result of exactly toolResultMaxLen+1 chars, plus a second
+	// long message so the aggregate is above compressMinTotalChars (a single
+	// just-over-threshold result would be skipped by the min-total gate).
 	var sb strings.Builder
 	for sb.Len() <= toolResultMaxLen {
 		sb.WriteString("y")
@@ -358,12 +360,15 @@ func TestCompress_JustOverThreshold(t *testing.T) {
 	if len(justOver) != toolResultMaxLen+1 {
 		t.Fatalf("test setup: expected len=%d, got %d", toolResultMaxLen+1, len(justOver))
 	}
-	body := bodyWithMessages(shortToolResult(justOver))
+	seed := longString(compressMinTotalChars + 1) // guarantees we pass the min-total gate
+	body := bodyWithMessages(shortToolResult(justOver), shortToolResult(seed))
 	stats, err := c.Compress(t.Context(), body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if stats.ToolResultsCompressed != 1 {
+	// justOver exceeds the per-message threshold and the batch exceeds the
+	// min-total gate, so it should compress (along with the seed tool result).
+	if stats.ToolResultsCompressed < 1 {
 		t.Fatalf("just over threshold should be compressed, got %d", stats.ToolResultsCompressed)
 	}
 }
@@ -413,7 +418,7 @@ func TestCompress_SkipsFileReadToolResult(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 
 	// Simulate post-sanitizer body: assistant + tool, where tool name is
 	// missing (sanitizer strips it). Detection via tool_call_id → assistant
@@ -449,7 +454,7 @@ func TestCompress_SkipsFileReadByNameField(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 
 	// Tool message with explicit name field (no assistant needed).
 	body := bodyWithMessages(toolMsg("call_x", "read_file", long))
@@ -474,7 +479,7 @@ func TestCompress_CompressesShellToolResult(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 
 	// Shell tool results should still be compressed.
 	body := bodyWithMessages(
@@ -502,7 +507,7 @@ func TestCompress_CompressesUnknownToolName(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 
 	// A tool with no name and no matching assistant tool_calls → fall through
 	// to compress (safe default — unknown tools are more likely
@@ -529,7 +534,7 @@ func TestCompress_SkipsGrepToolResult(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 	body := bodyWithMessages(
 		assistantWithToolCall("call_g", "Grep"),
 		toolMsg("call_g", "", long),
@@ -555,7 +560,7 @@ func TestCompress_SkipsMcpPrefixedToolName(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 	body := bodyWithMessages(
 		assistantWithToolCall("call_mcp", "mcp.fs.read_file"),
 		toolMsg("call_mcp", "", long),
@@ -581,7 +586,7 @@ func TestCompress_SkipsWebFetchToolResult(t *testing.T) {
 		},
 		client: srv.Client(),
 	}
-	long := longString(5000)
+	long := longString(30000)
 	body := bodyWithMessages(
 		assistantWithToolCall("call_wf", "WebFetch"),
 		toolMsg("call_wf", "", long),

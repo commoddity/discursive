@@ -47,7 +47,11 @@ func TestVerbosityFor(t *testing.T) {
 		t.Fatal("flash verbosity should be off")
 	}
 	// Unknown model returns false.
-	if VerbosityFor(nil, "glm-4.7") {
+	if VerbosityFor(nil, "glm-4.5-air") {
 		t.Fatal("unknown model should not have verbosity")
+	}
+	// [1m] suffix variants resolve to their base model's setting.
+	if !VerbosityFor(map[string]bool{ModelZaiGLM53: true}, ModelZaiGLM53+"[1m]") {
+		t.Fatal("glm-5.3[1m] should inherit glm-5.3 verbosity")
 	}
 }

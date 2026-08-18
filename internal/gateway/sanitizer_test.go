@@ -660,6 +660,40 @@ func TestSanitizeRequest_ZaiGLM47Thinking(t *testing.T) {
 	}
 }
 
+// TestSanitizeRequest_ZaiGLM47FamilyThinkingToggle covers the thinking on/off
+// toggle for glm-4.7 (thinking type, no reasoning_effort), driven by the
+// per-model ThinkingEnabledByModel map. flash/flashx resolve to glm-4.7
+// (not plan-supported), so only glm-4.7 is sanitized as a distinct model.
+func TestSanitizeRequest_ZaiGLM47FamilyThinkingToggle(t *testing.T) {
+	models := []string{config.ModelZaiGLM47}
+	for _, model := range models {
+		t.Run(model, func(t *testing.T) {
+			for _, enable := range []bool{false, true} {
+				cfg := testConfig()
+				cfg.ThinkingEnabledByModel = map[string]bool{model: enable}
+				res, err := SanitizeRequest(map[string]any{
+					"model":    model,
+					"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+				}, cfg)
+				if err != nil {
+					t.Fatalf("SanitizeRequest: %v", err)
+				}
+				want := "disabled"
+				if enable {
+					want = "enabled"
+				}
+				thinking, ok := res.Body["thinking"].(map[string]any)
+				if !ok || thinking["type"] != want {
+					t.Fatalf("enable=%v thinking: %v", enable, res.Body["thinking"])
+				}
+				if _, has := res.Body["reasoning_effort"]; has {
+					t.Fatalf("reasoning_effort should be absent for %s", model)
+				}
+			}
+		})
+	}
+}
+
 func TestParseUsageObject(t *testing.T) {
 	tests := []struct {
 		name     string

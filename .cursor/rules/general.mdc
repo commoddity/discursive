@@ -72,8 +72,6 @@ When a task spans multiple areas, read every applicable rule file before startin
  Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
 - **Runtime**: Go **1.26.5+**; host process — **not** Docker-primary, **not** Wails/Vue/Tauri
 - **CLI**: [Cobra](https://cobra.dev/) (`internal/cli/`); **no Viper** — config in `internal/config`
-- **Reference**: `examples/use-kimi-on-cursor/` (study/port; do not vendor Rust/TS);
-  OpenAI shapes: `examples/openai-openapi/`
 - **Docs**: https://platform.kimi.ai/ · https://api-docs.deepseek.com/
 
 ```
@@ -88,19 +86,12 @@ internal/
   usage/             # pricing table + per-session accounting
   usageui/           # embedded usage dashboard (HTTP server + static assets)
   doctor/            # health checks
-.cursor/agents/      # subagent definitions dispatched by the gateway router
-examples/use-kimi-on-cursor/  # behavioral reference
-.cursor/rules/       # this tree
 .cursor/skills/      # invocable agent skills
+.cursor/rules/       # this tree
 ```
 
 ### Inspiration sources (hard)
 
-- Study `examples/use-kimi-on-cursor/` (sanitizer, adapter, tunnel, Cursor patch).
-  **Reimplement in Go.** Never vendor, transpile, or paste that tree into the
-  product binary tree.
-- OpenAI request/response shapes: consult `examples/openai-openapi/` when present
-  (reference only; do not ship in the binary).
 - Kimi/Moonshot details: `.cursor/rules/kimi.mdc`. If incomplete, fetch
   https://platform.kimi.ai/docs/ (start at llms.txt).
 - DeepSeek details: `.cursor/rules/deepseek.mdc`. If incomplete, fetch
@@ -235,8 +226,7 @@ NEVER do these without explicit user approval:
 ### Package Managers
 
 - Go modules for the product
-- Never use npm/pnpm/Yarn for the product (reference example under `examples/`
-  may use them; do not copy that into the product tree)
+- Never use npm/pnpm/Yarn for the product
 
 ### Verification Defaults
 

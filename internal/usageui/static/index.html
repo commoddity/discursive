@@ -1280,7 +1280,7 @@
     }
 
     #custom-tooltip .tt-logo-row img {
-      width: 160px !important;
+      width: 80px !important;
       height: auto !important;
     }
 
@@ -1478,6 +1478,7 @@
         <span class="tooltip" id="retention-tooltip">Loading...</span>
       </div>
     </div>
+    <div id="by-period-note"></div>
   </div>
 
   <div class="card">
@@ -1485,6 +1486,7 @@
       <div>
         <h2>🤖 Spend by Model</h2>
         <div class="chart-box"><canvas id="chart-by-model"></canvas></div>
+        <div id="by-model-note"></div>
       </div>
       <div>
         <h2>🏢 Spend by Provider</h2>
@@ -1513,6 +1515,10 @@
             <label class="setting-toggle" data-tip="Summarize verbose tool results to reduce token cost.">
               <input type="checkbox" id="toggle-tool-compression">
               <span class="setting-label">Tool-result compression</span>
+            </label>
+            <label class="setting-toggle" data-tip="DeepSeek peak-hour hard guard: never route to DeepSeek during its peak hours; redirect those requests to equivalent GLM (Z.AI) models to cut cost.">
+              <input type="checkbox" id="toggle-peak-guard">
+              <span class="setting-label">DeepSeek peak-hour guard</span>
             </label>
           </div>
           <div class="settings-save-status" id="settings-save-status"></div>
@@ -1721,6 +1727,8 @@
       'thaura::thaura': '#059669', // emerald green
       'zai::glm-5.3': '#ec4899', // hot pink
       'zai::glm-4.7': '#f472b6', // light pink
+      'zai::glm-4.7-flash': '#f9a8d4', // lighter pink
+      'zai::glm-4.7-flashx': '#fbcfe8', // palest pink
     };
     function modelColor(provider, modelName) {
       const key = provider + '::' + modelName;
@@ -1778,14 +1786,14 @@
             // By-provider: only show logo
             const p = getProvider(i);
             const logoSrc = LOGO_URLS[p] || '';
-            html += '<div class="tt-logo-row"><div style="width:160px;height:66px"><img src="' + logoSrc + '" style="width:160px;height:66px;object-fit:contain" alt="' + (p || '') + '"></div></div>';
+            html += '<div class="tt-logo-row"><div style="width:80px;height:33px"><img src="' + logoSrc + '" style="width:80px;height:33px;object-fit:contain" alt="' + (p || '') + '"></div></div>';
           } else if (getProvider && showModelName) {
             // By-model: show model name + logo below
             const p = getProvider(i);
             const logoSrc = LOGO_URLS[p] || '';
             const pName = p ? p.charAt(0).toUpperCase() + p.slice(1) : '';
             html += '<div class="tt-title">' + escapeHtml(label) + '</div>';
-            html += '<div class="tt-logo-row"><div style="width:160px;height:66px"><img src="' + logoSrc + '" style="width:160px;height:66px;object-fit:contain" alt="' + (p || '') + '"></div></div>';
+            html += '<div class="tt-logo-row"><div style="width:80px;height:33px"><img src="' + logoSrc + '" style="width:80px;height:33px;object-fit:contain" alt="' + (p || '') + '"></div></div>';
           } else {
             // Spend by period: just the label
             html += '<div class="tt-title">' + escapeHtml(label) + '</div>';
@@ -1857,11 +1865,20 @@
         'thaura': { input: 0.50, output: 2.00 },
       },
       zai: {
-        // PROVISIONAL: GLM-5.3 has no published per-token rate yet — GLM-5.2's
-        // card is a stand-in. UPDATE when Z.AI publishes 5.3 pricing
-        // (https://docs.z.ai/guides/overview/pricing).
-        'glm-5.3': { cache_hit: 0.26, input: 1.40, output: 4.40 },
-        'glm-4.7': { input: 0.60, output: 2.20 },
+        // Credit-based pricing (credits per 1M tokens), from official Coding
+        // Plan multipliers per 10k tokens (credits = tokens × multiplier / 10000):
+        // GLM-5.3: in 6.9 / cached 1.7 / out 24; GLM-5.2 (deprecated but returned):
+        //   same USD rates as GLM-5.3 ($1.40/$0.26/$4.40) → 140/26/440 credits/MTok;
+        // GLM-4.7: 4.6 / 1.2 / 16; GLM-4.6V (vision worker, per devpack overview):
+        //   1.2 / 0.3 / 2.7 → 12/3/27 credits/MTok.
+        // Off-peak (outside Mon–Fri 14:00–18:00 SGT) bills at 50%; these are
+        // the standard (peak) rates, so estimates run high off-peak.
+        'glm-5.3': { cache_hit: 170, input: 690, output: 2400 },
+        'glm-5.2': { cache_hit: 26, input: 140, output: 440 },  // deprecated, same USD as GLM-5.3
+        'glm-4.7': { cache_hit: 120, input: 460, output: 1600 },
+        'glm-4.7-flash': { cache_hit: 0, input: 0, output: 0 },  // Free
+        'glm-4.7-flashx': { cache_hit: 10, input: 70, output: 400 },
+        'glm-4.6v': { cache_hit: 3, input: 12, output: 27 },      // vision worker only
       }
     };
 
@@ -1869,21 +1886,22 @@
       const models = PRICING[provider];
       if (!models) return '';
       let lines = [];
+      const isZai = provider === 'zai';
       for (const [model, p] of Object.entries(models)) {
         let row = '<strong>' + escapeHtml(model) + '</strong><br>';
         if (p.off_peak && p.peak) {
           row += 'Peak (01–04, 06–10 UTC):<br>' +
-            'Cache hit: ' + fmtMoneyUSD(p.peak.cache_hit) + '/MTok<br>' +
-            'Input: ' + fmtMoneyUSD(p.peak.input) + '/MTok<br>' +
-            'Output: ' + fmtMoneyUSD(p.peak.output) + '/MTok<br>' +
+            'Cache hit: ' + (isZai ? fmtCredits(p.peak.cache_hit) : fmtMoneyUSD(p.peak.cache_hit)) + '/MTok<br>' +
+            'Input: ' + (isZai ? fmtCredits(p.peak.input) : fmtMoneyUSD(p.peak.input)) + '/MTok<br>' +
+            'Output: ' + (isZai ? fmtCredits(p.peak.output) : fmtMoneyUSD(p.peak.output)) + '/MTok<br>' +
             'Off-peak (all other hours):<br>' +
-            'Cache hit: ' + fmtMoneyUSD(p.off_peak.cache_hit) + '/MTok<br>' +
-            'Input: ' + fmtMoneyUSD(p.off_peak.input) + '/MTok<br>' +
-            'Output: ' + fmtMoneyUSD(p.off_peak.output) + '/MTok';
+            'Cache hit: ' + (isZai ? fmtCredits(p.off_peak.cache_hit) : fmtMoneyUSD(p.off_peak.cache_hit)) + '/MTok<br>' +
+            'Input: ' + (isZai ? fmtCredits(p.off_peak.input) : fmtMoneyUSD(p.off_peak.input)) + '/MTok<br>' +
+            'Output: ' + (isZai ? fmtCredits(p.off_peak.output) : fmtMoneyUSD(p.off_peak.output)) + '/MTok';
         } else {
-          if (p.cache_hit !== undefined) row += 'Cache hit: ' + fmtMoneyUSD(p.cache_hit) + '/MTok<br>';
-          row += 'Input: ' + fmtMoneyUSD(p.input) + '/MTok<br>';
-          row += 'Output: ' + fmtMoneyUSD(p.output) + '/MTok';
+          if (p.cache_hit !== undefined) row += 'Cache hit: ' + (isZai ? fmtCredits(p.cache_hit) : fmtMoneyUSD(p.cache_hit)) + '/MTok<br>';
+          row += 'Input: ' + (isZai ? fmtCredits(p.input) : fmtMoneyUSD(p.input)) + '/MTok<br>';
+          row += 'Output: ' + (isZai ? fmtCredits(p.output) : fmtMoneyUSD(p.output)) + '/MTok';
         }
         lines.push(row);
       }
@@ -1898,6 +1916,8 @@
       if (val < 0.01) return '$' + val.toFixed(4);
       return '$' + val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
+
+
 
     // Format date tick labels in selected currency's locale
     function fmtTick(val) {
@@ -2200,15 +2220,24 @@
               '<span class="setting-label">🍃 Terse</span>' +
               '</label>'
             : '';
+          const thinkToggle = m.thinking !== undefined
+            ? '<label class="setting-toggle model-think-toggle" data-tip="Thinking on/off (GLM-4.7 family): enable deeper reasoning for higher-quality answers, at the cost of more tokens/time. Mechanical turns still force thinking off.">' +
+              '<input type="checkbox" id="think-opt-' + m.id + '"' + (!!m.thinking ? ' checked' : '') + ' onchange="saveModelThinking(\'' + m.id + '\')">' +
+              '<span class="setting-label">🧠 Think</span>' +
+              '</label>'
+            : '';
           return '<div class="effort-row" data-model="' + m.id + '">' +
             '<div class="effort-model-head">' +
             '<div class="effort-model-label">' + (m.label || m.id) + '</div>' +
             verbToggle +
+            thinkToggle +
             '</div>' +
             '<div class="effort-model-actions">' +
-            '<span class="model-control-tag">Effort</span>' +
-            '<select class="time-select effort-select" data-model="' + m.id + '">' + opts + '</select>' +
-            '<button class="' + saveCls + '" type="button" data-model="' + m.id + '" disabled onclick="saveModelEffort(\'' + m.id + '\')">Save</button>' +
+            ((m.options && m.options.length)
+              ? '<span class="model-control-tag">Effort</span>' +
+                '<select class="time-select effort-select" data-model="' + m.id + '">' + opts + '</select>' +
+                '<button class="' + saveCls + '" type="button" data-model="' + m.id + '" disabled onclick="saveModelEffort(\'' + m.id + '\')">Save</button>'
+              : '<span class="model-control-tag">Thinking</span>') +
             '</div>' +
             '</div>';
         }).join('');
@@ -2224,20 +2253,24 @@
     async function loadModelControls() {
       window._controls = null;
       try {
-        const [settings, effort, verbosity] = await Promise.all([
+        const [settings, effort, verbosity, thinking] = await Promise.all([
           api('/api/settings'),
           api('/api/reasoning-effort'),
           api('/api/verbosity'),
+          api('/api/thinking-enabled'),
         ]);
         document.getElementById('model-controls-loading').style.display = 'none';
         document.getElementById('model-controls-error').style.display = 'none';
         document.getElementById('model-controls-content').style.display = 'block';
 
         document.getElementById('toggle-tool-compression').checked = !!settings.toolCompressionEnabled;
+        document.getElementById('toggle-peak-guard').checked = !!settings.peakGuardEnabled;
 
         // Merge reasoning-effort providers with per-model verbosity toggles.
         const verbById = {};
         (verbosity.models || []).forEach(v => { verbById[v.id] = !!v.enabled; });
+        const thinkById = {};
+        (thinking.models || []).forEach(v => { thinkById[v.id] = !!v.enabled; });
         const controls = (effort.providers || []).map(p => ({
           id: p.id,
           label: p.label,
@@ -2247,9 +2280,14 @@
             options: m.options,
             effort: m.effort,
             ...(m.id in verbById ? { verbosity: verbById[m.id] } : {}),
+            ...(m.id in thinkById ? { thinking: thinkById[m.id] } : {}),
           })),
         }));
         window._controls = { controls };
+
+        // Thinking-only models (GLM-4.7 family) are not in the reasoning-effort
+        // catalog; inject them under their provider as toggle-only rows.
+        injectThinkingOnlyModels(window._controls, thinking);
         renderEffortProviders(window._controls);
       } catch (e) {
         document.getElementById('model-controls-loading').style.display = 'none';
@@ -2314,6 +2352,7 @@
       try {
         const body = {
           toolCompressionEnabled: document.getElementById('toggle-tool-compression').checked,
+          peakGuardEnabled: document.getElementById('toggle-peak-guard').checked,
         };
         const r = await fetch('/api/settings', {
           method: 'PUT',
@@ -2378,6 +2417,70 @@
           if (m.id in verbById) m.verbosity = verbById[m.id];
         });
       });
+    }
+
+    function updateControlsThinking(thinkById) {
+      const controls = window._controls && window._controls.controls;
+      if (!controls) return;
+      controls.forEach(p => {
+        (p.models || []).forEach(m => {
+          if (m.id in thinkById) m.thinking = thinkById[m.id];
+        });
+      });
+    }
+
+    // GLM-4.7-family models carry a thinking toggle but no reasoning-effort
+    // selector, so they are absent from /api/reasoning-effort. Inject one
+    // toggle-only row per thinking model under the matching provider.
+    function injectThinkingOnlyModels(data, thinking) {
+      const controls = data && data.controls;
+      if (!controls) return;
+      (thinking.models || []).forEach(t => {
+        if (findModel(data, t.id)) return;
+        let provider = controls.find(p => p.id === t.provider);
+        if (!provider) {
+          provider = { id: t.provider, label: t.provider, models: [] };
+          controls.push(provider);
+        }
+        provider.models.push({ id: t.id, label: t.label || t.id, options: [], effort: '', thinking: !!t.enabled });
+      });
+    }
+
+    // --- Thinking on/off (GLM-4.7 family) ---
+    async function saveModelThinking(modelId) {
+      const status = document.getElementById('model-controls-save-status');
+      const cb = document.getElementById('think-opt-' + modelId);
+      if (status) {
+        status.className = 'settings-save-status';
+        status.textContent = 'Saving…';
+      }
+      try {
+        const body = {};
+        body[modelId] = !!cb.checked;
+        const r = await fetch('/api/thinking-enabled', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error(t || (r.status + ' ' + r.statusText));
+        }
+        const data = await r.json();
+        const thinkById = {};
+        (data.models || []).forEach(v => { thinkById[v.id] = !!v.enabled; });
+        updateControlsThinking(thinkById);
+        renderEffortProviders(window._controls);
+        if (status) {
+          status.className = 'settings-save-status ok';
+          status.textContent = 'Saved ' + modelId + ' thinking';
+        }
+      } catch (e) {
+        if (status) {
+          status.className = 'settings-save-status err';
+          status.textContent = 'Error: ' + e.message;
+        }
+      }
     }
 
     // --- MTD summary ---
@@ -2448,7 +2551,21 @@
 
     function fmtCredits(n) {
       if (n == null || isNaN(n)) return '—';
+      if (n === 0) return '0';
       return Math.round(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+
+    // Z.AI credits consumed by a by-day row, from token counts at the flat
+    // points-per-MTok rate card. Unknown models (e.g. glm-4.6v vision worker)
+    // return null rather than a misleading zero.
+    function zaiCredits(item) {
+      // By-day rows carry the real model id, which may include the long-context
+      // suffix (e.g. "glm-5.3[1m]"); strip it for rate-card lookup.
+      const p = PRICING.zai[item.model.replace(/\[[0-9]+[mk]\]$/i, '')] || PRICING.zai[item.model];
+      if (!p) return null;
+      const hit = item.cache_hit_tokens || 0;
+      const miss = Math.max(0, (item.tokens_in || 0) - hit);
+      return (hit / 1e6) * p.cache_hit + (miss / 1e6) * p.input + (item.tokens_out || 0) / 1e6 * p.output;
     }
 
     function balanceToUSD(b) {
@@ -2602,12 +2719,21 @@
         );
       }
       const weekly = (zaiBalance && zaiBalance.credits || []).find(c => c && c.label === 'Weekly');
+      const hourly = (zaiBalance && zaiBalance.credits || []).find(c => c && c.label === '5-Hour');
       if (weekly && weekly.next_reset_ms > 0) {
         const cd = fmtCountdown(weekly.next_reset_ms);
         const abs = fmtAbsoluteLocale(weekly.next_reset_ms);
         parts.push('<div class="zt-row"><span class="zt-title" style="font-weight:500">Weekly quota resets</span></div>' +
           '<div class="zt-row"><span>in</span><span class="zt-cd">' + cd + '</span></div>' +
           '<div class="zt-row"><span>at</span><span class="zt-abs">' + abs + '</span></div>');
+      }
+      if (hourly && hourly.next_reset_ms > 0) {
+        const cd = fmtCountdown(hourly.next_reset_ms);
+        const abs = fmtAbsoluteLocale(hourly.next_reset_ms);
+        parts.push('<div class="zt-row"><span class="zt-title" style="font-weight:500">5-hour quota resets (est.)</span></div>' +
+          '<div class="zt-row"><span>in</span><span class="zt-cd">~' + cd + '</span></div>' +
+          '<div class="zt-row"><span>at</span><span class="zt-abs">' + abs + '</span></div>' +
+          '<div class="zt-row"><span class="zt-abs">from first spend in window (rolling)</span></div>');
       }
       return parts.join('<div style="margin-top:6px"></div>');
     }
@@ -2910,12 +3036,17 @@
         // Token counts / requests still come from estimates (events table).
         const psum = document.getElementById('period-summary');
         let reqs = 0, tIn = 0, tOut = 0, tHit = 0;
+        let zaiCreditsSpent = 0;
         for (const r of rows) {
-          if (r.provider === 'zai') continue; // exclude Z.AI from spend graphs
           reqs += r.request_count || 0;
           tIn += r.tokens_in || 0;
           tOut += r.tokens_out || 0;
           tHit += r.cache_hit_tokens || 0;
+          if (r.provider === 'zai') {
+            // Prefer server-computed credits (per-event peak/off-peak aware);
+            // fall back to client rate-card estimate for older rows.
+            zaiCreditsSpent += r.zai_credits != null ? r.zai_credits : (zaiCredits(r) || 0);
+          }
         }
 
         let changeHtml = '';
@@ -2934,7 +3065,8 @@
           '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003eTokens In\u003c/div\u003e\u003cdiv class="value"\u003e' + (tIn >= 1e6 ? (tIn / 1e6).toFixed(2) + 'M' : fmtNum(tIn)) + '\u003c/div\u003e\u003c/div\u003e' +
           '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003eTokens Out\u003c/div\u003e\u003cdiv class="value"\u003e' + (tOut >= 1e6 ? (tOut / 1e6).toFixed(2) + 'M' : fmtNum(tOut)) + '\u003c/div\u003e\u003c/div\u003e' +
           '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003eCache Hits\u003c/div\u003e\u003cdiv class="value"\u003e' + (tHit >= 1e6 ? (tHit / 1e6).toFixed(2) + 'M' : fmtNum(tHit)) + '\u003c/div\u003e\u003c/div\u003e' +
-          '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003e' + moneyLabel() + '\u003c/div\u003e\u003cdiv class="' + estValClass + '"\u003e' + fmtMoney(tCost) + changeHtml + '\u003c/div\u003e\u003c/div\u003e';
+          '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003e' + moneyLabel() + '\u003c/div\u003e\u003cdiv class="' + estValClass + '"\u003e' + fmtMoney(tCost) + changeHtml + '\u003c/div\u003e\u003c/div\u003e' +
+          (zaiCreditsSpent > 0 ? '\u003cdiv class="stat"\u003e\u003cdiv class="label"\u003eZ.AI Credits\u003c/div\u003e\u003cdiv class="value"\u003e' + fmtCredits(zaiCreditsSpent) + '\u003c/div\u003e\u003c/div\u003e' : '');
 
         // Build bucket→models map: { bucket: [{provider, model, cost}, ...] }
         const bucketMap = {};
@@ -2944,11 +3076,10 @@
         const modelName = {}; // "provider::model" -> model
 
         for (const r of rows) {
-          if (r.provider === 'zai') continue; // exclude Z.AI from spend graphs
           if (!bucketMap[r.bucket]) bucketMap[r.bucket] = [];
           // Placeholder pad rows (no provider/model) only establish the bucket axis.
           if (!r.provider && !r.model) continue;
-          bucketMap[r.bucket].push({ provider: r.provider, model: r.model, cost: r.est_usd });
+          bucketMap[r.bucket].push({ provider: r.provider, model: r.model, cost: r.est_usd, zai_credits: r.zai_credits, tokens_in: r.tokens_in, tokens_out: r.tokens_out, cache_hit_tokens: r.cache_hit_tokens });
 
           const key = r.provider + '::' + r.model;
           if (!(key in modelOrder)) {
@@ -3026,6 +3157,15 @@
           }
         });
         document.getElementById('by-period-legend').style.display = 'none';
+        // Z.AI bar-graph rows are token-based estimates (relative usage cue),
+        // not billed spend; hard spend totals (MTD / /api/spend) exclude Z.AI
+        // and show the subscription only in the month projection.
+        const hasZaiRow = rows.some(r => r.provider === 'zai');
+        document.getElementById('by-period-note').innerHTML = hasZaiRow
+          ? '<div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-top:6px">' +
+            'Z.AI values are token-based estimates for relative usage, not billed spend. ' +
+            'Hard spend totals exclude Z.AI (subscription shown in the month projection).</div>'
+          : '';
       } catch (e) { /* chart stays empty */ }
     }
 
@@ -3071,11 +3211,27 @@
               '\u003cdiv style="width:80px;height:33px"\u003e\u003cimg src="' + logoSrc + '" style="width:80px;height:33px;object-fit:contain" alt="' + escapeHtml(prov) + '"\u003e\u003c/div\u003e' +
               '\u003c/div\u003e';
             for (const item of provItems) {
-              html += '\u003cdiv class="tt-row" style="padding-left:0"\u003e' + escapeHtml(item.model) + ': ' + fmtMoney(item.cost) + '\u003c/div\u003e';
+              html += '\u003cdiv class="tt-row" style="padding-left:0"\u003e' + escapeHtml(item.model) + ': ' + (item.provider === 'zai' && item.zai_credits != null && item.zai_credits > 0 ? fmtCredits(item.zai_credits) + ' credits' : (item.provider === 'zai' && zaiCredits(item) != null ? fmtCredits(zaiCredits(item)) + ' credits' : fmtMoney(item.cost))) + '\u003c/div\u003e';
             }
           }
 
-          html += '\u003cdiv class="tt-row tt-total"\u003eTotal: ' + fmtMoney(total) + '\u003c/div\u003e';
+          let zaiTotal = null; // credits (null = no priced zai models)
+          let otherTotal = 0;
+          for (const item of items) {
+            if (item.provider === 'zai') {
+              const credits = item.zai_credits != null && item.zai_credits > 0 ? item.zai_credits : zaiCredits(item);
+              if (credits != null) zaiTotal = (zaiTotal || 0) + credits;
+            } else {
+              otherTotal += +item.cost;
+            }
+          }
+          if (zaiTotal != null && otherTotal > 0) {
+            html += '\u003cdiv class="tt-row tt-total"\u003eTotal: ' + fmtMoney(otherTotal) + ' + ' + fmtCredits(zaiTotal) + ' credits\u003c/div\u003e';
+          } else if (zaiTotal != null) {
+            html += '\u003cdiv class="tt-row tt-total"\u003eTotal: ' + fmtCredits(zaiTotal) + ' credits\u003c/div\u003e';
+          } else {
+            html += '\u003cdiv class="tt-row tt-total"\u003eTotal: ' + fmtMoney(otherTotal) + '\u003c/div\u003e';
+          }
 
           // Position and show
           let el = document.getElementById('custom-tooltip');
@@ -3119,7 +3275,7 @@
       try {
         const range = getSavedRange();
         const since = timeRangeToSince(range);
-        const models = (await api('/api/by-model?since=' + encodeURIComponent(since))).filter(m => m.provider !== 'zai');
+        const models = (await api('/api/by-model?since=' + encodeURIComponent(since)));
 
         const hasData = models.length > 0;
         const modelLabels = hasData ? models.map(m => m.provider + ' / ' + m.model) : ['No data'];
@@ -3165,6 +3321,12 @@
             }
           }
         });
+        // Z.AI rows are token-based estimates (relative usage cue), not billed.
+        const hasZaiModel = models.some(m => m.provider === 'zai');
+        document.getElementById('by-model-note').innerHTML = hasZaiModel
+          ? '<div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-top:6px">' +
+            'Z.AI values are token-based estimates for relative usage, not billed spend.</div>'
+          : '';
       } catch (e) { /* chart stays empty */ }
     }
 
@@ -3625,6 +3787,7 @@
       loadHealth();
       loadModelControls();
       document.getElementById('toggle-tool-compression').addEventListener('change', saveGatewaySettings);
+      document.getElementById('toggle-peak-guard').addEventListener('change', saveGatewaySettings);
       loadBalances();
       loadMTD();
       reloadGraphs();

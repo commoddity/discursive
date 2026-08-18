@@ -16,6 +16,7 @@ type SanitizeConfig struct {
 	MaxTokensCap               int
 	ThinkingDisabled           bool              // retained for tests/compat; K2 uses EffortByModel off|on
 	EffortByModel              map[string]string // real model id → effort (from app settings)
+	ThinkingEnabledByModel     map[string]bool   // real model id → thinking on/off (GLM-4.7 family)
 }
 
 // DefaultSanitizeConfig returns product defaults.
@@ -27,6 +28,7 @@ func DefaultSanitizeConfig() SanitizeConfig {
 		MaxTokensCap:               maxTokensCap,
 		ThinkingDisabled:           true,
 		EffortByModel:              config.DefaultReasoningEffort(),
+		ThinkingEnabledByModel:     config.DefaultThinkingEnabled(),
 	}
 }
 
@@ -35,6 +37,7 @@ type SanitizeResult struct {
 	Body     map[string]any
 	Provider config.Provider
 	Model    string
+	Policy   ThinkingPolicy
 	Effort   string // effective reasoning effort sent upstream (or "n/a" / "off")
 }
 
@@ -116,6 +119,7 @@ func SanitizeRequest(body map[string]any, cfg SanitizeConfig) (SanitizeResult, e
 		Body:     body,
 		Provider: route.Provider,
 		Model:    route.RealModel,
+		Policy:   route.Policy,
 		Effort:   effectiveEffort(body, route),
 	}, nil
 }
@@ -155,10 +159,18 @@ func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
 	case PolicyZai:
 		// glm-5.3: thinking is ALWAYS enabled (disabled is not supported);
 		// choice is reasoning_effort low|high|max.
-		// glm-4.7: thinking on/off only (no reasoning_effort).
-		if route.RealModel == "glm-4.7" {
+		// glm-4.7 family: thinking on/off only (no reasoning_effort).
+		if zaiThinkingToggle(route.RealModel) {
 			delete(body, "reasoning_effort")
-			if effort == "" || effort == config.EffortOff {
+			// Per-model thinking toggle (GLM-4.7 family) wins when set; else
+			// fall back to the effort-derived default (off unless an effort is set).
+			if enabled, ok := cfg.ThinkingEnabledByModel[route.RealModel]; ok {
+				if enabled {
+					body["thinking"] = map[string]any{"type": "enabled"}
+				} else {
+					body["thinking"] = map[string]any{"type": "disabled"}
+				}
+			} else if effort == "" || effort == config.EffortOff {
 				body["thinking"] = map[string]any{"type": "disabled"}
 			} else {
 				body["thinking"] = map[string]any{"type": "enabled"}
@@ -173,6 +185,15 @@ func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
 			body["reasoning_effort"] = norm
 		}
 	}
+}
+
+// zaiThinkingToggle reports whether a Z.AI real model uses the thinking
+// {type: enabled|disabled} on/off shape (the GLM-4.7 family). GLM-5.3 uses a
+// reasoning_effort (always-thinks) shape instead.
+func zaiThinkingToggle(realModel string) bool {
+	return realModel == config.ModelZaiGLM47 ||
+		realModel == config.ModelZaiGLM47Flash ||
+		realModel == config.ModelZaiGLM47FlashX
 }
 
 // effectiveEffort reports the effort label for logs after policy application.

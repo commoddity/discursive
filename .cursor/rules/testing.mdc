@@ -23,4 +23,4 @@ both without conditional paths.
 | ----- | ---- | ----- |
 | Tests pass locally (`go test`) but fail in CI with no obvious code change | OS-dependent paths, runtime.GOOS assumptions, or missing `GOFLAGS` for tag-filtered tests | Run `GOFLAGS="-tags=!live" go test ./...` to match CI; verify `config.DataRoot()` usage in all tests that set `HOME` |
 
-<!-- last-verified: 2026-07 -->
+<!-- last-verified: 2026-08 -->

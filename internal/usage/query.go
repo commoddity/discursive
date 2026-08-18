@@ -52,6 +52,9 @@ type BucketModelBreakdown struct {
 	CacheHitTokens  uint64  `json:"cache_hit_tokens"`
 	CacheMissTokens uint64  `json:"cache_miss_tokens"`
 	EstUSD          float64 `json:"est_usd"`
+	// ZaiCredits is the coding-plan credit consumption for this bucket,
+	// computed per event with peak/off-peak rates. Zero for non-Z.AI rows.
+	ZaiCredits float64 `json:"zai_credits,omitempty"`
 }
 
 // Shared SQL prefixes. Each query method appends its WHERE / GROUP BY /
@@ -236,7 +239,64 @@ func (s *Store) QueryByDayModelSince(since time.Time, bucketMinutes int) ([]Buck
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows: %w", err)
 	}
+	if err := s.annotateZaiCredits(out, since, bucketMinutes); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// annotateZaiCredits fills ZaiCredits on zai rows by replaying the raw events
+// through the per-event credit calculation (which needs each event timestamp
+// for the peak/off-peak rate). Best-effort per row: unpriceable models keep 0.
+func (s *Store) annotateZaiCredits(out []BucketModelBreakdown, since time.Time, bucketMinutes int) error {
+	type key struct{ bucket, model string }
+	idx := make(map[key]int, len(out))
+	for i, bm := range out {
+		if bm.Provider == string(config.ProviderZai) {
+			idx[key{bm.Bucket, bm.Model}] = i
+		}
+	}
+	if len(idx) == 0 {
+		return nil
+	}
+	rows, err := s.db.Query(`SELECT timestamp, model, prompt_tokens, completion_tokens,
+	 cache_hit_tokens, cache_miss_tokens FROM events
+	 WHERE provider = ? AND timestamp >= ?`,
+		string(config.ProviderZai), since.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("query zai events for credits: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var ts, model string
+		var prompt, completion, hit, miss uint64
+		if err := rows.Scan(&ts, &model, &prompt, &completion, &hit, &miss); err != nil {
+			return fmt.Errorf("scan zai event: %w", err)
+		}
+		at, err := time.Parse(time.RFC3339, ts)
+		if err != nil {
+			continue
+		}
+		credits, err := ZaiCreditsAt(model, UsageTokens{
+			PromptTokens:     prompt,
+			CompletionTokens: completion,
+			CacheHitTokens:   hit,
+			CacheMissTokens:  miss,
+		}, at)
+		if err != nil {
+			continue // unknown model: leave bucket credits as-is
+		}
+		bucket := at.UTC().Format("2006-01-02")
+		if bucketMinutes > 0 {
+			bucketSecs := int64(bucketMinutes) * 60
+			epoch := at.UTC().Unix() / bucketSecs * bucketSecs
+			bucket = time.Unix(epoch, 0).UTC().Format("2006-01-02T15:04:05")
+		}
+		if i, ok := idx[key{bucket, model}]; ok {
+			out[i].ZaiCredits += credits
+		}
+	}
+	return rows.Err()
 }
 
 // QuerySessionDetail returns a DailySummary for a specific session ID.
@@ -516,6 +576,26 @@ func (s *Store) QueryProviderEstSince(since time.Time, bucketMinutes int) ([]Pro
 		return nil, fmt.Errorf("rows: %w", err)
 	}
 	return out, nil
+}
+
+// QueryFirstEventSince returns the timestamp of the earliest usage event for
+// the given provider at or after since. ok is false when no such event exists.
+// Used to estimate rolling-window quota resets (Z.AI 5-hour credits) that the
+// provider API does not expose.
+func (s *Store) QueryFirstEventSince(provider string, since time.Time) (t time.Time, ok bool, err error) {
+	q := `SELECT MIN(timestamp) FROM events WHERE provider = ? AND timestamp >= ?`
+	var ts sql.NullString
+	if err := s.db.QueryRow(q, provider, since.UTC().Format(time.RFC3339)).Scan(&ts); err != nil {
+		return time.Time{}, false, fmt.Errorf("query first event since: %w", err)
+	}
+	if !ts.Valid || ts.String == "" {
+		return time.Time{}, false, nil
+	}
+	t, err = time.Parse(time.RFC3339, ts.String)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("parse first event timestamp: %w", err)
+	}
+	return t.UTC(), true, nil
 }
 
 // DBStats holds database-level statistics.

@@ -8,7 +8,7 @@ alwaysApply: false
 
 Docs: https://api-docs.deepseek.com/  
 Pricing: https://api-docs.deepseek.com/quick_start/pricing  
-OpenAI-compat shapes: `examples/openai-openapi/` (local reference; do not vendor)
+OpenAI-compat shapes: `` (local reference; do not vendor)
 
 **Base URL (OpenAI format) default:** `https://api.deepseek.com` — see
 `internal/config/urls.go`.  

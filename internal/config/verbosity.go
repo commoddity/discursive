@@ -1,5 +1,7 @@
 package config
 
+import "strings"
+
 // VerbositySpec describes one model row for the usage-UI verbosity toggles.
 type VerbositySpec struct {
 	Model    string
@@ -9,9 +11,9 @@ type VerbositySpec struct {
 }
 
 // VerbosityCatalog is the canonical list of models with toggle-able output
-// verbosity control. Today only DeepSeek models are supported — they tend to
-// emit verbose reasoning prose, so the terseness directive + token cap apply
-// to them.
+// verbosity control. Applies the terseness directive + token cap to models
+// that tend to emit verbose prose in agentic coding loops (DeepSeek and
+// Z.AI GLM alike — the directive is model-agnostic prompt injection).
 func VerbosityCatalog() []VerbositySpec {
 	return []VerbositySpec{
 		{
@@ -24,6 +26,18 @@ func VerbosityCatalog() []VerbositySpec {
 			Model:    ModelDeepSeekV4Pro,
 			Provider: ProviderDeepSeek,
 			Label:    "DeepSeek V4 Pro",
+			Default:  false,
+		},
+		{
+			Model:    ModelZaiGLM47,
+			Provider: ProviderZai,
+			Label:    "GLM-4.7",
+			Default:  true,
+		},
+		{
+			Model:    ModelZaiGLM53,
+			Provider: ProviderZai,
+			Label:    "GLM-5.3",
 			Default:  false,
 		},
 	}
@@ -59,6 +73,12 @@ func VerbosityFor(m map[string]bool, model string) bool {
 	norm := NormalizeVerbosityMap(m)
 	if v, ok := norm[model]; ok {
 		return v
+	}
+	// [1m] suffix variants inherit their base model's setting (glm-5.3[1m] →
+	// glm-5.3) — the suffix is a Cursor-facing context variant, not a
+	// distinct verbosity target.
+	if base, ok := strings.CutSuffix(model, "[1m]"); ok {
+		return norm[base]
 	}
 	return false
 }

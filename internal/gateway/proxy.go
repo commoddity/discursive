@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,20 +66,62 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// Classify request for subagent-like cheap work and optionally downgrade
 	// to a cheaper model (e.g. simple lookups, code search → flash).
-	if result := s.router.ClassifyAndOverride(sanitized.Body, requestID); result.OverrideApplied {
-		sanitized.Model = result.OverrideModel
+	routerResult := s.router.ClassifyAndOverride(sanitized.Body, requestID)
+	if routerResult.ReleaseLaneSlot != nil {
+		defer routerResult.ReleaseLaneSlot()
+	}
+	// Free-tier Z.AI lane (set by the downgrade lane selector): route the
+	// request to the on-demand endpoint with the free key instead of the
+	// coding-plan endpoint, and skip the peak guard (the lane choice already
+	// accounted for peak pricing).
+	useFreeZai := routerResult.OverrideApplied && routerResult.OverrideModel == freeFlashModel
+	if routerResult.OverrideApplied {
+		sanitized.Model = routerResult.OverrideModel
 		// The override may map to a different provider (e.g. kimi-k3 →
-		// deepseek-v4-flash via the default fallback). Re-resolve the
-		// provider from the overridden model so the request is sent to the
-		// correct upstream. If the override model is unknown, fall back to a
-		// best-effort client error — we must not send a model to the wrong
-		// provider's endpoint.
-		if route, err := ResolveModel(result.OverrideModel); err != nil {
-			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("override model %q not resolvable: %v", result.OverrideModel, err), "provider", string(sanitized.Provider), "model", result.OverrideModel)
-			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("override model %q not resolvable: %v", result.OverrideModel, err), "upstream_error")
+		// glm-4.7 via the default fallback). Re-resolve the provider from the
+		// overridden model so the request is sent to the correct upstream. If
+		// the override model is unknown, fall back to a best-effort client
+		// error — we must not send a model to the wrong provider's endpoint.
+		if route, err := ResolveModel(routerResult.OverrideModel); err != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("override model %q not resolvable: %v", routerResult.OverrideModel, err), "provider", string(sanitized.Provider), "model", routerResult.OverrideModel)
+			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("override model %q not resolvable: %v", routerResult.OverrideModel, err), "upstream_error")
 			return
 		} else {
 			sanitized.Provider = route.Provider
+		}
+	}
+
+	// DeepSeek peak-hour hard guard: never route to a DeepSeek model during a
+	// peak hour. Runs after any downgrade so it is the last word before the
+	// provider is resolved for the final model. Skipped for the free Z.AI
+	// overflow lane (the lane choice already accounted for peak pricing).
+	if !useFreeZai {
+		if newModel, redirected := s.applyPeakGuard(sanitized.Model, requestID, nil); redirected {
+			sanitized.Model = newModel
+			sanitized.Body["model"] = newModel
+			route, err := ResolveModel(newModel)
+			if err != nil {
+				logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("peak redirect model %q not resolvable: %v", newModel, err), "model", newModel)
+				writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("peak redirect model %q not resolvable: %v", newModel, err), "upstream_error")
+				return
+			}
+			sanitized.Provider = route.Provider
+			sanitized.Policy = route.Policy
+			// Re-apply the thinking/sampling policy for the new model so a
+			// redirect to a GLM-thinking-toggle model emits the correct shape
+			// (the sanitizer originally applied the DeepSeek shape).
+			applyThinkingPolicy(sanitized.Body, route, s.sanitizeConfig())
+		}
+	}
+
+	// Thinking-effort coupling: for GLM-4.7-family models (thinking on/off),
+	// force thinking OFF on downgrade-safe (mechanical) classes even when the
+	// per-model toggle is on, so cheap turns stay fast/cheap while hard turns
+	// (editing / complex_reasoning) keep quality. The per-model live toggle is
+	// the baseline; this only narrows it downward on mechanical classes.
+	if route, err := ResolveModel(sanitized.Model); err == nil && zaiThinkingToggle(route.RealModel) {
+		if !thinkingClass(routerResult.RequestClass) {
+			sanitized.Body["thinking"] = map[string]any{"type": "disabled"}
 		}
 	}
 
@@ -92,17 +135,40 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		s.verbosity.ApplyRequest(sanitized.Body, sanitized.Model)
 	}
 
-	upstreamKey, err := s.upstreamKey(sanitized.Provider)
-	if err != nil {
-		logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
-		writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
-		return
+	// Pin the output language to English on every Z.AI-bound request (plan and
+	// free tier): GLM models intermittently drift to Chinese without an
+	// explicit pin. Runs after routing so it keys on the FINAL provider.
+	if sanitized.Provider == config.ProviderZai {
+		s.injectZaiLanguageDirective(sanitized.Body)
 	}
-	chatURL, err := s.chatURL(sanitized.Provider)
-	if err != nil {
-		logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
-		writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
-		return
+
+	var upstreamKey string
+	if useFreeZai {
+		k, kerr := s.zaiFreeUpstreamKey()
+		if kerr != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("free zai key: %v", kerr), "provider", string(sanitized.Provider), "model", sanitized.Model)
+			writeJSONError(w, http.StatusBadGateway, kerr.Error(), "upstream_error")
+			return
+		}
+		upstreamKey = k
+	} else {
+		upstreamKey, err = s.upstreamKey(sanitized.Provider)
+		if err != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
+			writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
+			return
+		}
+	}
+	var chatURL string
+	if useFreeZai {
+		chatURL = zaiOnDemandChatURL()
+	} else {
+		chatURL, err = s.chatURL(sanitized.Provider, sanitized.Model)
+		if err != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
+			writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
+			return
+		}
 	}
 
 	effort := sanitized.Effort
@@ -115,12 +181,27 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		"url", chatURL,
 	)
 
-	resp, err := s.doUpstream(r, chatURL, upstreamKey, sanitized.Body)
+	// Apply Z.AI concurrency limiter before the upstream call. The limiter
+	// prevents 429 (code 1305 "overloaded") and 1113 ("insufficient balance")
+	// storms by serializing concurrent Z.AI requests to stay within plan limits.
+	var releaseZaiSlot func()
+	if sanitized.Provider == config.ProviderZai && !useFreeZai {
+		releaseZaiSlot = s.acquireZaiSlot(r.Context())
+		defer releaseZaiSlot()
+	}
+
+	resp, err := s.doUpstreamWithRetry(r, chatURL, upstreamKey, sanitized.Body, requestID, sanitized.Model, sanitized.Provider, effort)
 	if err != nil {
 		logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("upstream request failed: %v", err), "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort)
 		writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("upstream request failed: %v", err), "upstream_error")
 		return
 	}
+	slog.Debug("proxy: upstream response received",
+		"request_id", requestID,
+		"provider", string(sanitized.Provider),
+		"model", sanitized.Model,
+		"status", resp.StatusCode,
+	)
 
 	// Buffer error / non-SSE responses; stream SSE success without buffering.
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 && wantsStream && isSSEContentType(resp.Header.Get("Content-Type")) {
@@ -153,6 +234,66 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		logRequest(requestID, "status", http.StatusBadGateway, "error", "failed reading upstream body", "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort)
 		writeJSONError(w, http.StatusBadGateway, "failed reading upstream body", "upstream_error")
 		return
+	}
+
+	// Z.AI quota-exhaustion fallback: when the plan rejects the request
+	// (429 code 1305/1113), retry once on the fallback lane — free-tier
+	// glm-4.7-flash at peak, deepseek-v4-flash off-peak.
+	if sanitized.Provider == config.ProviderZai && isZaiQuotaError(resp.StatusCode, respBody) {
+		fbModel, useFreeZai, ok := s.applyFallback(requestID, nil)
+		if ok {
+			fbBody := cloneMapDeep(sanitized.Body)
+			fbBody["model"] = fbModel
+			if fbRoute, rerr := ResolveModel(fbModel); rerr == nil {
+				applyThinkingPolicy(fbBody, fbRoute, s.sanitizeConfig())
+			}
+			var fbURL, fbKey string
+			if useFreeZai {
+				fbURL = zaiOnDemandChatURL()
+				k, kerr := s.zaiFreeUpstreamKey()
+				if kerr != nil {
+					logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback key unavailable: %v", kerr), "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort)
+					s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
+					return
+				}
+				fbKey = k
+			} else {
+				fbRoute2, rerr := ResolveModel(fbModel)
+				if rerr != nil {
+					logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback model not resolvable: %v", rerr), "provider", string(sanitized.Provider), "model", fbModel, "effort", effort)
+					s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
+					return
+				}
+				u, uerr := s.chatURL(fbRoute2.Provider, fbModel)
+				if uerr != nil {
+					logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback url: %v", uerr), "provider", string(fbRoute2.Provider), "model", fbModel, "effort", effort)
+					s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
+					return
+				}
+				k, kerr := s.upstreamKey(fbRoute2.Provider)
+				if kerr != nil {
+					logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback key: %v", kerr), "model", fbModel, "effort", effort)
+					s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
+					return
+				}
+				fbURL, fbKey = u, k
+			}
+			logRequest(requestID, "fallback", fbModel, "from", sanitized.Model, "provider", string(sanitized.Provider))
+			resp2, ferr := s.doUpstream(r, fbURL, fbKey, fbBody)
+			if ferr != nil {
+				logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("fallback request failed: %v", ferr), "model", fbModel, "effort", effort)
+				writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("upstream request failed: %v", ferr), "upstream_error")
+				return
+			}
+			fbProvider := config.ProviderZai
+			if !useFreeZai {
+				if fbRoute3, rerr := ResolveModel(fbModel); rerr == nil {
+					fbProvider = fbRoute3.Provider
+				}
+			}
+			s.finishUpstream(w, resp2, wantsStream, fbProvider, fbModel, effort, requestID, started)
+			return
+		}
 	}
 
 	if isToolCallIDError(resp.StatusCode, string(respBody)) {
@@ -272,5 +413,101 @@ func (s *Server) doUpstream(r *http.Request, url, apiKey string, body map[string
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	return s.client.Do(req)
+
+	// Log the outbound request for debugging flash model issues.
+	model := ""
+	if m, ok := body["model"]; ok {
+		model = fmt.Sprintf("%v", m)
+	}
+	slog.Debug("doUpstream: sending request",
+		"model", model,
+		"url", url,
+		"body_bytes", len(raw),
+	)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		slog.Warn("doUpstream: request failed",
+			"model", model,
+			"url", url,
+			"error", err,
+		)
+	}
+	return resp, err
+}
+
+// doUpstreamWithRetry wraps doUpstream with retry logic for Z.AI 429 (code 1305
+// "service may be temporarily overloaded") and 1113 ("insufficient balance or
+// no resource package") responses. These are concurrency/plan errors that often
+// clear on retry with backoff. We retry once with a 1s delay; if the second try
+// still fails, we surface the error to the caller (which logs at ERROR and
+// returns a 502 to Cursor). Non-Z.AI providers bypass retries and call
+// doUpstream directly.
+func (s *Server) doUpstreamWithRetry(r *http.Request, url, apiKey string, body map[string]any, requestID, model string, provider config.Provider, effort string) (*http.Response, error) {
+	const maxRetries = 1
+	// Short backoff: with the concurrency semaphore correctly sized to the
+	// plan limit, a 429 here means a transient blip — 1s just compounds
+	// latency on every affected turn.
+	const retryDelay = 250 * time.Millisecond
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		resp, err := s.doUpstream(r, url, apiKey, body)
+		if err != nil {
+			return nil, err
+		}
+		// Only retry Z.AI 429/1113 errors; everything else returns immediately.
+		if provider != config.ProviderZai || attempt == maxRetries {
+			return resp, nil
+		}
+		if resp.StatusCode != 429 {
+			return resp, nil
+		}
+		// Check if this is a retryable Z.AI error (code 1305 or 1113).
+		retryable := false
+		if bodyBytes, readErr := io.ReadAll(resp.Body); readErr == nil {
+			_ = resp.Body.Close()
+			var errObj map[string]any
+			if json.Unmarshal(bodyBytes, &errObj) == nil {
+				if code, ok := errObj["error"].(map[string]any)["code"]; ok {
+					if code == float64(1305) || code == float64(1113) {
+						retryable = true
+						slog.Info("zai_retry: backing off",
+							"request_id", requestID,
+							"model", model,
+							"code", code,
+							"attempt", attempt+1,
+							"max_attempts", maxRetries+1,
+						)
+					}
+				}
+			}
+		}
+		if !retryable {
+			return resp, nil
+		}
+		// Wait before retry.
+		select {
+		case <-time.After(retryDelay):
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		}
+	}
+	return nil, fmt.Errorf("retry exhausted for %s", model)
+}
+
+// zaiConcurrencyLimiter serializes concurrent Z.AI requests to stay within
+// plan concurrency limits (Pro ≈ 1–2 concurrent projects). The semacquire
+// blocks until a slot is available; the defer releases the slot. This prevents
+// 429 "overloaded" (code 1305) and "insufficient balance" (code 1113) storms
+// that occur when Cursor fan-outs 5–10 subagents at once.
+func (s *Server) acquireZaiSlot(ctx context.Context) func() {
+	if s.zaiSem == nil {
+		return func() {}
+	}
+	select {
+	case s.zaiSem <- struct{}{}:
+		// Got slot, will release on defer.
+	case <-ctx.Done():
+	}
+	return func() { <-s.zaiSem }
 }

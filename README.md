@@ -137,7 +137,9 @@ Change the model alias in Cursor's model picker — no restart needed:
 | `o3-mini`       | DeepSeek | `deepseek-v4-flash` | Cheap execution                                           |
 | `gpt-5-nano`    | Thaura   | `thaura`            | Ethical AI; optional provider                             |
 | `gpt-4.1-turbo` | Z.AI     | `glm-5.3`           | Planning; always thinks; cheaper than K3                 |
-| `gpt-4.1`       | Z.AI     | `glm-4.7`           | Cheap execution                                           |
+| `gpt-4.1`       | Z.AI     | `glm-4.7`           | Cheap execution; thinking on/off                          |
+| `gpt-4.1-mini`  | Z.AI     | `glm-4.7-flash`     | Free high-throughput tier; thinking on/off                |
+| `gpt-4.1-nano`  | Z.AI     | `glm-4.7-flashx`    | Low-cost paid speed tier; thinking on/off                 |
 | `gpt-4-turbo`   | Z.AI     | `glm-5.3`           | Compat alias (Cursor may rewrite `gpt-4.1-turbo` to this) |
 
 
@@ -174,13 +176,23 @@ determines whether the task is cheap enough for a flash model:
 
 | Request type                                          | Action             | Model               |
 | ----------------------------------------------------- | ------------------ | ------------------- |
-| Simple lookup / explanation                           | downgrade to flash | `deepseek-v4-flash` |
-| Code search / exploration                             | downgrade to flash | `deepseek-v4-flash` |
-| Structured extraction (`json_object` / `json_schema`) | downgrade to flash | `deepseek-v4-flash` |
-| Automation / mechanical work (lint, git, scripts, PR) | downgrade to flash | `deepseek-v4-flash` |
+| Simple lookup / explanation                           | downgrade to flash | `glm-4.7-flashx`    |
+| Code search / exploration                             | downgrade to flash | `glm-4.7-flashx`    |
+| Structured extraction (`json_object` / `json_schema`) | downgrade to flash | `glm-4.7-flashx`    |
+| Automation / mechanical work (lint, git, scripts, PR) | downgrade to flash | `glm-4.7-flashx`    |
 | Editing / refactoring                                 | keep model         | original model      |
 | Complex reasoning / architecture                      | keep model         | original model      |
 | Unknown / unclassified                                | keep model         | original model      |
+
+> **Downgrade target.** Flash downgrades land on `glm-4.7-flashx` (Z.AI Pro pool),
+> keeping cheap/subagent traffic inside the subscription credits. `glm-5.3`/`kimi-k3`
+> downgrade via `modelOverrideMap` to `glm-4.7-flashx` too; `deepseek-v4-pro` → `glm-4.7-flashx`.
+>
+> **DeepSeek peak-hour hard guard (on by default).** During DeepSeek peak hours
+> (01:00–04:00, 06:00–10:00 UTC) the gateway redirects any DeepSeek model to an
+> equivalent GLM Z.AI model — `deepseek-v4-flash` → `glm-4.7-flashx`,
+> `deepseek-v4-pro` → `glm-4.7` — so nothing routes to DeepSeek at its 2× peak
+> rates. Toggled live from the Usage Dashboard (DeepSeek peak-hour guard).
 
 
 
@@ -219,12 +231,13 @@ Tool-result compression reduces token cost during multi-turn agent sessions. It
 is toggleable from the usage dashboard (`http://127.0.0.1:4002` → **Model Controls**,
 no restart required):
 
-1. **Tool-result compression**: Tool output exceeding a character threshold is
+1. **Tool-result compression**: Tool output exceeding 24,000 chars (and 20,000+ aggregate) is
   summarized by a cheap model (`deepseek-v4-flash`).
 
-Compression is **fail-open**: if the summarizer model returns an empty or error
-result, the original content is sent upstream unchanged — there is no quality
-loss. Results are cached by content hash with singleflight deduplication, so
+Compression is **fail-open with truncation**: if the summarizer returns an empty summary
+(soft failure), the original content is truncated to 24,000 chars instead of failing
+open. Hard errors (network, auth) return the original content unchanged — there is no
+quality loss. Results are cached by content hash with singleflight deduplication, so
 repeated tool results (e.g. `ls` output, test output) are compressed only once.
 
 **When to use:** Multi-turn agent sessions with verbose tools (file reads, test
@@ -300,6 +313,11 @@ logs include an `effort` field on request/response/usage lines.
 expose this control.
 - `kimi-k2.7-code` always thinks — thinking is always on and there is no effort
 selector: [Kimi K2.7 Code](https://www.kimi.com/resources/kimi-k2-7-code)
+- The **GLM-4.7 family** (`glm-4.7`, `glm-4.7-flash`, `glm-4.7-flashx`) does **not**
+use `reasoning_effort` — it exposes a boolean **Thinking on/off** toggle (🧠, default
+OFF for cost) in the Usage Dashboard's Model Controls (`GET/PUT /api/thinking-enabled`).
+Mechanical turns (lookups/code-search/automation) force thinking OFF regardless of the
+toggle; editing/complex-reasoning turns honor it.
 - DeepSeek only documents `high`/`max` for effort: [DeepSeek Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)).
 
 
@@ -382,22 +400,30 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 | ------------ | ---------------- | ------------ | ------------- | ------------------------------------------------------------------------ |
 | `glm-5.3`    | $0.26            | $1.40        | $4.40         | Planning model; always thinks; reasoning_effort + cache |
 | `glm-4.7`    | $0.11            | $0.60        | $2.20         | Budget execution; thinking on/off                                        |
+| `glm-4.7-flashx` | $0.01        | $0.07        | $0.40         | Low-cost paid speed tier; thinking on/off                                |
+| `glm-4.7-flash` | $0 (free)     | $0 (free)    | $0 (free)     | Free high-throughput tier (30B-A3B MoE); thinking on/off                 |
 | `glm-4.6v`   | $0.05            | $0.30        | $0.90         | Vision worker — describes images for ALL providers (not user-selectable) |
 
-> **PROVISIONAL — `glm-5.3` has no published per-token rate yet.** Z.AI's rate card
+> **PROVISIONAL — `glm-5.3` and `glm-4.7-flash`/`glm-4.7-flashx` per-token rates.**
 > still lists GLM-5.2 as its newest row and the GLM-5.3 docs say "The GLM-5.3 API
 > is coming soon". The `glm-5.3` row above is GLM-5.2's card carried forward as a
-> stand-in. Update `internal/usage/pricing.go` + `internal/usageui/static/index.html`
-> (`PRICING`) + the pricing tests + `.cursor/rules/usage.mdc` and `zai.mdc` once
-> Z.AI publishes GLM-5.3 pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing).
+> stand-in; the `glm-4.7-flash`/`glm-4.7-flashx` rows are provisional on-demand
+> API rates with coding-plan terms TBD. Update `internal/usage/pricing.go` +
+> `internal/usageui/static/index.html` (`PRICING`) + the pricing tests +
+> `.cursor/rules/usage.mdc` and `zai.mdc` once Z.AI publishes authoritative
+> pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing).
 
 
-> **GLM-5.3 Coding Plan quota is points-based (2026-08).** Model calls consume
+> **GLM Coding Plan quota is points-based (2026-08).** Model calls consume
 > credits via multipliers per 10k tokens (input 6.9, cached input 1.7, output
 > 24); off-peak hours consume 50% of standard credits. The dashboard balance
-> panel reads Z.AI quota buckets (`data.limits[]`) generically, so the new
-> points model displays automatically. `discursive usage` still excludes Z.AI
-> from MTD/Today totals (flat-fee coding plan).
+> panel reads Z.AI quota buckets (`data.limits[]`) generically. Tiers (2026-08):
+> **Lite** = 2,000 / 5-hour, 10,000 / weekly; **Pro** = 12,000 / 5-hour,
+> 60,000 / weekly (6x Lite). `discursive usage` excludes Z.AI from MTD/Today
+> totals (flat-fee coding plan); the Z.AI subscription ($64/mo effective on Pro)
+> appears only in the month projection. The "Spend by Period"/"Spend by Model"
+> bar charts include Z.AI as token-based estimates for relative usage only — not
+> billed spend.
 >
 > **Image routing:** any request (any provider) that contains image content is
 > intercepted by the gateway and each image is described by Z.AI `glm-4.6v`
@@ -414,10 +440,10 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 - API key: [https://z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) (GLM Coding Plan key)
 
 
-| Parameter          | `glm-5.3`                                                     | `glm-4.7`               |
-| ------------------ | ------------------------------------------------------------- | ----------------------- |
-| `thinking`         | Always `{type: "enabled"}` (`disabled` is not supported)      | `{type: "enabled"       |
-| `reasoning_effort` | Always sent → `low`/`high`/`max`                              | Deleted (not supported) |
+| Parameter          | `glm-5.3`                                                     | `glm-4.7` / `glm-4.7-flash` / `glm-4.7-flashx`          |
+| ------------------ | ------------------------------------------------------------- | -------------------------------------------------------- |
+| `thinking`         | Always `{type: "enabled"}` (`disabled` is not supported)      | `{type: "enabled"\|"disabled"}` (per-model live toggle) |
+| `reasoning_effort` | Always sent → `low`/`high`/`max`                              | Deleted (not supported)                                 |
 
 
 ---

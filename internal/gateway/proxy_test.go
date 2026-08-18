@@ -44,6 +44,8 @@ func TestProxyDeepSeekImagesDescribedByVision(t *testing.T) {
 
 	dataRoot := t.TempDir()
 	settings := config.DefaultSettings()
+	// Peak guard OFF: test DeepSeek image+vision path directly.
+	settings.PeakGuardEnabled = false
 	if err := settings.EnsureGatewayKey(); err != nil {
 		t.Fatal(err)
 	}
@@ -310,6 +312,8 @@ func TestProxyImageWithoutVisionKeyFallsBack(t *testing.T) {
 
 	dataRoot := t.TempDir()
 	settings := config.DefaultSettings()
+	// Peak guard OFF for deterministic DeepSeek-routing in this test.
+	settings.PeakGuardEnabled = false
 	if err := settings.EnsureGatewayKey(); err != nil {
 		t.Fatal(err)
 	}
@@ -378,16 +382,16 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 	}))
 	t.Cleanup(moonshotUp.Close)
 
-	var deepseekModel string
-	var deepseekCalled atomic.Int32
-	deepseekUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		deepseekCalled.Add(1)
+	var zaiModel string
+	var zaiCalled atomic.Int32
+	zaiUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		zaiCalled.Add(1)
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		deepseekModel, _ = body["model"].(string)
-		_ = json.NewEncoder(w).Encode(mockCompletion(deepseekModel))
+		zaiModel, _ = body["model"].(string)
+		_ = json.NewEncoder(w).Encode(mockCompletion(zaiModel))
 	}))
-	t.Cleanup(deepseekUp.Close)
+	t.Cleanup(zaiUp.Close)
 
 	dataRoot := t.TempDir()
 	settings := config.DefaultSettings()
@@ -397,7 +401,7 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 	if err := settings.SetMoonshotKey(dataRoot, "sk-ms"); err != nil {
 		t.Fatal(err)
 	}
-	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
+	if err := settings.SetZaiKey(dataRoot, "sk-zai"); err != nil {
 		t.Fatal(err)
 	}
 	if err := config.Save(dataRoot, settings); err != nil {
@@ -409,11 +413,11 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 		GatewayKey:            settings.GatewayKey,
 		DataRoot:              dataRoot,
 		Settings:              &settings,
-		HTTPClient:            deepseekUp.Client(),
+		HTTPClient:            zaiUp.Client(),
 		SubAgentRouterEnabled: true,
 		ChatURLOverride: map[config.Provider]string{
 			config.ProviderMoonshot: moonshotUp.URL + "/moonshot/chat/completions",
-			config.ProviderDeepSeek: deepseekUp.URL + "/deepseek/chat/completions",
+			config.ProviderZai:      zaiUp.URL + "/zai/chat/completions",
 		},
 	})
 	if err != nil {
@@ -427,8 +431,8 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 
 	// gpt-4o resolves to kimi-k3 (Moonshot). It's a short, simple lookup —
 	// classified SimpleLookup → downgraded to defaultFlashModel
-	// (deepseek-v4-flash), which lives on DeepSeek. The request must reach the
-	// DeepSeek upstream with the overridden model.
+	// (glm-4.7), which lives on Z.AI. The request must reach the
+	// Z.AI upstream with the overridden model.
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
 		"model": "gpt-4o",
 		"messages": []any{
@@ -439,11 +443,11 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 		t.Fatalf("status %d body %s", res.StatusCode, body)
 	}
 
-	if deepseekCalled.Load() != 1 {
-		t.Fatalf("expected DeepSeek upstream to be called exactly once, got %d", deepseekCalled.Load())
+	if zaiCalled.Load() != 1 {
+		t.Fatalf("expected Z.AI upstream to be called exactly once, got %d", zaiCalled.Load())
 	}
-	if deepseekModel != "deepseek-v4-flash" {
-		t.Fatalf("expected overridden model deepseek-v4-flash sent to DeepSeek, got %q", deepseekModel)
+	if zaiModel != "glm-4.7" {
+		t.Fatalf("expected overridden model glm-4.7 sent to Z.AI, got %q", zaiModel)
 	}
 	if moonshotCalled.Load() != 0 {
 		t.Fatalf("Moonshot upstream was called %d times for a downgraded request, it must not be", moonshotCalled.Load())

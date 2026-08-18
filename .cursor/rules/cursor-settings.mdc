@@ -33,6 +33,8 @@ Primary Agent-safe aliases (see `gateway.mdc` for full map):
 | `gpt-5-nano`     | Thaura `thaura` (ethical AI; optional)         |
 | `gpt-4.1-turbo`  | Z.AI `glm-5.3` (planning; always thinks; cheaper than K3) |
 | `gpt-4.1`        | Z.AI `glm-4.7` (cheap execution)              |
+| `gpt-4.1-mini`   | Z.AI `glm-4.7-flash` (free high-throughput tier) |
+| `gpt-4.1-nano`   | Z.AI `glm-4.7-flashx` (low-cost paid speed tier) |
 | `gpt-4-turbo`    | Z.AI `glm-5.3` (**compat** — Cursor may rewrite `gpt-4.1-turbo` to this) |
 
 > **Heads-up:** Cursor sometimes rewrites `gpt-4.1-turbo` → `gpt-4-turbo` before

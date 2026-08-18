@@ -101,6 +101,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/reasoning-effort", s.handleReasoningEffort)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/verbosity", s.handleVerbosity)
+	mux.HandleFunc("/api/thinking-enabled", s.handleThinkingEnabled)
 	mux.HandleFunc("/api/zai-flat-fee", s.handleZaiFlatFee)
 
 	ln, err := net.Listen("tcp", s.addr)
@@ -218,12 +219,13 @@ func (s *Server) handleByDayModel(w http.ResponseWriter, r *http.Request) {
 	// Collect distinct models and index existing data.
 	modelSet := make(map[string]modelRow) // "provider::model" -> row
 	type bucketEntry struct {
-		Cost      float64
-		ReqCount  uint64
-		TokensIn  uint64
-		TokensOut uint64
-		CacheHit  uint64
-		CacheMiss uint64
+		Cost       float64
+		ReqCount   uint64
+		TokensIn   uint64
+		TokensOut  uint64
+		CacheHit   uint64
+		CacheMiss  uint64
+		ZaiCredits float64
 	}
 	existing := make(map[string]map[string]bucketEntry) // bucket -> "provider::model" -> entry
 	for _, r := range rows {
@@ -233,12 +235,13 @@ func (s *Server) handleByDayModel(w http.ResponseWriter, r *http.Request) {
 			existing[r.Bucket] = make(map[string]bucketEntry)
 		}
 		existing[r.Bucket][key] = bucketEntry{
-			Cost:      r.EstUSD,
-			ReqCount:  r.RequestCount,
-			TokensIn:  r.TokensIn,
-			TokensOut: r.TokensOut,
-			CacheHit:  r.CacheHitTokens,
-			CacheMiss: r.CacheMissTokens,
+			Cost:       r.EstUSD,
+			ReqCount:   r.RequestCount,
+			TokensIn:   r.TokensIn,
+			TokensOut:  r.TokensOut,
+			CacheHit:   r.CacheHitTokens,
+			CacheMiss:  r.CacheMissTokens,
+			ZaiCredits: r.ZaiCredits,
 		}
 	}
 
@@ -260,6 +263,7 @@ func (s *Server) handleByDayModel(w http.ResponseWriter, r *http.Request) {
 		TokensOut       uint64  `json:"tokens_out"`
 		CacheHitTokens  uint64  `json:"cache_hit_tokens"`
 		CacheMissTokens uint64  `json:"cache_miss_tokens"`
+		ZaiCredits      float64 `json:"zai_credits,omitempty"`
 	}
 	var flat []FlatRow
 	for t := floorSince; !t.After(floorUntil); t = t.Add(bucketDur) {
@@ -291,6 +295,7 @@ func (s *Server) handleByDayModel(w http.ResponseWriter, r *http.Request) {
 				TokensOut:       be.TokensOut,
 				CacheHitTokens:  be.CacheHit,
 				CacheMissTokens: be.CacheMiss,
+				ZaiCredits:      be.ZaiCredits,
 			})
 		}
 	}

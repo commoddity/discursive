@@ -6,6 +6,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/usage"
 )
 
 func TestFetchMoonshotBalance(t *testing.T) {
@@ -188,6 +192,78 @@ func TestHandleBalancesNoKeys(t *testing.T) {
 	}
 }
 
+func TestAnnotateZaiHourlyReset(t *testing.T) {
+	store := testStore(t)
+	now := time.Now().UTC()
+	// Z.AI event 1h ago: window opened then, reset in ~4h.
+	if _, err := store.Record(usage.Event{
+		SessionID: "s1", Provider: config.ProviderZai, Model: "glm-4.7",
+		Timestamp: now.Add(-1 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		buckets []CreditBucket
+		check   func(t *testing.T, b []CreditBucket)
+	}{
+		{
+			name: "5-hour bucket gets estimated reset",
+			buckets: []CreditBucket{
+				{Label: "Weekly", Remaining: 50000, NextResetMs: 1786438400971},
+				{Label: "5-Hour", Remaining: 9000},
+			},
+			check: func(t *testing.T, b []CreditBucket) {
+				var five *CreditBucket
+				for i := range b {
+					if b[i].Label == "5-Hour" {
+						five = &b[i]
+					}
+				}
+				if five == nil || five.NextResetMs == 0 {
+					t.Fatalf("5-Hour bucket missing reset: %+v", b)
+				}
+				want := now.Add(-1 * time.Hour).Add(5 * time.Hour)
+				got := time.UnixMilli(five.NextResetMs)
+				if diff := got.Sub(want); diff < -time.Minute || diff > time.Minute {
+					t.Fatalf("reset = %v, want ~%v", got, want)
+				}
+			},
+		},
+		{
+			name:    "provider-supplied reset not overwritten",
+			buckets: []CreditBucket{{Label: "5-Hour", Remaining: 9000, NextResetMs: 1234567890}},
+			check: func(t *testing.T, b []CreditBucket) {
+				if b[0].NextResetMs != 1234567890 {
+					t.Fatalf("reset overwritten: %d", b[0].NextResetMs)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := &Server{store: store}
+			zai := ProviderBalance{Configured: true, Credits: tt.buckets}
+			if err := srv.annotateZaiHourlyReset(&zai); err != nil {
+				t.Fatal(err)
+			}
+			tt.check(t, zai.Credits)
+		})
+	}
+
+	// No Z.AI spend in the window: nothing annotated.
+	empty := testStore(t)
+	srv := &Server{store: empty}
+	zai := ProviderBalance{Credits: []CreditBucket{{Label: "5-Hour"}}}
+	if err := srv.annotateZaiHourlyReset(&zai); err != nil {
+		t.Fatal(err)
+	}
+	if zai.Credits[0].NextResetMs != 0 {
+		t.Fatalf("expected no reset annotation, got %d", zai.Credits[0].NextResetMs)
+	}
+}
+
 func TestFetchZaiBalance(t *testing.T) {
 	zaiBody := `{"code":200,"msg":"Operation successful","success":true,"data":{"level":"lite","limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,"usage":2000,"remaining":1800,"percentage":10},{"type":"CREDIT_LIMIT","unit":6,"number":1,"usage":10000,"remaining":7500,"percentage":25,"nextResetTime":1786438400971}]}}`
 
@@ -303,29 +379,34 @@ func TestFetchZaiBalance(t *testing.T) {
 }
 
 func TestCollectZaiCreditBuckets(t *testing.T) {
+	now := time.Now().UTC()
+	weeklyReset := now.Add(6 * 24 * time.Hour).UnixMilli()
+	fiveHourReset := now.Add(90 * time.Minute).UnixMilli()
+	// Pro-plan shape: both buckets exceed 2000 usage; reset distance
+	// discriminates (5-hour resets within 5h, weekly within 7d).
 	limits := []zaiCreditLimit{
-		{Type: "CREDIT_LIMIT", Unit: 3, Number: 5, Remaining: 1800, Percentage: 10, Usage: 2000},
-		{Type: "CREDIT_LIMIT", Unit: 6, Number: 1, Remaining: 7500, Percentage: 25, Usage: 10000, NextResetTime: 1786438400971},
+		{Type: "CREDIT_LIMIT", Unit: 3, Number: 5, Remaining: 11655, Percentage: 2, Usage: 345, NextResetTime: fiveHourReset},
+		{Type: "CREDIT_LIMIT", Unit: 6, Number: 1, Remaining: 51745, Percentage: 13, Usage: 8255, NextResetTime: weeklyReset},
 	}
-	got, ok := collectZaiCreditBuckets(limits)
+	got, ok := collectZaiCreditBuckets(limits, now)
 	if !ok {
 		t.Fatal("expected buckets")
 	}
 	if len(got) != 2 {
 		t.Fatalf("got %d buckets: %+v", len(got), got)
 	}
-	// Weekly is first because it has the larger allowance.
-	if got[0].Label != "Weekly" || got[0].Remaining != 7500 || got[0].Percentage != 25 {
+	// Weekly is first by the ordering pass.
+	if got[0].Label != "Weekly" || got[0].Remaining != 51745 || got[0].Percentage != 13 {
 		t.Fatalf("weekly bucket wrong: %+v", got[0])
 	}
-	if got[0].NextResetMs != 1786438400971 {
-		t.Fatalf("weekly reset=%d want 1786438400971", got[0].NextResetMs)
+	if got[0].NextResetMs != weeklyReset {
+		t.Fatalf("weekly reset=%d want %d", got[0].NextResetMs, weeklyReset)
 	}
-	if got[1].Label != "5-Hour" || got[1].Remaining != 1800 {
+	if got[1].Label != "5-Hour" || got[1].Remaining != 11655 {
 		t.Fatalf("5-hour bucket wrong: %+v", got[1])
 	}
-	if got[1].NextResetMs != 0 {
-		t.Fatalf("5-hour bucket should not carry a reset: %+v", got[1])
+	if got[1].NextResetMs != fiveHourReset {
+		t.Fatalf("5-hour reset=%d want %d", got[1].NextResetMs, fiveHourReset)
 	}
 }
 

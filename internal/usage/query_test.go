@@ -2,12 +2,245 @@ package usage
 
 import (
 	"database/sql"
+	"math"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
 )
+
+func TestQueryFirstEventSince(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zai := config.ProviderZai
+	base := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	for _, ev := range []Event{
+		{SessionID: "s1", Provider: config.ProviderMoonshot, Model: "kimi-k3", Timestamp: base.Add(-6 * time.Hour)},
+		{SessionID: "s1", Provider: zai, Model: "glm-5.3", Timestamp: base.Add(-4 * time.Hour)},
+		{SessionID: "s1", Provider: zai, Model: "glm-4.7", Timestamp: base.Add(-1 * time.Hour)},
+	} {
+		if _, err := store.Record(ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		provider string
+		since    time.Time
+		wantOK   bool
+		want     time.Time
+	}{
+		{
+			name:     "zai within 5h window picks earliest zai event",
+			provider: string(zai),
+			since:    base.Add(-5 * time.Hour),
+			wantOK:   true,
+			want:     base.Add(-4 * time.Hour),
+		},
+		{
+			name:     "no zai events in narrow window",
+			provider: string(zai),
+			since:    base.Add(-30 * time.Minute),
+			wantOK:   false,
+		},
+		{
+			name:     "other provider excluded",
+			provider: "thaura",
+			since:    base.Add(-10 * time.Hour),
+			wantOK:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok, err := store.QueryFirstEventSince(tt.provider, tt.since)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok && !got.Equal(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestZaiCreditsAt(t *testing.T) {
+	// Tuesday 07:00 UTC = weekday 06:00–10:00 UTC peak window (14:00 SGT).
+	peak := time.Date(2026, 8, 18, 7, 0, 0, 0, time.UTC)
+	// Tuesday 12:00 UTC = off-peak; also Sunday 07:00 UTC = weekend off-peak.
+	offPeak := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	weekend := time.Date(2026, 8, 16, 7, 0, 0, 0, time.UTC) // Sunday
+
+	one := UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000}
+
+	tests := []struct {
+		name     string
+		model    string
+		tokens   UsageTokens
+		at       time.Time
+		want     float64
+		wantPeak bool
+	}{
+		{
+			name:   "glm53 peak input+output",
+			model:  "glm-5.3",
+			tokens: one,
+			at:     peak,
+			want:   690 + 2400,
+		},
+		{
+			name:   "glm53 off-peak half rate",
+			model:  "glm-5.3",
+			tokens: one,
+			at:     offPeak,
+			want:   (690 + 2400) / 2,
+		},
+		{
+			name:   "glm53 weekend same hour is off-peak",
+			model:  "glm-5.3",
+			tokens: one,
+			at:     weekend,
+			want:   (690 + 2400) / 2,
+		},
+		{
+			name:   "glm47 peak cached",
+			model:  "glm-4.7",
+			tokens: UsageTokens{CacheHitTokens: 2_000_000},
+			at:     peak,
+			want:   2 * 120,
+		},
+		{
+			name:   "glm46v vision worker off-peak",
+			model:  "glm-4.6v",
+			tokens: UsageTokens{PromptTokens: 1_000_000},
+			at:     offPeak,
+			want:   120 / 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ZaiCreditsAt(tt.model, tt.tokens, tt.at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if math.Abs(got-tt.want) > 1e-9 {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	if _, err := ZaiCreditsAt("glm-unknown", one, peak); err == nil {
+		t.Fatal("expected error for unknown model")
+	}
+}
+
+func TestZaiPeakHours(t *testing.T) {
+	tests := []struct {
+		name string
+		at   time.Time
+		want bool
+	}{
+		{"tuesday 06:00 peak start", time.Date(2026, 8, 18, 6, 0, 0, 0, time.UTC), true},
+		{"tuesday 09:59 peak", time.Date(2026, 8, 18, 9, 59, 0, 0, time.UTC), true},
+		{"tuesday 10:00 off-peak", time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC), false},
+		{"tuesday 05:59 off-peak", time.Date(2026, 8, 18, 5, 59, 0, 0, time.UTC), false},
+		{"saturday peak hours are off-peak", time.Date(2026, 8, 22, 7, 0, 0, 0, time.UTC), false},
+		{"sunday peak hours are off-peak", time.Date(2026, 8, 23, 7, 0, 0, 0, time.UTC), false},
+		{"monday peak", time.Date(2026, 8, 17, 7, 0, 0, 0, time.UTC), true},
+		{"friday peak", time.Date(2026, 8, 21, 7, 0, 0, 0, time.UTC), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ZaiPeakHours(tt.at); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestQueryByDayModelZaiCredits(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+
+	peak := time.Date(2026, 8, 18, 7, 0, 0, 0, time.UTC) // Tuesday 07:00 UTC
+	off := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC) // Tuesday 12:00 UTC
+	for _, ev := range []Event{
+		{SessionID: "s1", Provider: config.ProviderZai, Model: "glm-5.3",
+			PromptTokens: 1_000_000, Timestamp: peak},
+		{SessionID: "s1", Provider: config.ProviderZai, Model: "glm-5.3",
+			PromptTokens: 1_000_000, Timestamp: off},
+		{SessionID: "s1", Provider: config.ProviderMoonshot, Model: "kimi-k3",
+			PromptTokens: 1_000_000, Timestamp: peak},
+	} {
+		if _, err := store.Record(ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := store.QueryByDayModelSince(peak.Add(-1*time.Hour), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var zaiRow, otherRow *BucketModelBreakdown
+	for i := range rows {
+		if rows[i].Provider == string(config.ProviderZai) {
+			zaiRow = &rows[i]
+		} else {
+			otherRow = &rows[i]
+		}
+	}
+	if zaiRow == nil {
+		t.Fatal("no zai row")
+	}
+	// 690 peak + 345 off-peak (50% of 690)
+	if math.Abs(zaiRow.ZaiCredits-(690+345)) > 1e-6 {
+		t.Fatalf("zai credits = %v, want %v", zaiRow.ZaiCredits, 690+345)
+	}
+	if otherRow != nil && otherRow.ZaiCredits != 0 {
+		t.Fatalf("non-zai row should have zero credits: %+v", otherRow)
+	}
+}
+
+func TestQueryByDayModelZaiCreditsHourlyBuckets(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+
+	at := time.Date(2026, 8, 18, 7, 23, 0, 0, time.UTC) // inside 07:00 hourly bucket
+	if _, err := store.Record(Event{
+		SessionID: "s1", Provider: config.ProviderZai, Model: "glm-5.3",
+		PromptTokens: 1_000_000, Timestamp: at,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := store.QueryByDayModelSince(at.Add(-time.Hour), 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows: %+v", rows)
+	}
+	if rows[0].Bucket != "2026-08-18T07:00:00" {
+		t.Fatalf("bucket key = %q, want %q", rows[0].Bucket, "2026-08-18T07:00:00")
+	}
+	// Tuesday 07:23 UTC is in the weekday peak window: full rate.
+	if math.Abs(rows[0].ZaiCredits-690) > 1e-6 {
+		t.Fatalf("hourly bucket credits = %v, want 690", rows[0].ZaiCredits)
+	}
+}
 
 func TestQueryByModel(t *testing.T) {
 	root := t.TempDir()

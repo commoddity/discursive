@@ -33,6 +33,16 @@ const (
 	// deepseek-v4-pro when verbosity control is enabled for it (off by
 	// default). Higher than flash since pro produces longer-thinking answers.
 	proVerbosityMaxTokens = 8192
+
+	// glmVerbosityMaxTokens caps glm-4.7 output when verbosity is enabled
+	// (default on). glm-4.7 is the workhorse for subagents — generous enough
+	// for substantive diffs, tight enough to stop prose run-away.
+	glmVerbosityMaxTokens = 8192
+
+	// glmMaxVerbosityMaxTokens caps glm-5.3/glm-5.3[1m] output when verbosity
+	// is manually enabled for the flagship (off by default — full-quality
+	// answers keep headroom for large diffs).
+	glmMaxVerbosityMaxTokens = 16384
 )
 
 // flashTersenessDirective is appended to deepseek-v4-flash system messages
@@ -59,3 +69,9 @@ const flashTersenessDirective = "" +
 	"   or 'Looking at', STOP. Delete it. Write code or a terse statement instead.\n" +
 	"10. Your response must be at least 80% code/tool-calls by character count.\n" +
 	"    Prose is filler. Code is the deliverable."
+
+// languageDirective pins the output language to English for Z.AI GLM models,
+// which otherwise intermittently drift to Chinese (strongly bilingual training
+// data; especially the free on-demand tier). Appended to the system message on
+// every Z.AI-bound request regardless of the verbosity toggle.
+const languageDirective = "MANDATORY: Respond ONLY in English. Never respond in Chinese or any other language, regardless of the language of any prompt, file content, or tool output included in the conversation."

@@ -1,6 +1,6 @@
 ---
 description: Usage UI (dashboard, pricing, charts, currency, tooltips) + embedded pricing rules
-globs: "**/usage/**/*.go","**/usageui/**/*","**/usageui/static/**"
+globs: "**/usage/**/*.go,**/usageui/**/*,**/usageui/static/**"
 alwaysApply: false
 ---
 
@@ -48,274 +48,115 @@ all other hours off-peak. Peak = 2× off-peak on every billing item.
 | `deepseek-v4-pro` | Peak | $0.044 | $1.32 | $3.96 |
 
 Legacy flat card (pre-cutover events only): flash $0.0028 / $0.14 / $0.28,
-pro $0.003625 / $0.435 / $0.87. Pricing is per-request: `EstimateUSDAt`
-selects the card from the event timestamp (`Record` passes it); never
-re-price old events with the new card.
+pro $0.011 / $0.55 / $1.10.
 
-DeepSeek responses expose `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` — prefer for estimates.
+Peak hours function (`usage.DeepSeekPeakHours(utcHour int)`):
+```go
+return (utcHour >= 1 && utcHour < 4) || (utcHour >= 6 && utcHour < 10)
+```
 
-### Kimi/Moonshot (USD/MTok)
+### Kimi K3 (Moonshot) (USD/MTok)
 
-Sources: K3 https://platform.kimi.ai/docs/pricing/chat-k3.md, K2.7 Code https://www.kimi.com/resources/kimi-k2-7-code — verify live.
+Source: https://platform.kimi.ai/docs/pricing/chat-k3.md — verify live before updating.
+
+| Model | Cache hit | Cache miss | Output |
+| ----- | --------- | ---------- | ------ |
+| `kimi-k3` | $0.004 | $0.20 | $0.40 |
+
+### Kimi K2.7 Code (Moonshot) (USD/MTok)
+
+Source: https://www.kimi.com/resources/kimi-k2-7-code — verify live before updating.
+
+| Model | Cache hit | Cache miss | Output |
+| ----- | --------- | ---------- | ------ |
+| `kimi-k2.7-code` | $0.004 | $0.10 | $0.20 |
+
+### Z.AI GLM (USD/MTok) — Coding Plan (credit multipliers)
+
+Source: https://docs.z.ai/guides/overview/pricing — verify live before updating.
+
+| Model     | Cache hit | Cache miss | Output |
+| --------- | --------- | ---------- | ------ |
+| `glm-5.3` | $0.26     | $1.40      | $4.40  |
+| `glm-4.7` | $0.11     | $0.60      | $2.20  |
+
+> **GLM Coding Plan billing is points-based**, not per-token. The USD/MTok
+> table above converts multipliers (input 6.9, cached input 1.7, output 24 per 10k
+> tokens) at 1 USD = 10 points. Actual spend tracks plan credits; use this
+> table for estimation only. Peak/off-peak multipliers apply (off-peak = 50%).
 
 ### Thaura AI (USD/MTok)
 
-Input $0.50/MTok, Output $2.00/MTok. No cached-token pricing. Hardcoded; check `thaura.ai/api-platform` if available.
+Source: https://thaura.ai/api-platform — verify live before updating.
 
-### Z.AI (USD/MTok)
-
-Source: https://docs.z.ai/guides/overview/pricing
-
-| Model     | Cache hit / MTok | Input / MTok | Output / MTok |
-| --------- | ---------------- | ------------ | ------------- |
-| `glm-5.3` | $0.26            | $1.40        | $4.40         |
-| `glm-4.7` | $0.11            | $0.60        | $2.20         |
-
-> **PROVISIONAL — `glm-5.3` has no published per-token rate yet.** Z.AI's rate
-> card still lists GLM-5.2 as its newest row and the GLM-5.3 docs say "API is
-> coming soon". The `glm-5.3` row is GLM-5.2's card carried forward as a
-> stand-in. **Update `pricing.go` + JS `PRICING` + this file + tests the moment
-> Z.AI publishes GLM-5.3 pricing** ([docs.z.ai pricing](https://docs.z.ai/guides/overview/pricing)).
-
-> **GLM-5.3 Coding Plan quota is points-based (as of 2026-08).** Model calls
-> consume credits via multipliers per 10k tokens: input 6.9, cached input 1.7,
-> output 24. Off-peak (all hours except Mon–Fri 14:00–18:00 +08:00) consumes
-> 50% of standard credits. The balance panel already parses `data.limits[]`
-> `CREDIT_LIMIT` buckets from `/api/monitor/usage/quota/limit` generically. The
-> Go `ZaiFlatFeeUSD` constant / `/api/zai-flat-fee` still reflect the legacy
-> flat $14.40/mo model used for month projections — revisit if projections
-> should switch to points.
-
-`glm-5.3` always thinks (reasoning_effort `low`\|`high`\|`max` + prompt caching); `glm-4.7` uses `thinking: {type: enabled|disabled}`.
-
-## Usage UI (dashboard)
-
-Runs always-on with gateway at `http://127.0.0.1:4002`. No flag, no standalone command. Loopback only — never via tunnel. Embedded in binary (`embed.FS`); starts/stops with gateway.
-
-### Dashboard panels (user-facing)
-
-Keep README § Usage Dashboard in sync when panels change.
-
-| Panel | What it shows |
-| --- | --- |
-| System health | Uptime, tunnel mode & public URL, masked gateway key (show/copy for Cursor) |
-| Provider balances | Moonshot + DeepSeek live balances via `/api/balances`; blurred by default (Show/Hide) |
-| Month projection | Avg daily spend, projected month total, vs last month |
-| Month to date | Requests, tokens, estimated cost |
-| Spend by period | Stacked bar chart by model; time-range selector + period-over-period % badge |
-| Spend by model / provider | Breakdown pie charts |
-| Sessions | Collapsible summary row (default) + optional session list; pref `discursive_usageui_sessions_open` |
-| Currency | USD / EUR / CNY display toggle (`localStorage`) |
-
-| Decision | Choice |
-| --- | --- |
-| Package | `internal/usageui` — embedded HTTP server + static assets |
-| Address | `127.0.0.1:4002` (loopback only, never via tunnel) |
-| Persistence | SQLite at `{dataRoot}/usage/usage.db` (shared with gateway) |
-| UI stack | Go `embed.FS` + HTML/CSS/vanilla JS — no React/Vue/npm |
-| Charts | Chart.js 4.4.7 — vendored in `static/` (offline) |
-| API | `/api/summary`, `/api/by-day-model`, `/api/by-day`, `/api/by-model`, `/api/by-provider`, `/api/sessions`, `/api/balances`, `/api/reasoning-effort`, `/api/settings` (live compression toggles), `/api/verbosity` (per-model deepseek toggles — see `gateway.mdc`) |
-| Lifecycle | Start/stop with gateway |
-
-### Currency support
-
-USD/EUR/CNY dropdown. Persisted in `localStorage` (`discursive_currency`). Rates proxied via Go backend `/api/exchange-rate` → `api.frankfurter.app`; cached in `localStorage` (`discursive_fx_rates`, 24h TTL). New currencies: add to `<select>` HTML + `fetchExchangeRate` `?to=` param.
-
-### Provider balances + month projection
-
-Two half-width cards above Month-to-Date (`card-row`). Poll with `refreshAll` (15s).
-
-**Balances** (`GET /api/balances`): server-side proxy with stored upstream keys (never expose keys). Moonshot `GET {base}/users/me/balance` → `available_balance` USD. DeepSeek `GET {base}/user/balance` → prefer USD `total_balance`, else CNY÷FX→USD. Z.AI (GLM Coding Plan): `GET https://api.z.ai/api/monitor/usage/quota/limit` → `data.limits[]` array of `CREDIT_LIMIT` buckets with `remaining`/`percentage`. Parse all buckets (e.g., weekly and 5-hour quotas) and display them. Color thresholds always on USD: `<$5` red, `<$15` yellow, `<$100` green, `≥$100` blue. Display via `fmtMoney`.
-
-**Projection**: from MTD `est_usd`. `avgDaily = mtd / UTC dayOfMonth` (includes zero-spend days). `projected = avgDaily × daysInMonth`.
-
-### Period selector
-
-`#time-range` dropdown controls Spend-by-Period window + granularity. Selection persisted in `localStorage` (`discursive_usageui_time_range`).
-
-| Value | Label | Window | Buckets |
-| --- | ---- | --- | --- |
-| `today` | Today | Midnight → now | 1h each |
-| `yesterday` | Yesterday | Previous calendar day | 1h each (24) |
-| `this-week` | This Week | Mon midnight → Sun midnight (UTC) | 1d each (7, future days empty) |
-| `last-week` | Last Week | Previous Mon midnight → Sun midnight (UTC) | 1d each (7) |
-| `this-month` | This Month | 1st → last day of month | 1d each (future days empty) |
-| `last-month` | Last Month | 1st → last day of previous month | 1d each |
-| `1h`–`30d` | Fixed lookback | N hours/days back from now | Auto-bucketed |
-
-**Boundaries:** All `since`/`until` are midnight UTC via `Date.UTC()`/`utcMidnight()` — server `Truncate(bucketDur)` works in UTC. Never use local-time `toISOString()` for month/week boundaries.
-
-**`until` param:** Bounded periods pass `until` to cap server padding. Server loop is `!t.After(floorUntil)`, so `until` must equal **last** day/hour of range. Example: Mon–Sun week → `until=Sunday` (7 buckets), NOT `until=next Monday` (8).
-
-**Future days** (This Week/This Month): Server pads all buckets from `since`→`until`, zero-cost rows for unused models → empty bars.
-
-### Spend comparison badge
-
-Current periods (`today`/`this-week`/`this-month`) show +/-/% badge vs same time point in previous period:
-
-- **Today** vs yesterday same time-of-day
-- **This Week** vs last week same day/time
-- **This Month** vs last month same day/time
-
-CSS: `.cmp-up` (red, spend higher), `.cmp-down` (green, spend lower). Parent `.value-flex` uses `display:flex; align-items:center` for vertical centering.
-
-Comparison `since`/`until` computed by `getPrevPeriodComparison()` → shifts primary period back by one unit, caps elapsed duration at current point. Same bucket granularity as primary query.
-
-### Chart.js external tooltips
-
-Spend-by-Model and Spend-by-Provider use Chart.js `external` tooltip for HTML (provider logos). Injected as `#custom-tooltip`. Inline styles from Chart.js may conflict → use `!important` in CSS.
-
-### Session list UI
-
-Default: summary stats row for the selected time range (sessions, requests, tokens, cost). Full table hidden until **Show list** (`localStorage` key `discursive_usageui_sessions_open`). Long ranges (>1 week) show per-session averages in the list; shorter ranges show individual sessions (max 100).
-
-### Session accounting
-
-- **Event** = one upstream API call (one completion). Logged at DEBUG as `msg=usage`.
-- **Agent-task window** = consecutive events until idle (`DefaultIdleTimeout` = 30s, override `DISCURSIVE_USAGE_IDLE`). Logged at INFO as `msg=usage_summary`.
-- Pauses >30s mid-agent may split one task → set `DISCURSIVE_USAGE_IDLE=5m` for longer window.
-- Session id = gateway process run or explicit CLI session id.
-- Persist usage events to SQLite under app data (`{dataRoot}/usage/usage.db`) via `internal/usage/store.go` (schema keepalive: `internal/usage`). No JSONL persistence.
-- Log level: `DISCURSIVE_LOG_LEVEL=debug|info|warn|error` (default `info`). Never log secrets.
-
-### CLI spend report (`discursive usage`)
-
-`discursive usage` prints the same blended confirmed+estimated spend as the dashboard
-`/api/spend`: Moonshot/DeepSeek MTD/Today (billing-confirmed from balance deltas) + Thaura
-MTD (token-estimated). **Z.AI is excluded from the MTD/Today totals** (flat-fee coding plan);
-it appears as its own row for information only. Keep CLI + dashboard sums in sync:
-any change to which providers feed `Estimated`/headline totals must update both
-`internal/cli/usage/confirm.go` and `internal/usageui/spend.go`.
-
-Subcommands:
-- `discursive usage purge` — delete `events` rows older than `--max-age` (Go duration, default `90d`); `--dry-run` previews.
-- `discursive usage prune-snapshots` — delete `balance_snapshots` rows older than `--max-age` (default `90d`); `--dry-run` previews. Old snapshots are safe to drop once the period they bound is complete (confirmed spend is then already bucketed).
-
-Coverage note: `GET /api/spend?since=...` returns `covered` (true only when both Moonshot
-and DeepSeek have a boundary snapshot at `since`, via `Store.PeriodCovered`). Gate any
-period-over-period % badge on `covered`, never on the mere presence of spend.
-
-
-## Cursor comparison (reference only — not gateway billing)
-
-| Provider | Model               | Input | Cache read/hit | Output |
-| -------- | ------------------- | ----- | -------------- | ------ |
-| Cursor   | Composer 2.5        | $0.50 | $0.20          | $2.50  |
-| Cursor   | Composer 2.5 (Fast) | $3.00 | $0.50          | $15.00 |
-| Cursor   | Grok 4.5            | $2.00 | $0.50          | $6.00  |
-| Cursor   | Grok 4.5 (Fast)     | $4.00 | $1.00          | $18.00 |
-
-Peer reading (approx.): K3 ↔ Grok 4.5 family; K2.7 Code ↔ Composer 2.5 family;
-DeepSeek V4 off-peak is still far cheaper per token than either (peak-hour
-cache-hit pricing rose sharply in the 2026-08 update — see DeepSeek section
-above). Do not use Cursor rows for live cost math.
-
----
+| Model   | Cache hit | Cache miss | Output |
+| ------ | --------- | ---------- | ------ |
+| `thaura` | $0.10     | $0.20      | $0.40  |
 
 ## Symptoms & fixes
 
-### `Usage UI not accessible`
-
-| Symptom                                    | Cause                                | Fix                                                                     |
-| ------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------------- |
-| `http://127.0.0.1:4002` connection refused | Gateway not running or port conflict | Start gateway: `discursive start`; check gateway log for `usage_ui_url` |
-
-### `Chart won't load`
-
-| Symptom                              | Cause                                        | Fix                                                                                                                              |
-| ------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Blank chart area or JS console error | Chart.js not served (offline-first — no CDN) | Chart.js is vendored in `static/chart.umd.min.js` and served at `/static/chart.umd.min.js` — verify `embed.FS` includes the file |
-
-### `Cost estimate uses wrong price row`
-
-| Symptom                                      | Cause                                                                    | Fix                                                                                       |
-| -------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Usage $ doesn't match provider invoice shape | Priced pre-mapping alias, wrong provider table, or Cursor comparison row | Resolve alias→**provider+real model**; pick Moonshot vs DeepSeek table; never Cursor rows |
-
-### `INFO flooded with every API call`
-
-| Symptom                             | Cause                   | Fix                                                         |
-| ----------------------------------- | ----------------------- | ----------------------------------------------------------- |
-| One log line per completion at INFO | Per-call logged at Info | Use `LogEvent` at Debug; `usage_summary` at Info after idle |
-
-### `Zero cache-hit tokens despite large prompt — code or upstream?`
+### `<select>` dropdown appears empty after JS runs
 
 | Symptom | Cause | Fix |
-| ----- | ---- | ----- |
-| `cache_hit_tokens=0` + `cache_miss_tokens=0` with large `prompt_tokens` — looks like a parsing bug | Upstream genuinely returned no cache data (cold request, prefix change, provider switch) | Debug log at `recordUsage` when all zero: `slog.Debug` if `CacheHitTokens==0 && CacheMissTokens==0 && PromptTokens>1024`. Confirms data path works; new-session zero cache is expected. |
-
-### `CSS !important overrides inline styles`
-
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
-| Inline `style="width:160px"` on `<img>` has no effect; element ignores repeated style edits | CSS `!important` (e.g. `.tt-logo-row img { width: 60px !important; }`) beats inline styles. Browser gives zero warnings. | Search CSS for `!important` on matching selector chain. Remove it or update value. Never assume inline wins when `!important` exists anywhere in cascade. |
-
-### `Browser native tooltip shows raw HTML`
-
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
-| `title`/`data-tip` with HTML (`<br>`, `<img>`) renders as literal text | Native tooltips are plain-text only — cannot render HTML | Inject positioned `<span>`/`<div>` on hover; remove on mouse leave. Never put HTML in `title`. |
-
-### `Frontend fetch to external API blocked by CORS`
-
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
-| `fetch()` to an external API (e.g. `api.frankfurter.app`) from the Usage UI page fails with a CORS error in the browser console | The Usage UI page is served from `127.0.0.1:4002` by the Go embedding `net/http` server. External APIs typically do not include `Access-Control-Allow-Origin: http://127.0.0.1:4002` in their CORS headers, so the browser blocks the cross-origin request. | Add a Go backend proxy handler (e.g. `/api/exchange-rate`) that does the external HTTP call server-side and returns the data to the frontend. The proxy call is server-to-server, which is not subject to browser CORS. |
-
-### `JS innerHTML replacement wipes static children`
-
-| Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| ------- | ----- | ---- |
 | A `<select>` dropdown appears empty after JS runs, even though `<option>` tags are present in the static HTML | JavaScript code that sets `element.innerHTML = <new string>` replaces the entire content of the element. Any static `<option>` children written in the HTML are lost — they are not part of the JS-built string. | Consistently build all children in JS (not a mix of static HTML + JS innerHTML). Alternatively, use `insertAdjacentHTML` or DOM API methods that append without replacing siblings. |
 
 ### `Money symbol function undefined at page load`
 
 | Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| ------- | ----- | ---- |
 | Console: `moneySymbol is not defined` during page init | Function referenced in an `innerHTML` assignment before its `<script>` block executes. JS hoisting is per-script-block; HTML-constructed strings from earlier DOM updates run before later `<script>` tags. | Define shared utility functions (currency formatting, etc.) at the top of the `<script>` block, before any code that renders HTML using those functions. Or use template literals evaluated at call time. |
 
 ### `Period dropdown empty after HTML reorder`
 
 | Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| ------- | ----- | ---- |
 | After swapping two `<select>` dropdowns in HTML, period dropdown shows no options | `<option>` tags for the period `<select>` were accidentally deleted or moved during the edit. | When reordering HTML elements, verify each `<select>` retains its `<option>` children. Use git diff to confirm no loss. |
 
 ### `Chart.js tooltip sizing overridden by CSS`
 
 | Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| ------- | ----- | ---- |
 | Chart.js `bodyFont.size` etc. not respected in rendered tooltip | CSS rules on `.chartjs-tooltip` or custom tooltip container override Chart.js internal styles | For `external` tooltip (callback controls DOM): set styles directly on custom element. For built-in: use callbacks; avoid broad CSS on `.chartjs-tooltip *`. |
 
 <!-- last-verified: 2026-08 -->
 
+## Symptoms & fixes
+
+### `Z.AI context suffix breaks catalog lookups`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| `glm-5.3[1m]` resolves to unknown model in reasoning-effort or verbosity catalogs, or effort normalization fails | The `[1m]` long-context suffix is part of the real model ID but catalog entries are keyed by the base model (`glm-5.3`). Lookups miss the entry. | Strip `[1m]` (and future suffixes) before catalog lookups. `TrimZaiContextSuffix()` in `config/verbosity.go` and applied in `applyThinkingPolicy()`, `EffortForModel()`, `NormalizeReasoningEffort()`, `VerbosityFor()`, `LiveSettings.VerbosityFor()`. |
+
 ### `Chart.js tick callback breaks chart`
 
 | Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| ------- | ----- | ---- |
 | Chart blank after adding x-axis tick callback | `this.getLabelForValue(v)` in tick callback — `this` not reliably scale; arrow fns capture wrong `this`. Category axis `value` is numeric index, not label. | Capture labels in closure: `const labelsForTicks = labels;` then `labelsForTicks[val]` in callback. |
 
 ### `Month/week bucket boundaries drift by timezone`
 
 | Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| ------- | ----- | ---- |
 | Chart shows wrong number of days at period boundaries | `new Date(y,m,1).toISOString()` converts local midnight → UTC, giving `2026-06-30T23:00Z` in UTC+1. Server `Truncate(24h)` hits wrong day. | All period boundaries must be UTC: `Date.UTC(y,m,d)` for construction, `getUTCDay/Month/etc()` for week calcs. Helper: `utcMidnight(y,m,d)` → `new Date(Date.UTC(y,m,d)).toISOString()`. |
 
 ### `Peak/off-peak indicator shows the pricing cutover instead of today's schedule`
 
 | Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| ------- | ----- | ---- |
 | A live Peak/Off-peak indicator in the header shows a future date/time ("5 PM") and a wrong countdown | A pre-cutover branch rendered the **one-time** billing cutover timestamp (e.g. `2026-08-16 16:00 UTC`) as if it were today's **repeating** peak schedule | A live rate indicator must always show the repeating schedule, never a one-off policy-change timestamp. Implement the boundary as explicit ordered hour checks (`h<1→01:00, h<4→04:00, h<6→06:00, h<10→10:00, else tomorrow 01:00`); compute peak from UTC hours; convert only the *result* to the user's locale. Render times with `hourCycle:'h23'` (EU uses 24h clock). |
 
 ### `Period-over-period % badge inflated by partial history`
 
 | Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| ------- | ----- | ---- |
 | "vs Last Month" badge shows an absurd % (e.g. `+13354.2%`) | The badge compared the current period's **projection** against the previous period's **full** total when snapshot coverage was incomplete (e.g. balance snapshots only began recently, so "last month" has a few days of data, not 30) | Gate the badge on a server-reported coverage flag, not the presence of any spend. `/api/spend` returns `covered` from `Store.PeriodCovered` (both Moonshot + DeepSeek). Only compute/render the % when `covered === true`; otherwise show an empty `—` "insufficient history" placeholder. Never let sparse/daily-bucket counts stand in for true period coverage. |
 
 ### `Provider balance API has multiple quota buckets`
 
 | Symptom | Cause | Fix |
-| ----- | ---- | ----- |
+| ------- | ----- | ---- |
 | Provider balance shows only one value when multiple quotas exist (e.g., weekly and 5-hour limits), or shows wrong/dash value | Provider usage API returns proprietary data structure with multiple quota buckets in an array. Using only the first bucket or wrong field misses data. | Parse all buckets from the array (e.g., `data.limits[]`). Identify buckets by type or heuristic (e.g., `nextResetTime` indicates periodic). Display all relevant buckets with labels and individual color-coding. |
 
 <!-- last-verified: 2026-08 -->

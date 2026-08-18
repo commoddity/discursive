@@ -78,4 +78,4 @@ Secrets: tunnel token via `discursive set --tunnel-token <token>` → encrypted 
 | ----- | ---- | ----- |
 | `/health` fails on public hostname | No Published application route to gateway port | CF dashboard: hostname → `http://127.0.0.1:{port}` |
 
-<!-- last-verified: 2026-07 -->
+<!-- last-verified: 2026-08 -->

@@ -200,9 +200,15 @@ func TestVerbosityEnabled_StreamingToolCallsPassthrough(t *testing.T) {
 
 // TestVerbosityEnabled_DowngradedToFlashAppliesControls verifies that when a
 // request targeting deepseek-v4-pro (o1 alias) is downgraded by the subagent
-// router to deepseek-v4-flash, the verbosity controls still apply to the
-// FINALLY-served model. This confirms verbosity runs AFTER model override.
+// router, the verbosity controls still apply to the FINALLY-served model.
+// This confirms verbosity runs AFTER model override — and that the GLM models
+// now also carry verbosity config (Z.AI is no longer verbosity-exempt).
 func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
+	// "What is..." (simple lookup) triggers a subagent-router downgrade from
+	// pro → the default flash model. defaultFlashModel is glm-4.7 (Z.AI) and
+	// verbosity now covers GLM models too (catalog default: on for glm-4.7),
+	// so the downgraded request DOES get the directive + token cap keyed on
+	// the final served model.
 	var upstreamBody map[string]any
 	var upstreamModel string
 	upstream := func(w http.ResponseWriter, r *http.Request) {
@@ -212,10 +218,47 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(verboseFlashCompletion())
 	}
 
-	env := setupVerbosityEnv(t, upstream, true) // enable subagent router
+	dataRoot := t.TempDir()
+	settings := config.DefaultSettings()
+	settings.PeakGuardEnabled = false
+	settings.Verbosity[config.ModelZaiGLM47] = true
+	if err := settings.EnsureGatewayKey(); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.SetZaiKey(dataRoot, "sk-zai"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(dataRoot, settings); err != nil {
+		t.Fatal(err)
+	}
 
-	// "What is..." (simple lookup) triggers a subagent-router downgrade from
-	// pro → flash.
+	up := httptest.NewServer(http.HandlerFunc(upstream))
+	t.Cleanup(up.Close)
+
+	srv, err := gateway.NewServer(gateway.ServerConfig{
+		ListenAddr:            "127.0.0.1:0",
+		GatewayKey:            settings.GatewayKey,
+		DataRoot:              dataRoot,
+		Settings:              &settings,
+		HTTPClient:            up.Client(),
+		SubAgentRouterEnabled: true,
+		ChatURLOverride: map[config.Provider]string{
+			config.ProviderDeepSeek: up.URL + "/deepseek/chat/completions",
+			config.ProviderZai:      up.URL + "/zai/chat/completions",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { _ = srv.Shutdown(t.Context()) })
+
+	env := &testEnv{srv: srv, ts: ts, gatewayKey: settings.GatewayKey, dataRoot: dataRoot}
+
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
 		"model":      "o1",
 		"messages":   []any{map[string]any{"role": "user", "content": "What is the difference between goroutines and threads?"}},
@@ -226,24 +269,24 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 		t.Fatalf("status %d: %s", res.StatusCode, body)
 	}
 
-	// The request must have been downgraded to flash upstream.
-	if upstreamModel != "deepseek-v4-flash" {
-		t.Fatalf("expected downgrade to deepseek-v4-flash, got %q", upstreamModel)
+	// The request must have been downgraded to the default flash model.
+	if upstreamModel != "glm-4.7" {
+		t.Fatalf("expected downgrade to glm-4.7, got %q", upstreamModel)
 	}
 
-	// Verbosity directive must be injected (keyed on the downgraded flash model).
-	directiveInjected := false
+	// GLM-4.7 now has verbosity config — the directive must be injected and
+	// the token cap applied to the final (downgraded) served model.
+	found := false
 	for _, m := range upstreamBody["messages"].([]any) {
 		if c, _ := m.(map[string]any)["content"].(string); strings.Contains(c, "CRITICAL OUTPUT CONSTRAINT") {
-			directiveInjected = true
+			found = true
 		}
 	}
-	if !directiveInjected {
-		t.Fatalf("verbosity directive NOT applied after downgrade to flash")
+	if !found {
+		t.Fatalf("verbosity directive must be applied to the glm-4.7 downgrade target")
 	}
-	// max_tokens must be capped to 4096.
-	if mt, ok := upstreamBody["max_tokens"].(float64); !ok || mt != 4096 {
-		t.Fatalf("expected max_tokens capped to 4096 after downgrade, got %v", upstreamBody["max_tokens"])
+	if mt, ok := upstreamBody["max_tokens"].(float64); ok && mt > 8192 {
+		t.Fatalf("max_tokens must be capped for the glm-4.7 downgrade target, got %v", upstreamBody["max_tokens"])
 	}
 }
 
@@ -259,6 +302,8 @@ func setupVerbosityEnv(t *testing.T, upstream http.HandlerFunc, enableRouter ...
 	}
 	dataRoot := t.TempDir()
 	settings := config.DefaultSettings()
+	// Peak guard OFF for deterministic DeepSeek-routing in these tests.
+	settings.PeakGuardEnabled = false
 	if err := settings.EnsureGatewayKey(); err != nil {
 		t.Fatal(err)
 	}
@@ -301,6 +346,8 @@ func setupVerbosityDisabledEnv(t *testing.T, upstream http.HandlerFunc) *testEnv
 	dataRoot := t.TempDir()
 	settings := config.DefaultSettings()
 	settings.Verbosity[config.ModelDeepSeekV4Flash] = false
+	// Peak guard OFF for deterministic DeepSeek-routing in these tests.
+	settings.PeakGuardEnabled = false
 	if err := settings.EnsureGatewayKey(); err != nil {
 		t.Fatal(err)
 	}

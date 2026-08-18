@@ -30,6 +30,8 @@ func TestResolveModel(t *testing.T) {
 		{name: "zai glm-4.7 alias", request: "gpt-4.1", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
 		{name: "real glm-5.3", request: "glm-5.3", provider: config.ProviderZai, model: "glm-5.3", policy: PolicyZai},
 		{name: "real glm-4.7", request: "glm-4.7", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
+		{name: "real glm-4.7-flash resolves to plan model", request: "glm-4.7-flash", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
+		{name: "real glm-4.7-flashx resolves to plan model", request: "glm-4.7-flashx", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
 		{name: "unknown", request: "gpt-3.5-turbo", wantErr: true},
 	}
 	for _, tt := range tests {

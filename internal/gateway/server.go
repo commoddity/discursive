@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
@@ -44,20 +45,23 @@ type ServerConfig struct {
 
 // Server is the loopback gateway HTTP server.
 type Server struct {
-	cfg         ServerConfig
-	mux         *http.ServeMux
-	httpSrv     *http.Server
-	client      *http.Client
-	store       *usage.Store
-	agg         *usage.Aggregator
-	sessionID   string
-	settings    *config.AppSettings
-	live        *config.LiveSettings
-	vision      *vision.Describer
-	visionCache interface{ Close() error } // durable image-description cache; nil in tests
-	router      *SubAgentRouter
-	compressor  *Compressor
-	verbosity   *verbosity.Controller
+	cfg            ServerConfig
+	mux            *http.ServeMux
+	httpSrv        *http.Server
+	client         *http.Client
+	store          *usage.Store
+	agg            *usage.Aggregator
+	sessionID      string
+	settings       *config.AppSettings
+	live           *config.LiveSettings
+	vision         *vision.Describer
+	visionCache    interface{ Close() error } // durable image-description cache; nil in tests
+	router         *SubAgentRouter
+	compressor     *Compressor
+	verbosity      *verbosity.Controller
+	zaiSem         chan struct{} // limits concurrent Z.AI requests (plan concurrency)
+	glm47Lane      chan struct{} // glm-4.7 downgrade lane (cap = plan concurrency limit)
+	glm47LaneInUse atomic.Int64  // concurrent in-flight requests using the glm-4.7 lane
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -135,7 +139,25 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 			CompletionTokens: completionTokens,
 		})
 	})
-	s.router = NewSubAgentRouter(SubAgentRouterConfig{Enabled: cfg.SubAgentRouterEnabled})
+	s.router = NewSubAgentRouter(SubAgentRouterConfig{
+		Enabled: cfg.SubAgentRouterEnabled,
+		// Lane selection for glm-4.7 downgrades: first N concurrent requests
+		// stay on glm-4.7 (plan concurrency limit), overflow goes elsewhere.
+		PickDowngradeModel: func(candidate, requestID string) (string, func()) {
+			if candidate != "glm-4.7" {
+				return candidate, nil
+			}
+			return s.selectDowngradeLane(requestID, nil)
+		},
+	})
+
+	// Z.AI concurrency limiter: glm-4.7 plan concurrency is 2; the semaphore
+	// blocks excess Z.AI traffic until a slot frees (instead of letting it
+	// hit upstream and eat a guaranteed 429 + retry cycle).
+	s.zaiSem = make(chan struct{}, glm47LaneCap)
+	// glm-4.7 downgrade lane: downgrade selection is non-blocking — overflow
+	// is delegated to another lane (see selectDowngradeLane) instead of queueing.
+	s.glm47Lane = make(chan struct{}, glm47LaneCap)
 
 	// Always allocate the compressor and verbosity controller so they can be
 	// enabled/disabled at runtime from the usage dashboard without a restart.
@@ -182,6 +204,20 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 			"deepseek-v4-pro": {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              proVerbosityMaxTokens,
+			},
+			"glm-4.7": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              glmVerbosityMaxTokens,
+			},
+			// glm-5.3[1m] normalizes to glm-5.3 — registered under both ids so
+			// the controller lookup hits regardless of suffix presence.
+			"glm-5.3": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              glmMaxVerbosityMaxTokens,
+			},
+			"glm-5.3[1m]": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              glmMaxVerbosityMaxTokens,
 			},
 		},
 	})
@@ -297,7 +333,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return srv.Shutdown(ctx)
 }
 
-func (s *Server) chatURL(provider config.Provider) (string, error) {
+func (s *Server) chatURL(provider config.Provider, model string) (string, error) {
 	if s.cfg.ChatURLOverride != nil {
 		if u, ok := s.cfg.ChatURLOverride[provider]; ok && u != "" {
 			return u, nil
@@ -369,8 +405,10 @@ func (s *Server) sanitizeConfig() SanitizeConfig {
 	scfg := DefaultSanitizeConfig()
 	if s.live != nil {
 		scfg.EffortByModel = s.live.EffortMap()
+		scfg.ThinkingEnabledByModel = s.live.ThinkingEnabledMap()
 	} else if s.settings != nil {
 		scfg.EffortByModel = config.NormalizeReasoningEffortMap(s.settings.ReasoningEffort)
+		scfg.ThinkingEnabledByModel = config.NormalizeThinkingEnabledMap(s.settings.ThinkingEnabled)
 	}
 	return scfg
 }
