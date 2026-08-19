@@ -78,6 +78,23 @@ and defaults to `low` (cost-conscious, mirroring Kimi K3).
 | Coding plan | https://docs.z.ai/devpack/overview                  |
 | Console     | https://z.ai/manage-apikey/billing                  |
 
+## Plan concurrency (capacity model)
+
+`glm-4.7` (and the whole GLM Coding Plan) allows ~2 concurrent requests.
+The gateway enforces ONE shared budget (`zaiSem`, cap 2) across every
+coding-plan client — chat, router downgrades, and the `glm-4.6v` vision
+worker. When the budget is full:
+
+- **Direct glm-4.7/glm-5.3**: ~2s grace wait, then **overflow** to
+  `deepseek-v4-flash` (off-peak) or free `glm-4.7-flash` (peak) via
+  `acquireZaiLaneOrOverflow`.
+- **Router downgrades**: non-blocking, overflow immediately via
+  `selectDowngradeLane`.
+- **Vision**: blocks on `zaiSem` (chat yields first).
+
+Never queue on glm-4.7 when a fast lane exists — queueing is the perceived
+slowness. Overflow policy lives in `internal/gateway/fallback.go`.
+
 ## Color (usage UI)
 
 | Provider | CSS variable | Hex       |
@@ -111,5 +128,13 @@ Coding Plan tiers (2026-08): **Lite** = 2,000 / 5-hour, 10,000 / weekly;
 | Symptom                                                              | Cause                                                                                                                                                                                          | Fix                                                                                                                                                                                         |
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Z.AI returns 429 (code 1305 \"overloaded\" / 1113 \"insufficient balance\") for `glm-4.7-flash` / `glm-4.7-flashx` | Flash models are **NOT on the coding plan endpoint** (`/api/coding/paas/v4`). They are **on-demand only** (`/api/paas/v4`) and require a separate API key. The gateway was routing flash requests to the plan endpoint, causing capacity/credit rejections. | Remap all flash model IDs (`glm-4.7-flash`, `glm-4.7-flashx`) and their aliases (`gpt-4.1-mini`, `gpt-4.1-nano`) to `glm-4.7` (plan-supported). Use the on-demand endpoint (`/api/paas/v4`) with a separate free-tier key only as peak-hour fallback when plan is exhausted. |
+
+<!-- last-verified: 2026-08 -->
+
+### `GLM-4.7 feels extremely slow when used in more than one place`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| GLM-4.7 (or glm-5.3) turns take 20-45s when the main chat + parallel subagents all use it | Coding-plan concurrency is ~2; excess requests **queue inside the gateway** (or 429 upstream) instead of overflowing to a fast model. A queued glm-4.7 request is far slower than a ~2s cached deepseek-v4-flash turn. | One shared `zaiSem` (cap 2) budgets ALL coding-plan traffic. Direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow to deepseek/flash). Buy = don't queue: keep glm-4.7 for the 2 highest-value concurrent turns only. |
 
 <!-- last-verified: 2026-08 -->

@@ -27,6 +27,10 @@ const freeFlashModel = "glm-4.7-flash"
 
 var errNoZaiFreeKey = errors.New("zai free-tier key not configured")
 
+// hasZaiFreeKeyFunc allows tests to stub the free-tier key availability
+// check for applyFallback. nil-safe: always assigned to the real method.
+var hasZaiFreeKeyFunc = (*Server).hasZaiFreeKey
+
 // deepseekPeakNow reports whether the current instant is inside DeepSeek's
 // peak pricing window (when deepseek-v4-flash bills at 2x, prefer the free
 // Z.AI flash lane instead). nowUTC is injectable for tests; nil = time.Now.
@@ -65,7 +69,7 @@ func isZaiQuotaError(status int, body []byte) bool {
 // must be used. ok=false means no fallback could be computed.
 func (s *Server) applyFallback(requestID string, nowUTC func() time.Time) (model string, useFreeZai bool, ok bool) {
 	if deepseekPeakNow(nowUTC) {
-		if s.hasZaiFreeKey() {
+		if hasZaiFreeKeyFunc(s) {
 			slog.Warn("fallback: zai quota exhausted during deepseek peak → free glm-4.7-flash",
 				"request_id", requestID)
 			return freeFlashModel, true, true

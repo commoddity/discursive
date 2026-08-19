@@ -56,6 +56,13 @@ type Describer struct {
 	sfg     singleflight.Group
 	descMu  sync.Mutex // guards descriptionCounter
 	counter int        // per-replace cycle image counter
+
+	// acquireSlot, when set, reserves a Z.AI plan-concurrency slot before each
+	// upstream vision call and returns a release func. Vision shares the same
+	// coding-plan concurrency budget as chat (glm-4.6v lives on the plan
+	// endpoint), so unslotted vision calls would over-subscribe the plan and
+	// cause 429 storms that stall chat turns.
+	acquireSlot func(ctx context.Context) func()
 }
 
 type cacheEntry struct {
@@ -90,6 +97,15 @@ func (d *Describer) SetPersistentCache(c descCache) {
 func (d *Describer) SetUsageRecorder(r UsageRecorder) {
 	if d != nil {
 		d.record = r
+	}
+}
+
+// SetPlanSlotter installs a slot-acquire hook so vision calls share the
+// gateway's Z.AI plan-concurrency budget. The hook reserves a slot before each
+// upstream describe and returns a release func. Nil = unslotted (tests).
+func (d *Describer) SetPlanSlotter(acquire func(ctx context.Context) func()) {
+	if d != nil {
+		d.acquireSlot = acquire
 	}
 }
 
@@ -348,6 +364,16 @@ func (d *Describer) describeImage(ctx context.Context, imgURL, hash string) (str
 	key, ok := d.getZaiKey()
 	if !ok || key == "" {
 		return "", ErrNoVisionKey
+	}
+
+	// Share the Z.AI plan-concurrency budget: block until a slot frees so a
+	// burst of images can't over-subscribe the plan and 429-stall chat turns.
+	if d.acquireSlot != nil {
+		release := d.acquireSlot(ctx)
+		defer release()
+		if err := ctx.Err(); err != nil {
+			return "", fmt.Errorf("vision: waiting for plan slot: %w", err)
+		}
 	}
 
 	reqBody := map[string]any{

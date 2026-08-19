@@ -119,6 +119,20 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		return *k, true
 	}
 	s.vision = vision.NewDescriber(s.client, visionURL, zaiKeyFn)
+	// Vision calls hit the same Z.AI coding-plan endpoint, so they must share
+	// the plan-concurrency budget with chat: block on a zaiSem slot before each
+	// describe (with a correct no-op release when the ctx expired unacquired).
+	s.vision.SetPlanSlotter(func(ctx context.Context) func() {
+		if s.zaiSem == nil {
+			return func() {}
+		}
+		select {
+		case s.zaiSem <- struct{}{}:
+			return func() { <-s.zaiSem }
+		case <-ctx.Done():
+			return func() {}
+		}
+	})
 	// Install a durable description cache so historical images (resent by
 	// Cursor on every turn) are resolved without re-invoking the vision model.
 	// This keeps a rate-limited vision provider from breaking later turns that

@@ -117,7 +117,36 @@ model-specific quirks.
 
 | Symptom | Cause | Fix |
 | ------- | ----- | ---- |
-| Z.AI returns 429 "service overloaded" intermittently under heavy subagent load | Concurrent Z.AI requests exceed plan capacity (concurrency limits, not just token quota). | Acquire semaphore slot before Z.AI upstream call (`s.acquireZaiSlot()`, 4-slot limit in `NewServer()`), release after response (`defer releaseZaiSlot()`). Retry once on 429 with 1s delay (`doUpstreamWithRetry()`). |
+| Z.AI returns 429 "service overloaded" intermittently under heavy subagent load | Concurrent Z.AI requests exceed plan capacity (concurrency limits, not just token quota) | Hold all coding-plan traffic to ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2); direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow), router downgrades stay non-blocking via `selectDowngradeLane`. Retry once on 429 with 1s delay. |
+
+> **Shared plan-budget model (2026-08).** All Z.AI **coding-plan** traffic is bound
+> by ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2). Chat and vision share it.
+> Direct glm-4.7/glm-5.3 requests use `acquireZaiLaneOrOverflow` — a ~2s grace wait
+> for a slot, then **overflow** to a fast lane (`deepseek-v4-flash` off-peak, free
+> `glm-4.7-flash` at peak) instead of queueing 20-45s. Router downgrades stay
+> non-blocking via `selectDowngradeLane`. Never queue on glm-4.7 when a fast lane
+> exists — queueing is the effective slowdown users feel.
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| Direct glm-4.7 request hangs 20-45s when the plan's 2 slots are busy (main chat + parallel subagents) | `acquireZaiSlot` blocked the goroutine indefinitely instead of overflowing | Use `acquireZaiLaneOrOverflow` (2s grace, then overflow). No `zaiSlotGraceWait`==0 call sites (2s const). |
+| Cancelled request drains a slot it never took, shrinking effective capacity | `acquireZaiSlot` returned a releasing closure even when `ctx.Done()` fired pre-acquire | Release closure must be a no-op when the slot was never acquired |
+
+### `Vision bypasses the plan concurrency budget`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| glm-4.6v describe calls 429/stall chat turns while the plan is saturated | Vision described images on the same coding-plan endpoint with its own `maxConcurrent` semaphore, invisible to the chat budget | Wire `s.vision.SetPlanSlotter` to block on the same `zaiSem` before each describe. One budget, one endpoint. |
+
+<!-- last-verified: 2026-08 -->
+
+### `Verifying a gateway fix against a stale process`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| New gateway log lines never appear after a code change; behavior identical to before the edit | The running gateway is the pre-fix binary — source edited but never rebuilt/restarted | Compare process start + binary mtime to source mtime BEFORE reading logs: `ps -o pid,lstart -p "$(pgrep discursive | head -1)"`; `ls -l "$(go env GOPATH)/bin/discursive"`. If the process predates the edit, stop reading logs and ask the user to `go install ./... && discursive stop && discursive start`. |
+
+<!-- last-verified: 2026-08 -->
 
 ## Retry logic (transient Z.AI errors)
 
@@ -178,22 +207,23 @@ model-specific quirks.
 ## Global subagent model sizing (flash fleet)
 
 The live subagent fleet lives in `/.cursor/agents/` (10 files).
-All agents now use `model: gpt-4.1` (GLM-4.7) for consistent plan-supported
-model with thinking auto-disabled on mechanical classes via request classifier.
+All agents now use `model: o3-mini` (deepseek-v4-flash) so the high-volume
+flash fleet never competes with the main chat's glm-4.7 plan slots (2
+concurrent) — cached deepseek turns answer in ~2s vs 20-45s queued on GLM.
 Free tier fallback handles peak-hour exhaustion automatically.
 
 | Agent | model: | Rationale |
 | ----- | ------ | --------- |
-| explore-flash | `gpt-4.1` | Read-only search/read/cite; high volume |
-| browser-flash | `gpt-4.1` | Read-only fetch + extract + cite |
-| web-researcher-flash | `gpt-4.1` | Read-only search + cite synthesis |
-| doc-writer-flash | `gpt-4.1` | Prose generation from diffs |
-| bash-flash | `gpt-4.1` | Multi-step CLI loops; tool/agentic chops |
-| refactor-flash | `gpt-4.1` | Mechanical, must not break call-sites |
-| test-runner-flash | `gpt-4.1` | Runs tests + simple fixes |
-| implementer-flash | `gpt-4.1` | Writes working code |
-| code-reviewer-flash | `gpt-4.1` | Finds correctness bugs |
-| verifier-flash | `gpt-4.1` | Independent validation |
+| explore-flash | `o3-mini` | Read-only search/read/cite; high volume |
+| browser-flash | `o3-mini` | Read-only fetch + extract + cite |
+| web-researcher-flash | `o3-mini` | Read-only search + cite synthesis |
+| doc-writer-flash | `o3-mini` | Prose generation from diffs |
+| bash-flash | `o3-mini` | Multi-step CLI loops; tool/agentic chops |
+| refactor-flash | `o3-mini` | Mechanical, must not break call-sites |
+| test-runner-flash | `o3-mini` | Runs tests + simple fixes |
+| implementer-flash | `o3-mini` | Writes working code |
+| code-reviewer-flash | `o3-mini` | Finds correctness bugs |
+| verifier-flash | `o3-mini` | Independent validation |
 
 Keep this table in sync when editing `/.cursor/agents/*.md`.
 

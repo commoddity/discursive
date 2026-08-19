@@ -142,6 +142,34 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		s.injectZaiLanguageDirective(sanitized.Body)
 	}
 
+	// Reserve a Z.AI plan slot (or overflow to a fast lane) BEFORE resolving
+	// the key/URL, because the overflow decision can change the provider and
+	// endpoint. Doing this after key/URL resolution would send the overflowed
+	// model to the wrong upstream.
+	var releaseZaiSlot func()
+	if sanitized.Provider == config.ProviderZai && !useFreeZai {
+		chosen, release, ok := s.acquireZaiLaneOrOverflow(sanitized.Model, requestID, nil)
+		if !ok {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", "zai lane: request cancelled while waiting for slot", "model", sanitized.Model)
+			writeJSONError(w, http.StatusBadGateway, "request cancelled while waiting for zai slot", "upstream_error")
+			return
+		}
+		releaseZaiSlot = release
+		defer releaseZaiSlot()
+		if chosen != sanitized.Model {
+			slog.Info("zai_lane: direct request overflow", "request_id", requestID, "from", sanitized.Model, "to", chosen)
+			sanitized.Model = chosen
+			sanitized.Body["model"] = chosen
+			if chosen == freeFlashModel {
+				useFreeZai = true
+			} else if route, rerr := ResolveModel(chosen); rerr == nil {
+				sanitized.Provider = route.Provider
+				sanitized.Policy = route.Policy
+				applyThinkingPolicy(sanitized.Body, route, s.sanitizeConfig())
+			}
+		}
+	}
+
 	var upstreamKey string
 	if useFreeZai {
 		k, kerr := s.zaiFreeUpstreamKey()
@@ -180,15 +208,6 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		"stream", wantsStream,
 		"url", chatURL,
 	)
-
-	// Apply Z.AI concurrency limiter before the upstream call. The limiter
-	// prevents 429 (code 1305 "overloaded") and 1113 ("insufficient balance")
-	// storms by serializing concurrent Z.AI requests to stay within plan limits.
-	var releaseZaiSlot func()
-	if sanitized.Provider == config.ProviderZai && !useFreeZai {
-		releaseZaiSlot = s.acquireZaiSlot(r.Context())
-		defer releaseZaiSlot()
-	}
 
 	resp, err := s.doUpstreamWithRetry(r, chatURL, upstreamKey, sanitized.Body, requestID, sanitized.Model, sanitized.Provider, effort)
 	if err != nil {
@@ -495,19 +514,44 @@ func (s *Server) doUpstreamWithRetry(r *http.Request, url, apiKey string, body m
 	return nil, fmt.Errorf("retry exhausted for %s", model)
 }
 
-// zaiConcurrencyLimiter serializes concurrent Z.AI requests to stay within
-// plan concurrency limits (Pro ≈ 1–2 concurrent projects). The semacquire
-// blocks until a slot is available; the defer releases the slot. This prevents
-// 429 "overloaded" (code 1305) and "insufficient balance" (code 1113) storms
-// that occur when Cursor fan-outs 5–10 subagents at once.
-func (s *Server) acquireZaiSlot(ctx context.Context) func() {
+// acquireZaiLaneOrOverflow reserves a Z.AI plan slot for a direct (non-
+// downgraded) request, or overflows to a fast lane when both slots are busy.
+// Unlike the router downgrade path (which never blocks), direct requests get
+// a short grace wait — the user explicitly picked this model, so we give a
+// slot a chance to free before rerouting. Returns (chosenModel, release, ok);
+// ok=false means the wait context expired.
+func (s *Server) acquireZaiLaneOrOverflow(model, requestID string, nowUTC func() time.Time) (string, func(), bool) {
 	if s.zaiSem == nil {
-		return func() {}
+		return model, func() {}, true
 	}
+	// Non-blocking first try.
 	select {
 	case s.zaiSem <- struct{}{}:
-		// Got slot, will release on defer.
+		return model, func() { <-s.zaiSem }, true
+	default:
+	}
+	// Short grace wait — slot may free momentarily.
+	ctx, cancel := context.WithTimeout(context.Background(), zaiSlotGraceWait)
+	defer cancel()
+	select {
+	case s.zaiSem <- struct{}{}:
+		slog.Info("zai_lane: slot freed within grace wait", "request_id", requestID, "model", model)
+		return model, func() { <-s.zaiSem }, true
 	case <-ctx.Done():
 	}
-	return func() { <-s.zaiSem }
+	// Overflow: same policy as the downgrade lane.
+	fbModel, useFreeZai, ok := s.applyFallback(requestID, nowUTC)
+	if !ok {
+		// No fallback computable — block on the slot rather than 429.
+		s.zaiSem <- struct{}{}
+		return model, func() { <-s.zaiSem }, true
+	}
+	_ = useFreeZai // caller re-derives from model == freeFlashModel
+	return fbModel, func() {}, true
 }
+
+// zaiSlotGraceWait is how long a direct Z.AI request waits for a plan slot
+// before overflowing to a fast lane. Short enough that a queued request is
+// rerouted before the user notices a stall; long enough to absorb bursty
+// double-submits (main chat + one subagent finishing).
+const zaiSlotGraceWait = 2 * time.Second
