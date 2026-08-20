@@ -44,6 +44,7 @@ func serveGateway(version, dataRoot string, settings config.AppSettings, subAgen
 		"has_deepseek_key", live.HasDeepSeekKey(),
 		"has_thaura_key", live.HasThauraKey(),
 		"has_zai_key", live.HasZaiKey(),
+		"has_openrouter_key", live.HasOpenRouterKey(),
 		"gateway_key", snap.GatewayKey,
 		"session_id", srv.SessionID(),
 		"usage_ui_url", "http://127.0.0.1:4002",
@@ -117,16 +118,17 @@ func startUsageUI(version string, srv *gateway.Server, live *config.LiveSettings
 	uiSrv := usageui.NewServer("127.0.0.1:4002", srv.Store())
 	uiSrv.SetLive(live)
 	uiSrv.SetHealth(usageui.HealthInfo{
-		Version:        version,
-		PID:            os.Getpid(),
-		HasMoonshotKey: live.HasMoonshotKey(),
-		HasDeepSeekKey: live.HasDeepSeekKey(),
-		HasThauraKey:   live.HasThauraKey(),
-		HasZaiKey:      live.HasZaiKey(),
-		TunnelMode:     config.NormalizeTunnelMode(snap.TunnelMode),
-		PublicURL:      publicURL,
-		LocalPort:      int(snap.LocalPort),
-		GatewayKey:     snap.GatewayKey,
+		Version:          version,
+		PID:              os.Getpid(),
+		HasMoonshotKey:   live.HasMoonshotKey(),
+		HasDeepSeekKey:   live.HasDeepSeekKey(),
+		HasThauraKey:     live.HasThauraKey(),
+		HasZaiKey:        live.HasZaiKey(),
+		HasOpenRouterKey: live.HasOpenRouterKey(),
+		TunnelMode:       config.NormalizeTunnelMode(snap.TunnelMode),
+		PublicURL:        publicURL,
+		LocalPort:        int(snap.LocalPort),
+		GatewayKey:       snap.GatewayKey,
 	})
 	uiSrv.SetKeySource(usageui.KeySource{
 		Moonshot: func() (string, bool) {
@@ -145,6 +147,13 @@ func startUsageUI(version string, srv *gateway.Server, live *config.LiveSettings
 		},
 		Zai: func() (string, bool) {
 			k, err := live.GetZaiKey()
+			if err != nil || k == nil || *k == "" {
+				return "", false
+			}
+			return *k, true
+		},
+		OpenRouter: func() (string, bool) {
+			k, err := live.GetOpenRouterKey()
 			if err != nil || k == nil || *k == "" {
 				return "", false
 			}

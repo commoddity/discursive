@@ -16,12 +16,13 @@ import (
 
 // Flags holds non-interactive init/set values from CLI flags.
 type Flags struct {
-	Moonshot  string
-	Deepseek  string
-	Thaura    string
-	Zai       string
-	Tunnel    string
-	PublicURL string
+	Moonshot   string
+	Deepseek   string
+	Thaura     string
+	Zai        string
+	OpenRouter string
+	Tunnel     string
+	PublicURL  string
 }
 
 // Opts controls setup behavior when invoked from init vs start.
@@ -33,12 +34,13 @@ type Opts struct {
 // NewCmd returns the init subcommand.
 func NewCmd(portable func() bool) *cobra.Command {
 	var (
-		moonshotFlag  string
-		deepseekFlag  string
-		thauraFlag    string
-		zaiFlag       string
-		tunnelFlag    string
-		publicURLFlag string
+		moonshotFlag   string
+		deepseekFlag   string
+		thauraFlag     string
+		zaiFlag        string
+		openRouterFlag string
+		tunnelFlag     string
+		publicURLFlag  string
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -50,12 +52,13 @@ Secrets are encrypted at rest and never sent to Cursor.
 Run this once, or let 'discursive start' trigger it automatically.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return RunSetup(cmd, portable, Flags{
-				Moonshot:  moonshotFlag,
-				Deepseek:  deepseekFlag,
-				Thaura:    thauraFlag,
-				Zai:       zaiFlag,
-				Tunnel:    tunnelFlag,
-				PublicURL: publicURLFlag,
+				Moonshot:   moonshotFlag,
+				Deepseek:   deepseekFlag,
+				Thaura:     thauraFlag,
+				Zai:        zaiFlag,
+				OpenRouter: openRouterFlag,
+				Tunnel:     tunnelFlag,
+				PublicURL:  publicURLFlag,
 			}, Opts{ForceAll: true})
 		},
 	}
@@ -63,6 +66,7 @@ Run this once, or let 'discursive start' trigger it automatically.`,
 	cmd.Flags().StringVar(&deepseekFlag, "deepseek-key", "", "DeepSeek API key (omit to prompt)")
 	cmd.Flags().StringVar(&thauraFlag, "thaura-key", "", "Thaura AI API key (optional, omit to skip)")
 	cmd.Flags().StringVar(&zaiFlag, "zai-key", "", "Z.AI API key (optional, omit to skip)")
+	cmd.Flags().StringVar(&openRouterFlag, "openrouter-key", "", "OpenRouter API key (optional peak-hour DeepSeek fallback)")
 	cmd.Flags().StringVar(&tunnelFlag, "tunnel-token", "", "Cloudflare tunnel token (omit to prompt)")
 	cmd.Flags().StringVar(&publicURLFlag, "public-url", "", "public HTTPS base URL ending in /v1 (omit to prompt)")
 	return cmd
@@ -98,6 +102,7 @@ func RunSetup(cmd *cobra.Command, portable func() bool, flags Flags, opts Opts) 
 			"has_deepseek_key", s.HasDeepSeekKey(),
 			"has_thaura_key", s.HasThauraKey(),
 			"has_zai_key", s.HasZaiKey(),
+			"has_openrouter_key", s.HasOpenRouterKey(),
 			"has_tunnel_token", s.HasTunnelToken(),
 		)
 		return nil
@@ -168,6 +173,13 @@ func RunSetup(cmd *cobra.Command, portable func() bool, flags Flags, opts Opts) 
 	// Z.AI is optional — only save if a flag was explicitly set.
 	if flags.Zai != "" {
 		if err := s.SetZaiKey(dataRoot, flags.Zai); err != nil {
+			return err
+		}
+	}
+
+	// OpenRouter is optional — only save if a flag was explicitly set.
+	if flags.OpenRouter != "" {
+		if err := s.SetOpenRouterKey(dataRoot, flags.OpenRouter); err != nil {
 			return err
 		}
 	}

@@ -29,7 +29,6 @@ func setupEnv(t *testing.T, moonshotKey, deepseekKey, zaiKey string, upstream ht
 	// Peak guard OFF in the shared env so DeepSeek-routing tests are
 	// deterministic regardless of wall clock; peak-guard behavior is covered
 	// by dedicated tests with an explicit toggle.
-	settings.PeakGuardEnabled = false
 	if err := settings.EnsureGatewayKey(); err != nil {
 		t.Fatal(err)
 	}

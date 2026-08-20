@@ -10,11 +10,11 @@ Z.AI (GLM) at **GLM Coding Plan** base URL `https://api.z.ai/api/coding/paas/v4`
 
 ## Model table
 
-| Cursor alias    | Real model       | Description                                                         |
-| --------------- | ---------------- | ------------------------------------------------------------------- |
-| `gpt-4.1-turbo` | `glm-5.3[1m]`    | 1M context flagship; always thinks; reasoning_effort + prompt cache  |
-| `gpt-4.1`       | `glm-4.7`        | Budget workhorse; thinking on/off only                             |
-| (internal)      | `glm-4.6v`       | **Vision worker** only — describes images for ALL providers. Not user-selectable; not in `/v1/models`. Runs on the coding-plan endpoint. |
+|| Cursor alias    | Real model       | Description                                                         ||
+|| --------------- | ---------------- | ------------------------------------------------------------------- ||
+|| `gpt-4.1-turbo` | `glm-5.3[1m]`    | 1M context flagship; always thinks; reasoning_effort + prompt cache  ||
+|| `gpt-4.1`       | `glm-4.7`        | Budget workhorse; thinking on/off only                             ||
+|| (internal)      | `glm-4.6v`       | **Vision worker** only — describes images for ALL providers. Not user-selectable; not in `/v1/models`. Runs on the coding-plan endpoint. ||
 
 `glm-4.6v` has **no Cursor alias**. Invoked by `vision.Describer`; usage bills under `zai::glm-4.6v`.
 
@@ -23,27 +23,29 @@ Z.AI (GLM) at **GLM Coding Plan** base URL `https://api.z.ai/api/coding/paas/v4`
 - Key field: `zaiKeyEncrypted` in `config.AppSettings`
 - Set via: `discursive set --zai-key <key>`
 - Retrieved via: `settings.GetZaiKey(dataRoot)`
-- Free tier key (peak-hour fallback): `zaiFreeKeyEncrypted`, set via `--zai-free-key <key>`
 
 ## Pricing (USD per 1M tokens)
 
 Source: https://docs.z.ai/guides/overview/pricing
 
-| Model     | Cache hit / MTok | Input / MTok | Output / MTok |
-| --------- | ---------------- | ------------ | ------------- |
-| `glm-5.3` | $0.26            | $1.40        | $4.40         |
-| `glm-4.7` | $0.11            | $0.60        | $2.20         |
+|| Model     | Cache hit | Cache miss | Output ||
+|| --------- | --------- | ---------- | ------ ||
+|| `glm-5.3` | $0.26     | $1.40      | $4.40  ||
+|| `glm-4.7` | $0.11     | $0.60      | $2.20  ||
 
-> `glm-4.7-flash` is **free on-demand only** (`/api/paas/v4`) — NOT on coding plan. Use as peak-hour fallback with separate key. Per-token rates TBD; treat as free for cost estimates.
+> **GLM Coding Plan billing is points-based**, not per-token. The USD/MTok
+> table above converts multipliers (input 6.9, cached input 1.7, output 24 per 10k
+> tokens) at 1 USD = 10 points. Actual spend tracks plan credits; use this
+> table for estimation only. Peak/off-peak multipliers apply (off-peak = 50%).
 
 ## Sanitizer policy
 
-| Model     | Parameter          | Action                                                                                                                                                             |
-| --------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `glm-5.3` | `thinking`         | Always `{type: "enabled"}` — `disabled` is **not supported** and fails upstream                                                                                    |
-| `glm-5.3` | `reasoning_effort` | Always sent, `low`\\|`high`\\|`max`. Normalized via `normalizeZaiEffort()` → `off`/`none`/`minimal`↦`low`, `medium`↦`high`, `xhigh`↦`max`, `high`/`max` pass-through |
-| `glm-4.7` | `thinking`         | Set `{type: "enabled"\\|"disabled"}` (toggle, live `ThinkingEnabled` map); no reasoning_effort support                                                              |
-| `glm-4.7` | `reasoning_effort` | Deleted                                                                                                                                                            |
+|| Model     | Parameter          | Action                                                                                                                                                             ||
+|| --------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ ||
+|| `glm-5.3` | `thinking`         | Always `{type: "enabled"}` — `disabled` is **not supported** and fails upstream                                                                                    ||
+|| `glm-5.3` | `reasoning_effort` | Always sent, `low`\|`high`\|`max`. Normalized via `normalizeZaiEffort()` → `off`/`none`/`minimal`↦`low`, `medium`↦`high`, `xhigh`↦`max`, `high`/`max` pass-through ||
+|| `glm-4.7` | `thinking`         | Set `{type: "enabled"\|"disabled"}` (toggle, live `ThinkingEnabled` map); no reasoning_effort support                                                              ||
+|| `glm-4.7` | `reasoning_effort` | Deleted                                                                                                                                                            ||
 
 The thinking-toggle set is a whitelist (`zaiThinkingToggle()`): `glm-4.7` only.
 Apply `PolicyZai` case in `applyThinkingPolicy()` and `stripUnsupportedParams()`.
@@ -54,13 +56,13 @@ Apply `PolicyZai` case in `applyThinkingPolicy()` and `stripUnsupportedParams()`
 effort level is `low`. The gateway normalizes effort via `normalizeZaiEffort()`
 to the values the catalog advertises (`low`, `high`, `max` are ever sent):
 
-| UI label    | Sent to Z.AI                                         |
-| ----------- | ---------------------------------------------------- |
-| Off / None  | `low` (minimum thinking — `disabled` is unsupported) |
-| Low         | `low`                                                |
-| Medium      | `high`                                               |
-| High        | `high`                                               |
-| XHigh / Max | `max`                                                |
+|| UI label    | Sent to Z.AI                                         ||
+|| ----------- | ---------------------------------------------------- ||
+|| Off / None  | `low` (minimum thinking — `disabled` is unsupported) ||
+|| Low         | `low`                                                ||
+|| Medium      | `high`                                               ||
+|| High        | `high`                                               ||
+|| XHigh / Max | `max`                                                ||
 
 The `ReasoningEffortCatalog` entry for `glm-5.3` advertises: `low`, `high`, `max`
 and defaults to `low` (cost-conscious, mirroring Kimi K3).
@@ -68,15 +70,14 @@ and defaults to `low` (cost-conscious, mirroring Kimi K3).
 
 ## Upstream config
 
-| Item        | Value                                               |
-| ----------- | --------------------------------------------------- |
-| Default URL | `https://api.z.ai/api/coding/paas/v4`               |
-| On-demand   | `https://api.z.ai/api/paas/v4`                      |
-| Docs        | https://docs.z.ai                                   |
-| API ref     | https://docs.z.ai/api-reference/llm/chat-completion |
-| Pricing     | https://docs.z.ai/guides/overview/pricing           |
-| Coding plan | https://docs.z.ai/devpack/overview                  |
-| Console     | https://z.ai/manage-apikey/billing                  |
+|| Item        | Value                                               ||
+|| ----------- | --------------------------------------------------- ||
+|| Default URL | `https://api.z.ai/api/coding/paas/v4`               ||
+|| Docs        | https://docs.z.ai                                   ||
+|| API ref     | https://docs.z.ai/api-reference/llm/chat-completion ||
+|| Pricing     | https://docs.z.ai/guides/overview/pricing           ||
+|| Coding plan | https://docs.z.ai/devpack/overview                  ||
+|| Console     | https://z.ai/manage-apikey/billing                  ||
 
 ## Plan concurrency (capacity model)
 
@@ -86,7 +87,7 @@ coding-plan client — chat, router downgrades, and the `glm-4.6v` vision
 worker. When the budget is full:
 
 - **Direct glm-4.7/glm-5.3**: ~2s grace wait, then **overflow** to
-  `deepseek-v4-flash` (off-peak) or free `glm-4.7-flash` (peak) via
+  `deepseek/deepseek-v4-flash-0731` (OpenRouter) via
   `acquireZaiLaneOrOverflow`.
 - **Router downgrades**: non-blocking, overflow immediately via
   `selectDowngradeLane`.
@@ -97,9 +98,9 @@ slowness. Overflow policy lives in `internal/gateway/fallback.go`.
 
 ## Color (usage UI)
 
-| Provider | CSS variable | Hex       |
-| -------- | ------------ | --------- |
-| zai      | `--zai`      | `#ec4899` |
+|| Provider | CSS variable | Hex       ||
+|| -------- | ------------ | --------- ||
+|| zai      | `--zai`      | `#ec4899` ||
 
 ## Balance API
 
@@ -123,18 +124,10 @@ Coding Plan tiers (2026-08): **Lite** = 2,000 / 5-hour, 10,000 / weekly;
 
 ## Symptoms & fixes
 
-### `Flash models return 429 \"service overloaded\" / 1113 \"insufficient balance\"`
-
-| Symptom                                                              | Cause                                                                                                                                                                                          | Fix                                                                                                                                                                                         |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Z.AI returns 429 (code 1305 \"overloaded\" / 1113 \"insufficient balance\") for `glm-4.7-flash` / `glm-4.7-flashx` | Flash models are **NOT on the coding plan endpoint** (`/api/coding/paas/v4`). They are **on-demand only** (`/api/paas/v4`) and require a separate API key. The gateway was routing flash requests to the plan endpoint, causing capacity/credit rejections. | Remap all flash model IDs (`glm-4.7-flash`, `glm-4.7-flashx`) and their aliases (`gpt-4.1-mini`, `gpt-4.1-nano`) to `glm-4.7` (plan-supported). Use the on-demand endpoint (`/api/paas/v4`) with a separate free-tier key only as peak-hour fallback when plan is exhausted. |
-
-<!-- last-verified: 2026-08 -->
-
 ### `GLM-4.7 feels extremely slow when used in more than one place`
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| GLM-4.7 (or glm-5.3) turns take 20-45s when the main chat + parallel subagents all use it | Coding-plan concurrency is ~2; excess requests **queue inside the gateway** (or 429 upstream) instead of overflowing to a fast model. A queued glm-4.7 request is far slower than a ~2s cached deepseek-v4-flash turn. | One shared `zaiSem` (cap 2) budgets ALL coding-plan traffic. Direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow to deepseek/flash). Buy = don't queue: keep glm-4.7 for the 2 highest-value concurrent turns only. |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| GLM-4.7 (or glm-5.3) turns take 20-45s when the main chat + parallel subagents all use it | Coding-plan concurrency is ~2; excess requests **queue inside the gateway** (or 429 upstream) instead of overflowing to a fast model. A queued glm-4.7 request is far slower than a ~2s cached deepseek-v4-flash turn. | One shared `zaiSem` (cap 2) budgets ALL coding-plan traffic. Direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow to deepseek/deepseek-v4-flash-0731). Buy = don't queue: keep glm-4.7 for the 2 highest-value concurrent turns only. ||
 
 <!-- last-verified: 2026-08 -->

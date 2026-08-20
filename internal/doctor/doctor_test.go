@@ -452,6 +452,38 @@ func TestRunAll_LogsDirWritable(t *testing.T) {
 	}
 }
 
+func TestRunAll_OpenRouterKeyPresent(t *testing.T) {
+	s := config.DefaultSettings()
+	if err := s.EnsureGatewayKey(); err != nil {
+		t.Fatal(err)
+	}
+	origHTTP := httpGET
+	origStat := fileStat
+	origLookPath := lookPath
+	origMkdirAll := mkdirAll
+	origCreateTemp := createTemp
+	t.Cleanup(func() {
+		httpGET = origHTTP
+		fileStat = origStat
+		lookPath = origLookPath
+		mkdirAll = origMkdirAll
+		createTemp = origCreateTemp
+	})
+	httpGET = func(url string, timeout time.Duration) (int, error) { return 503, nil }
+	fileStat = func(name string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+	lookPath = func(name string) (string, error) { return "", os.ErrNotExist }
+	mkdirAll = func(path string, perm os.FileMode) error { return nil }
+	createTemp = func(dir, pattern string) (*os.File, error) {
+		return os.CreateTemp(t.TempDir(), pattern)
+	}
+
+	report := RunAll(s, t.TempDir())
+	check := findCheck(report, "openrouter_key_present")
+	if check.OK {
+		t.Fatal("expected openrouter_key_present to fail without key")
+	}
+}
+
 func TestCheck_Fields(t *testing.T) {
 	c := Check{Name: "test", OK: true, Detail: "all good"}
 	if c.Name != "test" || !c.OK || c.Detail != "all good" {

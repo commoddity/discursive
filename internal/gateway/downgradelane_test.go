@@ -16,9 +16,6 @@ func TestSelectDowngradeLane(t *testing.T) {
 	peak := laneClock(8)     // 08:00 UTC = DeepSeek peak window
 	offpeak := laneClock(12) // 12:00 UTC = off-peak
 
-	origFree := hasFreeZaiKeyFunc
-	defer func() { hasFreeZaiKeyFunc = origFree }()
-
 	fillLane := func(s *Server, n int) {
 		for i := 0; i < n; i++ {
 			s.glm47Lane <- struct{}{}
@@ -28,21 +25,19 @@ func TestSelectDowngradeLane(t *testing.T) {
 	tests := []struct {
 		name     string
 		clock    func() time.Time
-		freeKey  bool
 		inFlight int
 		want     string
 	}{
-		{"lane free stays glm-4.7", offpeak, true, 0, "glm-4.7"},
-		{"lane free stays glm-4.7 at peak", peak, true, 0, "glm-4.7"},
-		{"full lane off-peak overflows to deepseek", offpeak, true, glm47LaneCap, "deepseek-v4-flash"},
-		{"full lane peak overflows to free flash", peak, true, glm47LaneCap, freeFlashModel},
+		{"lane free stays glm-4.7", offpeak, 0, "glm-4.7"},
+		{"lane free stays glm-4.7 at peak", peak, 0, "glm-4.7"},
+		{"full lane off-peak overflows to openrouter flash", offpeak, glm47LaneCap, openRouterFlash},
+		{"full lane peak overflows to openrouter flash", peak, glm47LaneCap, openRouterFlash},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hasFreeZaiKeyFunc = func(*Server) bool { return tt.freeKey }
 			s := &Server{glm47Lane: make(chan struct{}, glm47LaneCap)}
 			fillLane(s, tt.inFlight)
-			got, release := s.selectDowngradeLane("req_test", tt.clock)
+			got, release := s.selectDowngradeLane("req_test")
 			defer release()
 			if got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
@@ -50,29 +45,9 @@ func TestSelectDowngradeLane(t *testing.T) {
 		})
 	}
 
-	t.Run("full lane peak without free key blocks for slot", func(t *testing.T) {
-		hasFreeZaiKeyFunc = func(*Server) bool { return false }
-		s := &Server{glm47Lane: make(chan struct{}, glm47LaneCap)}
-		fillLane(s, glm47LaneCap)
-		type result struct {
-			model string
-		}
-		ch := make(chan result, 1)
-		go func() {
-			m, release := s.selectDowngradeLane("req_test", peak)
-			release()
-			ch <- result{m}
-		}()
-		<-s.glm47Lane // drain one slot so the blocked acquire proceeds
-		if got := (<-ch).model; got != "glm-4.7" {
-			t.Fatalf("got %q, want glm-4.7", got)
-		}
-	})
-
 	t.Run("release frees the lane slot", func(t *testing.T) {
-		hasFreeZaiKeyFunc = func(*Server) bool { return true }
 		s := &Server{glm47Lane: make(chan struct{}, glm47LaneCap)}
-		_, release := s.selectDowngradeLane("req_test", offpeak)
+		_, release := s.selectDowngradeLane("req_test")
 		if len(s.glm47Lane) != 1 {
 			t.Fatalf("lane should hold 1 slot after acquire, holds %d", len(s.glm47Lane))
 		}

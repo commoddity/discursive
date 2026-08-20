@@ -26,7 +26,7 @@ func TestSubAgentRouter_SubagentDetection(t *testing.T) {
 			},
 			enabled:      true,
 			wantClass:    ClassCodeSearch, // content-based: "find" keyword
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "subagent: all 3 signals → short prompt + 3 msgs + tools",
@@ -194,7 +194,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "explain prefix → flash",
@@ -206,7 +206,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "how does prefix → flash",
@@ -218,7 +218,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "summarization: capture conversation → flash",
@@ -230,7 +230,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup, // summarization beats editing (despite "write")
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "summarization: summarize this chat → flash",
@@ -242,7 +242,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup, // summarization beats editing
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "code search: find keyword → flash",
@@ -254,7 +254,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "code search: search keyword → flash",
@@ -266,7 +266,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "code search: explore keyword → flash",
@@ -278,7 +278,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "code search: long exploration → code search (exploration guard)",
@@ -297,7 +297,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassCodeSearch, // exploration guard blocks long-message heuristic; falls through to code search
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "code search + complex keyword → complex reasoning (explicit signals beat guard)",
@@ -322,7 +322,7 @@ This is a read-only exploration task — do not modify any files.`},
 				"response_format": map[string]any{"type": "json_object"},
 			},
 			wantClass:    ClassStructuredExtraction,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "structured extraction: json_schema → flash",
@@ -335,7 +335,7 @@ This is a read-only exploration task — do not modify any files.`},
 				"response_format": map[string]any{"type": "json_schema"},
 			},
 			wantClass:    ClassStructuredExtraction,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "automation: pull request → flash",
@@ -347,7 +347,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "automation: git push → flash",
@@ -359,7 +359,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "automation: gh pr → flash",
@@ -371,7 +371,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "automation: run script → flash",
@@ -383,7 +383,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "automation: run a script → flash",
@@ -395,7 +395,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "editing+complex: refactor + pipeline → keep model (complex beats editing)",
@@ -639,7 +639,7 @@ func TestSubAgentRouter_ModelPreservedForMainAgent(t *testing.T) {
 
 func TestSubAgentRouter_UnknownProviderDefaultFallback(t *testing.T) {
 	// Models not in the override map fall back to the default flash model
-	// (glm-4.7) when classification triggers a downgrade.
+	// (OpenRouter deepseek-v4-flash-0731) when classification triggers a downgrade.
 	models := []string{"kimi-k3", "kimi-k2.7-code", "thaura"}
 	for _, model := range models {
 		t.Run(model, func(t *testing.T) {
@@ -668,8 +668,8 @@ func TestSubAgentRouter_UnknownProviderDefaultFallback(t *testing.T) {
 }
 
 func TestSubAgentRouter_Glm53ToFlashViaDefault(t *testing.T) {
-	// glm-5.3 resolves to a flash variant via the override map / universal
-	// default (defaultFlashModel = glm-4.7).
+	// glm-5.3 is not a cheap target, so cheap-class traffic resolves to the
+	// universal default (defaultFlashModel = deepseek/deepseek-v4-flash-0731).
 	body := map[string]any{
 		"model": "glm-5.3",
 		"messages": []any{
@@ -920,7 +920,7 @@ func TestContentClassification_WithCursorXML(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "code search wrapped in attached_files",
@@ -932,7 +932,7 @@ func TestContentClassification_WithCursorXML(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: "glm-4.7",
+			wantOverride: "deepseek/deepseek-v4-flash-0731",
 		},
 		{
 			name: "editing+complex wrapped in XML",

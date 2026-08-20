@@ -12,8 +12,9 @@ type VerbositySpec struct {
 
 // VerbosityCatalog is the canonical list of models with toggle-able output
 // verbosity control. Applies the terseness directive + token cap to models
-// that tend to emit verbose prose in agentic coding loops (DeepSeek and
-// Z.AI GLM alike — the directive is model-agnostic prompt injection).
+// that tend to emit verbose prose in agentic coding loops (DeepSeek,
+// OpenRouter DeepSeek, and Z.AI GLM alike — the directive is model-agnostic
+// prompt injection).
 func VerbosityCatalog() []VerbositySpec {
 	return []VerbositySpec{
 		{
@@ -26,6 +27,18 @@ func VerbosityCatalog() []VerbositySpec {
 			Model:    ModelDeepSeekV4Pro,
 			Provider: ProviderDeepSeek,
 			Label:    "DeepSeek V4 Pro",
+			Default:  false,
+		},
+		{
+			Model:    ModelOpenRouterDeepSeekV4Flash,
+			Provider: ProviderOpenRouter,
+			Label:    "OpenRouter DeepSeek V4 Flash",
+			Default:  true,
+		},
+		{
+			Model:    ModelOpenRouterDeepSeekV4Pro,
+			Provider: ProviderOpenRouter,
+			Label:    "OpenRouter DeepSeek V4 Pro",
 			Default:  false,
 		},
 		{

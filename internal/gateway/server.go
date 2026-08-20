@@ -158,10 +158,13 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		// Lane selection for glm-4.7 downgrades: first N concurrent requests
 		// stay on glm-4.7 (plan concurrency limit), overflow goes elsewhere.
 		PickDowngradeModel: func(candidate, requestID string) (string, func()) {
+			// Router downgrades now always target OpenRouter DeepSeek flash,
+			// never glm-4.7. The glm-4.7 lane is only for direct glm-4.7
+			// main-chat concurrency.
 			if candidate != "glm-4.7" {
 				return candidate, nil
 			}
-			return s.selectDowngradeLane(requestID, nil)
+			return s.selectDowngradeLane(requestID)
 		},
 	})
 
@@ -178,10 +181,15 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	// Per-request gates (compressionEnabled / verbosityEnabled) read the live
 	// setting; when disabled they short-circuit before any work is done, so the
 	// always-allocated structs add zero hot-path cost.
-	deepseekURL, _ := config.ChatCompletionsURL(config.ProviderDeepSeek)
+	// Compression worker targets OpenRouter DeepSeek flash when an OpenRouter
+	// key is configured, otherwise falls back to direct DeepSeek flash.
+	compressURL, _ := config.ChatCompletionsURL(config.ProviderOpenRouter)
 	// Strip /chat/completions suffix — Compressor.ChatURL expects the base URL.
-	flashBase := strings.TrimSuffix(deepseekURL, "/chat/completions")
+	flashBase := strings.TrimSuffix(compressURL, "/chat/completions")
 	flashKeyFn := func() (string, bool) {
+		if k, err := s.settings.GetOpenRouterKey(s.cfg.DataRoot); err == nil && k != nil && *k != "" {
+			return *k, true
+		}
 		k, err := s.settings.GetDeepSeekKey(s.cfg.DataRoot)
 		if err != nil || k == nil || *k == "" {
 			return "", false
@@ -197,7 +205,11 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		// sentinel session so the cost accrues without polluting the active
 		// chat session grouping.
 		RecordUsage: func(model string, promptTokens, completionTokens uint64, latency time.Duration) {
-			s.recordAuxUsage(auxCompressSession, config.ProviderDeepSeek, model, auxCompressRequestID, latency, tokenUsage{
+			provider := config.ProviderOpenRouter
+			if model == "deepseek-v4-flash" {
+				provider = config.ProviderDeepSeek
+			}
+			s.recordAuxUsage(auxCompressSession, provider, model, auxCompressRequestID, latency, tokenUsage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
 			})
@@ -216,6 +228,14 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 				MaxTokens:              flashVerbosityMaxTokens,
 			},
 			"deepseek-v4-pro": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              proVerbosityMaxTokens,
+			},
+			"deepseek/deepseek-v4-flash-0731": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              flashVerbosityMaxTokens,
+			},
+			"deepseek/deepseek-v4-pro-0813": {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              proVerbosityMaxTokens,
 			},
@@ -387,6 +407,15 @@ func (s *Server) upstreamKey(provider config.Provider) (string, error) {
 		return *k, nil
 	case config.ProviderZai:
 		k, err := s.settings.GetZaiKey(s.cfg.DataRoot)
+		if err != nil {
+			return "", err
+		}
+		if k == nil || *k == "" {
+			return "", fmt.Errorf("API key not configured for this model")
+		}
+		return *k, nil
+	case config.ProviderOpenRouter:
+		k, err := s.settings.GetOpenRouterKey(s.cfg.DataRoot)
 		if err != nil {
 			return "", err
 		}

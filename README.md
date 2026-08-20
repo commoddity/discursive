@@ -138,8 +138,8 @@ Change the model alias in Cursor's model picker — no restart needed:
 | `gpt-5-nano`    | Thaura   | `thaura`            | Ethical AI; optional provider                             |
 | `gpt-4.1-turbo` | Z.AI     | `glm-5.3`           | Planning; always thinks; cheaper than K3                 |
 | `gpt-4.1`       | Z.AI     | `glm-4.7`           | Cheap execution; thinking on/off                          |
-| `gpt-4.1-mini`  | Z.AI     | `glm-4.7-flash`     | Free high-throughput tier; thinking on/off                |
-| `gpt-4.1-nano`  | Z.AI     | `glm-4.7-flashx`    | Low-cost paid speed tier; thinking on/off                 |
+
+
 | `gpt-4-turbo`   | Z.AI     | `glm-5.3`           | Compat alias (Cursor may rewrite `gpt-4.1-turbo` to this) |
 
 
@@ -176,23 +176,25 @@ determines whether the task is cheap enough for a flash model:
 
 | Request type                                          | Action             | Model               |
 | ----------------------------------------------------- | ------------------ | ------------------- |
-| Simple lookup / explanation                           | downgrade to flash | `glm-4.7-flashx`    |
-| Code search / exploration                             | downgrade to flash | `glm-4.7-flashx`    |
-| Structured extraction (`json_object` / `json_schema`) | downgrade to flash | `glm-4.7-flashx`    |
-| Automation / mechanical work (lint, git, scripts, PR) | downgrade to flash | `glm-4.7-flashx`    |
+| Simple lookup / explanation                           | downgrade to flash | `deepseek/deepseek-v4-flash-0731` |
+| Code search / exploration                             | downgrade to flash | `deepseek/deepseek-v4-flash-0731` |
+| Structured extraction (`json_object` / `json_schema`) | downgrade to flash | `deepseek/deepseek-v4-flash-0731` |
+| Automation / mechanical work (lint, git, scripts, PR) | downgrade to flash | `deepseek/deepseek-v4-flash-0731` |
 | Editing / refactoring                                 | keep model         | original model      |
 | Complex reasoning / architecture                      | keep model         | original model      |
 | Unknown / unclassified                                | keep model         | original model      |
 
-> **Downgrade target.** Flash downgrades land on `glm-4.7-flashx` (Z.AI Pro pool),
-> keeping cheap/subagent traffic inside the subscription credits. `glm-5.3`/`kimi-k3`
-> downgrade via `modelOverrideMap` to `glm-4.7-flashx` too; `deepseek-v4-pro` → `glm-4.7-flashx`.
+> **Downgrade target.** Flash downgrades land on `deepseek/deepseek-v4-flash-0731` (OpenRouter DeepSeek flash),
+> keeping cheap/subagent traffic on OpenRouter. `glm-5.3`/`kimi-k3`
+> downgrade to `deepseek/deepseek-v4-flash-0731` too; `deepseek-v4-pro` → `deepseek/deepseek-v4-flash-0731`.
 >
-> **DeepSeek peak-hour hard guard (on by default).** During DeepSeek peak hours
-> (01:00–04:00, 06:00–10:00 UTC) the gateway redirects any DeepSeek model to an
-> equivalent GLM Z.AI model — `deepseek-v4-flash` → `glm-4.7-flashx`,
-> `deepseek-v4-pro` → `glm-4.7` — so nothing routes to DeepSeek at its 2× peak
-> rates. Toggled live from the Usage Dashboard (DeepSeek peak-hour guard).
+> **Peak-hour fallback (always on).** During DeepSeek peak hours
+> (01:00–04:00, 06:00–10:00 UTC) or Z.AI peak hours (Mon–Fri 06:00–10:00 UTC)
+> the gateway redirects the matching model to an OpenRouter DeepSeek model:
+> big models (`deepseek-v4-pro`, `glm-5.3`, `kimi-k3`) → `deepseek/deepseek-v4-pro-0813`,
+> everything else → `deepseek/deepseek-v4-flash-0731`. No OpenRouter key? Traffic
+> falls through to the direct provider and pays peak rates. Configure with
+> `discursive set --openrouter-key`.
 
 
 
@@ -313,11 +315,10 @@ logs include an `effort` field on request/response/usage lines.
 expose this control.
 - `kimi-k2.7-code` always thinks — thinking is always on and there is no effort
 selector: [Kimi K2.7 Code](https://www.kimi.com/resources/kimi-k2-7-code)
-- The **GLM-4.7 family** (`glm-4.7`, `glm-4.7-flash`, `glm-4.7-flashx`) does **not**
-use `reasoning_effort` — it exposes a boolean **Thinking on/off** toggle (🧠, default
-OFF for cost) in the Usage Dashboard's Model Controls (`GET/PUT /api/thinking-enabled`).
-Mechanical turns (lookups/code-search/automation) force thinking OFF regardless of the
-toggle; editing/complex-reasoning turns honor it.
+- `glm-4.7` does not use `reasoning_effort` — it exposes a boolean **Thinking on/off**
+toggle (🧠, default OFF for cost) in the Usage Dashboard's Model Controls
+(`GET/PUT /api/thinking-enabled`). Mechanical turns (lookups/code-search/automation)
+force thinking OFF regardless of the toggle; editing/complex-reasoning turns honor it.
 - DeepSeek only documents `high`/`max` for effort: [DeepSeek Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)).
 
 
@@ -400,17 +401,32 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 | ------------ | ---------------- | ------------ | ------------- | ------------------------------------------------------------------------ |
 | `glm-5.3`    | $0.26            | $1.40        | $4.40         | Planning model; always thinks; reasoning_effort + cache |
 | `glm-4.7`    | $0.11            | $0.60        | $2.20         | Budget execution; thinking on/off                                        |
-| `glm-4.7-flashx` | $0.01        | $0.07        | $0.40         | Low-cost paid speed tier; thinking on/off                                |
-| `glm-4.7-flash` | $0 (free)     | $0 (free)    | $0 (free)     | Free high-throughput tier (30B-A3B MoE); thinking on/off                 |
+
+
 | `glm-4.6v`   | $0.05            | $0.30        | $0.90         | Vision worker — describes images for ALL providers (not user-selectable) |
 
-> **PROVISIONAL — `glm-5.3` and `glm-4.7-flash`/`glm-4.7-flashx` per-token rates.**
-> still lists GLM-5.2 as its newest row and the GLM-5.3 docs say "The GLM-5.3 API
-> is coming soon". The `glm-5.3` row above is GLM-5.2's card carried forward as a
-> stand-in; the `glm-4.7-flash`/`glm-4.7-flashx` rows are provisional on-demand
-> API rates with coding-plan terms TBD. Update `internal/usage/pricing.go` +
-> `internal/usageui/static/index.html` (`PRICING`) + the pricing tests +
-> `.cursor/rules/usage.mdc` and `zai.mdc` once Z.AI publishes authoritative
+> **PROVISIONAL — `glm-5.3` per-token rates.** Z.AI still lists GLM-5.2 as its
+> newest row and the GLM-5.3 docs say "The GLM-5.3 API is coming soon". The
+> `glm-5.3` row above is GLM-5.2's card carried forward as a stand-in. Update
+> `internal/usage/pricing.go` + `internal/usageui/static/index.html` (`PRICING`) +
+> the pricing tests + `.cursor/rules/usage.mdc` and `zai.mdc` once Z.AI publishes
+> authoritative rates.
+
+### OpenRouter (peak fallback only)
+
+OpenRouter hosts DeepSeek models and is used only as an internal peak-hour
+fallback. It is not a user-selectable provider: Cursor aliases still map to the
+direct providers above, and the gateway reroutes to OpenRouter upstream IDs when
+the direct provider is in peak pricing and an OpenRouter key is configured.
+
+| Upstream ID | Cache hit / MTok | Input / MTok | Output / MTok | Role |
+| --- | --- | --- | --- | --- |
+| `deepseek/deepseek-v4-flash-0731` | $0.014 | $0.065 | $0.14 | Peak fallback for small models |
+| `deepseek/deepseek-v4-pro-0813` | $0.0396 | $1.188 | $3.564 | Peak fallback for big models |
+
+> **List rates.** OpenRouter's weighted-average "typical blended cost" is
+> informational: flash ≈ $0.0464 in / $0.3494 out, pro ≈ $0.2389 in / $3.084
+> out. The dashboard and usage records use the list rates above.
 > pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing).
 
 
@@ -440,7 +456,7 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 - API key: [https://z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) (GLM Coding Plan key)
 
 
-| Parameter          | `glm-5.3`                                                     | `glm-4.7` / `glm-4.7-flash` / `glm-4.7-flashx`          |
+| Parameter          | `glm-5.3`                                                     | `glm-4.7`                                               |
 | ------------------ | ------------------------------------------------------------- | -------------------------------------------------------- |
 | `thinking`         | Always `{type: "enabled"}` (`disabled` is not supported)      | `{type: "enabled"\|"disabled"}` (per-model live toggle) |
 | `reasoning_effort` | Always sent → `low`/`high`/`max`                              | Deleted (not supported)                                 |
@@ -556,7 +572,7 @@ All output is JSON on stdout. Pipe through `jq` for readability.
 | `discursive usage purge`     | Delete usage events older than `--max-age` (Go duration, default `90d`; also `24h`, `7d`, `30d`…). `--dry-run` previews the count without deleting.                                                                                                                                                                                                                                   |
 | `discursive usage prune-snapshots` | Delete balance snapshots older than `--max-age` (default `90d`). Raw snapshot rows used to compute confirmed spend; no longer needed once a period is complete. `--dry-run` previews without deleting.                                                                                                                                     |
 | `discursive init`            | Run first-time setup: write config, generate the gateway key, store provider API keys. Auto-invoked by `start` when config is incomplete.                                                                                                                                                                                                                                            |
-| `discursive set`             | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--zai-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key.                                                                                                                                             |
+| `discursive set`             | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--zai-key`, `--openrouter-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key.                                                                                                                                             |
 | `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (Cobra built-in). See [Shell Completion](#-shell-completion).                                                                                                                                                                                 |
 | `discursive version`         | Print version.                                                                                                                                                                                                                                                                                                                                                                         |
 

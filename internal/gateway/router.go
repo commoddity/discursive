@@ -46,13 +46,12 @@ type SubAgentRouterConfig struct {
 	Enabled bool
 
 	// PickDowngradeModel is invoked when a downgrade would be applied. It
-	// receives the candidate override model (from modelOverrideMap or
-	// defaultFlashModel) and the request id for logging, and returns the
-	// model to actually use. Use it to steer glm-4.7 downgrades into a
-	// capacity-aware lane (glm-4.7 while slots are free, overflow to another
-	// model otherwise). Nil = use the candidate as-is. The returned release
-	// func must be called when the request completes (non-nil only when a
-	// lane slot was taken).
+	// receives the candidate override model (defaultFlashModel) and the
+	// request id for logging, and returns the model to actually use. Use it
+	// to steer downgrades into a capacity-aware lane (e.g. glm-4.7 while
+	// slots are free, overflow to another model otherwise). Nil = use the
+	// candidate as-is. The returned release func must be called when the
+	// request completes (non-nil only when a lane slot was taken).
 	PickDowngradeModel func(candidate, requestID string) (model string, release func())
 }
 
@@ -70,34 +69,10 @@ type ClassifierResult struct {
 	ClassificationAge string       `json:"classification_age,omitempty"`
 }
 
-// modelOverrideMap maps expensive models to cheaper equivalents for
-// subagent downgrades. Entries here take priority. Models not in this
-// map fall back to defaultFlashModel.
-//
-// All downgrades land on GLM Z.AI models (flashx = paid GLM speed tier) so
-// cheap subagent traffic stays inside the Z.AI Pro credit pool and stops
-// draining DeepSeek balance entirely — DeepSeek is reserved for explicit
-// pro-quality turns at off-peak. DeepSeek models that surface at peak
-// (via an alias) are redirected by the peak-guard.
-var modelOverrideMap = map[string]string{
-	"deepseek-v4-pro": "glm-4.7",
-	"glm-5.3":         "glm-4.7",
-	"kimi-k3":         "glm-4.7",
-}
-
-// defaultFlashModel is the fallback model for any traffic that triggers a
-// downgrade but whose original model isn't in modelOverrideMap. glm-4.7 is the
-// cheapest GLM Coding Plan model (credit multipliers 4.6/1.2/16); the flash
-// tiers are NOT on the coding plan.
-const defaultFlashModel = "glm-4.7"
-
-// downgradeMaxContextChars is the maximum approximate conversation size (sum
-// of message content chars) for which a downgrade is applied. glm-4.7's plan
-// concurrency is 2 and its prefill on long contexts is slow — downgrading a
-// 100k+ token request to it serializes the lane and takes tens of seconds,
-// while the original model (e.g. deepseek-v4-flash with fast cache-hit
-// prefill) answers in ~2s. Only genuinely small requests benefit.
-const downgradeMaxContextChars = 100_000
+// defaultFlashModel is the single downgrade target for all cheap-class traffic.
+// All subagent/router downgrades and lane-full overflows land on OpenRouter's
+// DeepSeek flash model, regardless of the originally requested model.
+const defaultFlashModel = "deepseek/deepseek-v4-flash-0731"
 
 // SubAgentRouter performs request classification and optional model override.
 type SubAgentRouter struct {
@@ -162,27 +137,8 @@ func (r *SubAgentRouter) ClassifyAndOverride(body map[string]any, requestID stri
 		return result
 	}
 
-	// Context-size gate: glm-4.7 has 2-slot plan concurrency and slow long-
-	// context prefill. Downgrading a large-context request (100k+ chars of
-	// messages) serializes the lane and is slower than the original model on
-	// a cache-hit prefix — keep the original model in that case.
-	if contextChars := approxContextChars(body); contextChars > downgradeMaxContextChars {
-		slog.Info("subagent_router: downgrade skipped — context too large",
-			"request_id", requestID,
-			"request_class", result.RequestClass,
-			"context_chars", contextChars,
-			"limit", downgradeMaxContextChars,
-			"model", result.OriginalModel,
-		)
-		return result
-	}
-
-	// Apply model override: prefer an explicit map entry; fall back to the
-	// universal default for models not in the map.
-	override, ok := modelOverrideMap[result.OriginalModel]
-	if !ok {
-		override = defaultFlashModel
-	}
+	// Cheap-class traffic always uses the single OpenRouter flash target.
+	override := defaultFlashModel
 
 	// Capacity-aware lane selection: let the server steer glm-4.7 downgrades
 	// between the plan lane and an overflow model.
@@ -319,7 +275,7 @@ func classifyRequest(body map[string]any) RequestClass {
 	// Checked before editing so "create a PR" routes to automation.
 	// When both automation AND strong-editing keywords are present, editing wins:
 	// "refactor and create a PR" needs pro for the refactoring part.
-	// Exception: lint/linter tasks are mechanical (remove unused code, rename) —
+	// Exception: lint/linter tasks are mechanical (remove unused imports, rename variables, fix formatting) —
 	// even when the message contains "fix", flash handles them fine.
 	if isAutomation(lower) {
 		if isLintTask(lower) || !isStrongEditing(lower) {
@@ -336,8 +292,8 @@ func classifyRequest(body map[string]any) RequestClass {
 	}
 
 	// Code search / exploration: message asks to search, find, explore.
-	// Checked before editing so exploration messages that incidentally use
-	// editing keywords (e.g. "for adding a new endpoint") still route to
+	// Checked before editing so exploration prompts that incidentally use
+	// editing words (e.g. "for adding a new endpoint") still route to
 	// code search. Narrow keywords (phrases, not single ambiguous words)
 	// prevent false positives from editing tasks.
 	if isCodeSearch(lower) {
@@ -602,37 +558,6 @@ func isComplexReasoning(lower, stripped string) bool {
 }
 
 // ----- Utility helpers ------------------------------------------------
-
-// approxContextChars estimates total conversation payload size by summing
-// string content lengths across all messages (system, user, assistant, tool).
-// Array-of-parts content counts only text parts. Cheap approximation — no
-// JSON re-serialization, no tokenization.
-func approxContextChars(body map[string]any) int {
-	msgs, ok := body["messages"].([]any)
-	if !ok {
-		return 0
-	}
-	total := 0
-	for _, m := range msgs {
-		msg, ok := m.(map[string]any)
-		if !ok {
-			continue
-		}
-		switch content := msg["content"].(type) {
-		case string:
-			total += len(content)
-		case []any:
-			for _, p := range content {
-				if pmap, ok := p.(map[string]any); ok {
-					if text, ok := pmap["text"].(string); ok {
-						total += len(text)
-					}
-				}
-			}
-		}
-	}
-	return total
-}
 
 // truncate returns s truncated to maxLen characters with "…" suffix.
 func truncate(s string, maxLen int) string {

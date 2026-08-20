@@ -17,6 +17,7 @@ import (
 //	https://api-docs.deepseek.com/quick_start/pricing
 //	https://thaura.ai/api-platform
 //	https://docs.z.ai/guides/overview/pricing
+//	https://openrouter.ai/docs
 //
 // DeepSeek switched to peak/off-peak billing at 2026-08-16 16:00 UTC; peak
 // hours (01:00–04:00 and 06:00–10:00 UTC) bill at 2x the off-peak rates.
@@ -120,24 +121,37 @@ var zaiPricing = map[string]zaiRates{
 	// GLM-5.3 USD per MTok from GLM-5.2's published rates (carried forward per docs);
 	// GLM-4.7 USD per MTok derived from devpack credit multipliers (4.6/1.2/16 per 10k).
 	// Sources: https://docs.z.ai/guides/overview/pricing + https://docs.z.ai/devpack/overview
-	"glm-5.3":        {0.26, 1.40, 4.40}, // same USD as glm-5.2
-	"glm-5.2":        {0.26, 1.40, 4.40}, // deprecated, same as glm-5.3
-	"glm-4.7":        {0.12, 0.46, 1.60}, // from 4.6/1.2/16 per 10k credits
-	"glm-4.7-flash":  {0.00, 0.00, 0.00}, // free on-demand tier
-	"glm-4.7-flashx": {0.01, 0.07, 0.40}, // derived from 0.7/35/200 per 10k credits
-	"glm-4.6v":       {0.03, 0.12, 0.27}, // vision worker, from 1.2/0.3/2.7 per 10k credits
+	"glm-5.3":  {0.26, 1.40, 4.40}, // same USD as glm-5.2
+	"glm-5.2":  {0.26, 1.40, 4.40}, // deprecated, same as glm-5.3
+	"glm-4.7":  {0.12, 0.46, 1.60}, // from 4.6/1.2/16 per 10k credits
+	"glm-4.6v": {0.03, 0.12, 0.27}, // vision worker, from 1.2/0.3/2.7 per 10k credits
+}
+
+// openrouterRates USD per 1M tokens (cache hit, input, output).
+// Source: https://openrouter.ai/deepseek/deepseek-v4-flash-0731
+//
+//	https://openrouter.ai/deepseek/deepseek-v4-pro-0813
+//
+// Weighted-average "typical blended" rates (informational): flash $0.0464 in /
+// $0.3494 out; pro $0.2389 in / $3.084 out.
+type openrouterRates struct {
+	cacheHit, input, output float64
+}
+
+var openrouterPricing = map[string]openrouterRates{
+	"deepseek/deepseek-v4-flash-0731": {0.014, 0.065, 0.14},
+	"deepseek/deepseek-v4-pro-0813":   {0.0396, 1.188, 3.564},
 }
 
 // zaiCreditsPerMTok holds official Coding Plan credit multipliers per 10k
 // tokens, expressed as credits per 1M tokens (multiplier × 100).
 // Source: https://docs.z.ai/devpack/overview (Credit Calculation table).
 var zaiCreditsPerMTok = map[string][3]float64{ // {cache_hit, input, output}
-	"glm-5.3":       {170, 690, 2400}, // 1.7 / 6.9 / 24
-	"glm-5.2":       {170, 690, 2400}, // routed to 5.3 upstream
-	"glm-5-turbo":   {150, 570, 2100}, // 1.5 / 5.7 / 21
-	"glm-4.7":       {120, 460, 1600}, // 1.2 / 4.6 / 16
-	"glm-4.7-flash": {0, 0, 0},        // free on-demand tier
-	"glm-4.6v":      {30, 120, 270},   // 0.3 / 1.2 / 2.7 (vision worker)
+	"glm-5.3":     {170, 690, 2400}, // 1.7 / 6.9 / 24
+	"glm-5.2":     {170, 690, 2400}, // routed to 5.3 upstream
+	"glm-5-turbo": {150, 570, 2100}, // 1.5 / 5.7 / 21
+	"glm-4.7":     {120, 460, 1600}, // 1.2 / 4.6 / 16
+	"glm-4.6v":    {30, 120, 270},   // 0.3 / 1.2 / 2.7 (vision worker)
 }
 
 // ZaiCreditsAt computes coding-plan credits consumed by one usage event.
@@ -223,6 +237,15 @@ func EstimateUSDAt(provider config.Provider, model string, u UsageTokens, at tim
 		r, ok := zaiPricing[model]
 		if !ok {
 			return 0, fmt.Errorf("%w: zai %q", ErrUnknownModel, model)
+		}
+		hit, miss := splitPrompt(u)
+		return perMillion(hit, r.cacheHit) +
+			perMillion(miss, r.input) +
+			perMillion(u.CompletionTokens, r.output), nil
+	case config.ProviderOpenRouter:
+		r, ok := openrouterPricing[model]
+		if !ok {
+			return 0, fmt.Errorf("%w: openrouter %q", ErrUnknownModel, model)
 		}
 		hit, miss := splitPrompt(u)
 		return perMillion(hit, r.cacheHit) +

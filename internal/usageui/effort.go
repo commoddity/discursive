@@ -99,6 +99,8 @@ func providerLabel(p config.Provider) string {
 		return "Thaura"
 	case config.ProviderZai:
 		return "Z.AI"
+	case config.ProviderOpenRouter:
+		return "OpenRouter"
 	default:
 		return string(p)
 	}

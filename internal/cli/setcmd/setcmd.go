@@ -16,16 +16,16 @@ import (
 // NewCmd returns the set subcommand.
 func NewCmd(portable func() bool) *cobra.Command {
 	var (
-		moonshotKey string
-		deepseekKey string
-		thauraKey   string
-		zaiKey      string
-		zaiFreeKey  string
-		tunnelToken string
-		publicURL   string
-		gatewayKey  bool
-		showKey     bool
-		model       string
+		moonshotKey   string
+		deepseekKey   string
+		thauraKey     string
+		zaiKey        string
+		openRouterKey string
+		tunnelToken   string
+		publicURL     string
+		gatewayKey    bool
+		showKey       bool
+		model         string
 	)
 
 	cmd := &cobra.Command{
@@ -36,8 +36,8 @@ func NewCmd(portable func() bool) *cobra.Command {
   # Set upstream API keys
   discursive set --moonshot-key sk-xxx --deepseek-key sk-yyy
 
-  # Free-tier Z.AI key (peak-hour fallback lane to glm-4.7-flash)
-  discursive set --zai-free-key <key>
+  # Optional OpenRouter key (peak-hour DeepSeek fallback)
+  discursive set --openrouter-key sk-or-xxx
 
   # Tunnel configuration
   discursive set --tunnel-token <token> --public-url https://my-host/v1
@@ -51,7 +51,7 @@ func NewCmd(portable func() bool) *cobra.Command {
 Omitting flags leaves the corresponding setting unchanged.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
-			return runSet(portable, moonshotKey, deepseekKey, thauraKey, zaiKey, zaiFreeKey, tunnelToken, publicURL, gatewayKey, showKey, model)
+			return runSet(portable, moonshotKey, deepseekKey, thauraKey, zaiKey, openRouterKey, tunnelToken, publicURL, gatewayKey, showKey, model)
 		},
 	}
 
@@ -59,7 +59,7 @@ Omitting flags leaves the corresponding setting unchanged.`,
 	cmd.Flags().StringVar(&deepseekKey, "deepseek-key", "", "DeepSeek API key")
 	cmd.Flags().StringVar(&thauraKey, "thaura-key", "", "Thaura AI API key")
 	cmd.Flags().StringVar(&zaiKey, "zai-key", "", "Z.AI API key (coding plan)")
-	cmd.Flags().StringVar(&zaiFreeKey, "zai-free-key", "", "Z.AI free-tier on-demand API key (peak-hour fallback)")
+	cmd.Flags().StringVar(&openRouterKey, "openrouter-key", "", "OpenRouter API key (optional peak-hour DeepSeek fallback)")
 	cmd.Flags().StringVar(&tunnelToken, "tunnel-token", "", "Cloudflare tunnel token")
 	cmd.Flags().StringVar(&publicURL, "public-url", "", "public HTTPS base URL (https://<host>/v1)")
 	cmd.Flags().BoolVar(&gatewayKey, "rotate-gateway-key", false, "generate a new gateway API key")
@@ -73,7 +73,7 @@ Omitting flags leaves the corresponding setting unchanged.`,
 	return cmd
 }
 
-func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, zaiFreeKey, tunnelToken, publicURL string, rotateGateway, showKey bool, modelID string) error {
+func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, openRouterKey, tunnelToken, publicURL string, rotateGateway, showKey bool, modelID string) error {
 	util.SetupLogger()
 
 	dataRoot, err := util.ResolveDataRoot(portable())
@@ -147,16 +147,16 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, z
 		anySet = true
 	}
 
-	if zaiFreeKey != "" {
-		plain := strings.TrimSpace(zaiFreeKey)
+	if openRouterKey != "" {
+		plain := strings.TrimSpace(openRouterKey)
 		if plain == "" {
-			return fmt.Errorf("empty zai free key")
+			return fmt.Errorf("empty openrouter key")
 		}
-		if err := s.SetZaiFreeKey(dataRoot, plain); err != nil {
+		if err := s.SetOpenRouterKey(dataRoot, plain); err != nil {
 			return err
 		}
 		slog.Info("saved upstream key",
-			"provider", "zai-free",
+			"provider", "openrouter",
 			"key_masked", crypto.MaskSecret(plain),
 		)
 		anySet = true
@@ -210,6 +210,7 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, z
 			"has_deepseek_key", s.HasDeepSeekKey(),
 			"has_thaura_key", s.HasThauraKey(),
 			"has_zai_key", s.HasZaiKey(),
+			"has_openrouter_key", s.HasOpenRouterKey(),
 		}
 		attrs = append(attrs, util.GatewayKeyLogAttrs(s.GatewayKey, showKey)...)
 		slog.Info("rotated gateway key", attrs...)
@@ -217,7 +218,7 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, z
 	}
 
 	if !anySet {
-		return fmt.Errorf("no flags provided; use --moonshot-key, --deepseek-key, --thaura-key, --zai-key, --tunnel-token, --public-url, --rotate-gateway-key, or --model")
+		return fmt.Errorf("no flags provided; use --moonshot-key, --deepseek-key, --thaura-key, --zai-key, --openrouter-key, --tunnel-token, --public-url, --rotate-gateway-key, or --model")
 	}
 
 	if err := config.Save(dataRoot, s); err != nil {

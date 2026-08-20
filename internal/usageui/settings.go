@@ -8,11 +8,10 @@ import (
 // GatewaySettingsDTO is the GET/PUT shape for /api/settings.
 type GatewaySettingsDTO struct {
 	ToolCompressionEnabled bool `json:"toolCompressionEnabled"`
-	PeakGuardEnabled       bool `json:"peakGuardEnabled"`
 }
 
-// handleSettings exposes the live gateway toggles (compression/verbosity) so
-// operators can switch them on/off at runtime without restarting the binary.
+// handleSettings exposes the live gateway toggles so operators can switch them
+// on/off at runtime without restarting the binary.
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if s.live == nil {
 		http.Error(w, "settings not available", http.StatusServiceUnavailable)
@@ -31,7 +30,6 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) writeSettings(w http.ResponseWriter) {
 	writeJSON(w, GatewaySettingsDTO{
 		ToolCompressionEnabled: s.live.ToolCompressionEnabled(),
-		PeakGuardEnabled:       s.live.PeakGuardEnabled(),
 	})
 }
 
@@ -44,10 +42,6 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.live.SetToolCompressionEnabled(dto.ToolCompressionEnabled); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := s.live.SetPeakGuardEnabled(dto.PeakGuardEnabled); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

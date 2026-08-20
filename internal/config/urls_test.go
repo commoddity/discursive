@@ -32,6 +32,11 @@ func TestUpstreamBaseURLDefaultsAndEnv(t *testing.T) {
 			want:     DefaultZaiBaseURL,
 		},
 		{
+			name:     "openrouter_default",
+			provider: ProviderOpenRouter,
+			want:     DefaultOpenRouterBaseURL,
+		},
+		{
 			name:     "unknown_provider",
 			provider: Provider("openai"),
 			wantErr:  true,
@@ -83,6 +88,11 @@ func TestChatCompletionsURLNoDoubleV1(t *testing.T) {
 			provider: ProviderZai,
 			want:     "https://api.z.ai/api/coding/paas/v4/chat/completions",
 		},
+		{
+			name:     "openrouter_default",
+			provider: ProviderOpenRouter,
+			want:     "https://openrouter.ai/api/v1/chat/completions",
+		},
 	}
 
 	for _, tt := range tests {
@@ -108,9 +118,12 @@ func TestModelsURL(t *testing.T) {
 	}
 }
 
-func TestZaiOnDemandChatURL(t *testing.T) {
-	got := ZaiOnDemandChatURL()
-	want := "https://api.z.ai/api/paas/v4/chat/completions"
+func TestOpenRouterChatCompletionsURL(t *testing.T) {
+	got, err := ChatCompletionsURL(ProviderOpenRouter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://openrouter.ai/api/v1/chat/completions"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}

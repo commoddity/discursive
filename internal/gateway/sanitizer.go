@@ -191,9 +191,7 @@ func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
 // {type: enabled|disabled} on/off shape (the GLM-4.7 family). GLM-5.3 uses a
 // reasoning_effort (always-thinks) shape instead.
 func zaiThinkingToggle(realModel string) bool {
-	return realModel == config.ModelZaiGLM47 ||
-		realModel == config.ModelZaiGLM47Flash ||
-		realModel == config.ModelZaiGLM47FlashX
+	return realModel == config.ModelZaiGLM47
 }
 
 // effectiveEffort reports the effort label for logs after policy application.

@@ -166,24 +166,6 @@ func (l *LiveSettings) SetThinkingEnabled(model string, enabled bool) error {
 	return nil
 }
 
-// PeakGuardEnabled returns the live DeepSeek peak-hour guard toggle.
-func (l *LiveSettings) PeakGuardEnabled() bool {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.settings.PeakGuardEnabled
-}
-
-// SetPeakGuardEnabled updates the live peak-guard toggle and persists it.
-func (l *LiveSettings) SetPeakGuardEnabled(v bool) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.settings.PeakGuardEnabled = v
-	if err := Save(l.dataRoot, l.settings); err != nil {
-		return fmt.Errorf("save peak guard enabled: %w", err)
-	}
-	return nil
-}
-
 // HasMoonshotKey reports whether a Moonshot key is configured.
 func (l *LiveSettings) HasMoonshotKey() bool {
 	l.mu.RLock()
@@ -210,6 +192,13 @@ func (l *LiveSettings) HasZaiKey() bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.settings.HasZaiKey()
+}
+
+// HasOpenRouterKey reports whether an OpenRouter key is configured.
+func (l *LiveSettings) HasOpenRouterKey() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.settings.HasOpenRouterKey()
 }
 
 // HasTunnelToken reports whether a tunnel token is configured.
@@ -247,11 +236,11 @@ func (l *LiveSettings) GetZaiKey() (*string, error) {
 	return l.settings.GetZaiKey(l.dataRoot)
 }
 
-// GetZaiFreeKey decrypts the stored free-tier Z.AI key.
-func (l *LiveSettings) GetZaiFreeKey() (*string, error) {
+// GetOpenRouterKey decrypts the stored OpenRouter key.
+func (l *LiveSettings) GetOpenRouterKey() (*string, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return l.settings.GetZaiFreeKey(l.dataRoot)
+	return l.settings.GetOpenRouterKey(l.dataRoot)
 }
 
 // GetTunnelToken decrypts the stored tunnel token.

@@ -444,20 +444,20 @@ func (c *Compressor) compressChatURL() string {
 	if c.cfg.ChatURL != "" {
 		return c.cfg.ChatURL + compressRequestPath
 	}
-	// Default: DeepSeek flash endpoint. The caller should set ChatURL to the
-	// DeepSeek base URL via config.DefaultDeepSeekBaseURL.
-	return "https://api.deepseek.com/chat/completions"
+	// Default: OpenRouter DeepSeek flash endpoint. The caller should set
+	// ChatURL to the OpenRouter base URL via config.DefaultOpenRouterBaseURL.
+	return "https://openrouter.ai/api/v1/chat/completions"
 }
 
-// compressModel is the real DeepSeek model id used for tool-result summarization.
-const compressModel = "deepseek-v4-flash"
+// compressModel is the real model id used for tool-result summarization.
+const compressModel = "deepseek/deepseek-v4-flash-0731"
 
 // summarizeContent calls deepseek-v4-flash to summarize the given content.
 // Uses a brief system prompt for compression.
 func (c *Compressor) summarizeContent(ctx context.Context, content string) (string, error) {
 	key, ok := c.cfg.GetAPIKey()
 	if !ok || key == "" {
-		return "", fmt.Errorf("compress: no DeepSeek API key configured")
+		return "", fmt.Errorf("compress: no API key configured")
 	}
 
 	reqBody := map[string]any{

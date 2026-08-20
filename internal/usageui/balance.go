@@ -17,9 +17,10 @@ import (
 // KeySource supplies decrypted upstream API keys for balance checks.
 // Never log or return these to clients.
 type KeySource struct {
-	Moonshot func() (string, bool) // key, ok
-	DeepSeek func() (string, bool)
-	Zai      func() (string, bool)
+	Moonshot   func() (string, bool) // key, ok
+	DeepSeek   func() (string, bool)
+	Zai        func() (string, bool)
+	OpenRouter func() (string, bool)
 }
 
 // ProviderBalance is one provider's balance for the dashboard.
@@ -42,6 +43,8 @@ type ProviderBalance struct {
 	// used to net out recharge increases when computing confirmed spend.
 	ToppedUp float64 `json:"topped_up,omitempty"`
 	Error    string  `json:"error,omitempty"`
+	// Raw holds the upstream API response for tooltip details (OpenRouter only).
+	Raw map[string]any `json:"raw,omitempty"`
 }
 
 // CreditBucket is one quota window (e.g. 5-hour vs weekly) for credit-based providers.
@@ -56,9 +59,10 @@ type CreditBucket struct {
 
 // BalancesResponse is the /api/balances payload.
 type BalancesResponse struct {
-	Moonshot ProviderBalance `json:"moonshot"`
-	DeepSeek ProviderBalance `json:"deepseek"`
-	Zai      ProviderBalance `json:"zai"`
+	Moonshot   ProviderBalance `json:"moonshot"`
+	DeepSeek   ProviderBalance `json:"deepseek"`
+	Zai        ProviderBalance `json:"zai"`
+	OpenRouter ProviderBalance `json:"openrouter"`
 }
 
 type deepSeekBalanceInfo struct {
@@ -79,9 +83,9 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 		client = &http.Client{Timeout: 8 * time.Second}
 	}
 
-	var moonshot, deepseek, zai ProviderBalance
+	var moonshot, deepseek, zai, openrouter ProviderBalance
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		moonshot = fetchMoonshotBalance(client, s.keySource.Moonshot)
@@ -94,13 +98,17 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 		defer wg.Done()
 		zai = fetchZaiBalance(client, s.keySource.Zai)
 	}()
+	go func() {
+		defer wg.Done()
+		openrouter = fetchOpenRouterBalance(client, s.keySource.OpenRouter)
+	}()
 	wg.Wait()
 
 	if err := s.annotateZaiHourlyReset(&zai); err != nil {
 		slog.Debug("zai hourly reset estimate failed", "error", err.Error())
 	}
 
-	writeJSON(w, BalancesResponse{Moonshot: moonshot, DeepSeek: deepseek, Zai: zai})
+	writeJSON(w, BalancesResponse{Moonshot: moonshot, DeepSeek: deepseek, Zai: zai, OpenRouter: openrouter})
 }
 
 // zaiHourlyWindow is the rolling 5-hour Z.AI coding-plan credit window.
@@ -438,6 +446,49 @@ func fetchZaiBalance(client *http.Client, getKey func() (string, bool)) Provider
 		Currency:     "credits",
 		UsagePercent: &primary.Percentage,
 		Credits:      limits,
+	}
+}
+
+func fetchOpenRouterBalance(client *http.Client, getKey func() (string, bool)) ProviderBalance {
+	if getKey == nil {
+		return ProviderBalance{Configured: false}
+	}
+	key, ok := getKey()
+	if !ok || key == "" {
+		return ProviderBalance{Configured: false}
+	}
+
+	url := "https://openrouter.ai/api/v1/credits"
+	body, status, err := getJSON(client, url, key)
+	if err != nil {
+		return ProviderBalance{Configured: true, Error: err.Error()}
+	}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return ProviderBalance{Configured: true, Error: "unauthorized (credits may require a management key)"}
+	}
+	if status != http.StatusOK {
+		return ProviderBalance{Configured: true, Error: fmt.Sprintf("upstream status %d", status)}
+	}
+
+	var resp struct {
+		Data struct {
+			TotalCredits float64 `json:"total_credits"`
+			TotalUsage   float64 `json:"total_usage"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return ProviderBalance{Configured: true, Error: "invalid response"}
+	}
+
+	remaining := resp.Data.TotalCredits - resp.Data.TotalUsage
+	return ProviderBalance{
+		Configured: true,
+		Amount:     &remaining,
+		Currency:   "USD",
+		Raw: map[string]any{
+			"total_credits": resp.Data.TotalCredits,
+			"total_usage":   resp.Data.TotalUsage,
+		},
 	}
 }
 

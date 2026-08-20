@@ -4,33 +4,45 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/commoddity/discursive/internal/config"
 	"github.com/commoddity/discursive/internal/usage"
 )
 
-// peakRedirectMap remaps DeepSeek models to GLM models during DeepSeek peak
-// hours (a "hard guard": never route to DeepSeek at peak). The GLM Coding Plan
-// only supports glm-5.3 / glm-5-turbo / glm-4.7, so both tiers redirect to
-// glm-4.7 (the cheapest plan model per the credit table).
-var peakRedirectMap = map[string]string{
-	"deepseek-v4-flash": "glm-4.7",
-	"deepseek-v4-pro":   "glm-4.7",
+// openRouterFlash is the small-model target for all OpenRouter fallback traffic.
+const openRouterFlash = "deepseek/deepseek-v4-flash-0731"
+
+// openRouterPro is the big-model target for peak reroutes of non-downgraded
+// requests that originally asked for a big model.
+const openRouterPro = "deepseek/deepseek-v4-pro-0813"
+
+// openRouterBigModels is the set of requested real model ids that should be
+// rerouted to openRouterPro during peak hours. Everything else goes to flash.
+var openRouterBigModels = map[string]bool{
+	"deepseek-v4-pro": true,
+	"glm-5.3":         true,
+	"kimi-k3":         true,
 }
 
-// peakGuardEnabled reports whether the DeepSeek peak-hour guard is currently
-// on, reading the live setting when present and otherwise defaulting to the
-// persisted settings or the product default (ON).
-func (s *Server) peakGuardEnabled() bool {
-	if s.live != nil {
-		return s.live.PeakGuardEnabled()
+// openRouterModelFor maps any requested real model id to the appropriate
+// OpenRouter DeepSeek target: big models → pro, everything else → flash.
+func openRouterModelFor(requestedModel string) string {
+	if openRouterBigModels[requestedModel] {
+		return openRouterPro
 	}
-	if s.settings != nil {
-		return s.settings.PeakGuardEnabled
-	}
-	return true
+	return openRouterFlash
 }
 
-// isDeepSeekModel reports whether a real model id belongs to the DeepSeek
-// provider (i.e. can be peak-redirected).
+// isZaiModel reports whether a real model id is served by Z.AI.
+func isZaiModel(model string) bool {
+	switch model {
+	case "glm-5.3", "glm-5.2", "glm-5-turbo", "glm-4.7", "glm-4.6v":
+		return true
+	default:
+		return false
+	}
+}
+
+// isDeepSeekModel reports whether a real model id is served by DeepSeek.
 func isDeepSeekModel(model string) bool {
 	switch model {
 	case "deepseek-v4-pro", "deepseek-v4-flash":
@@ -40,35 +52,40 @@ func isDeepSeekModel(model string) bool {
 	}
 }
 
-// applyPeakGuard is the DeepSeek peak-hour hard guard. It inspects the final
-// served model (after any subagent-router downgrade) and, when the guard is
-// enabled and the model is a DeepSeek model during a DeepSeek peak hour,
-// remaps it to an equivalent GLM model. It returns the new model (unchanged
-// when no redirect applies) and whether a redirect fired. nowUTC is
-// injectable for tests; nil defaults to time.Now.
-func (s *Server) applyPeakGuard(model, requestID string, nowUTC func() time.Time) (string, bool) {
-	if !isDeepSeekModel(model) {
+// peakNow reports whether model is in peak billing for its provider at at.
+// Z.AI models peak Mon–Fri 06:00–10:00 UTC; DeepSeek models peak daily
+// 01:00–04:00 and 06:00–10:00 UTC (only after the pricing cutover).
+func peakNow(model string, at time.Time) bool {
+	switch {
+	case isZaiModel(model):
+		return usage.ZaiPeakHours(at)
+	case isDeepSeekModel(model):
+		return usage.DeepSeekPeakHours(at.UTC().Hour())
+	default:
+		return false
+	}
+}
+
+// applyPeakReroute reroutes non-downgraded traffic to OpenRouter DeepSeek models
+// when the requested model's provider is in peak hours and an OpenRouter key is
+// configured. Big requested models become OR pro; small models become OR flash.
+// It returns the (possibly unchanged) model and whether a reroute happened.
+func (s *Server) applyPeakReroute(model, requestID string, at time.Time) (string, bool) {
+	if !peakNow(model, at) {
 		return model, false
 	}
-	if !s.peakGuardEnabled() {
+	if s.settings == nil || !s.settings.HasOpenRouterKey() {
 		return model, false
 	}
-	clock := nowUTC
-	if clock == nil {
-		clock = func() time.Time { return time.Now().UTC() }
-	}
-	if !usage.DeepSeekPeakHours(clock().UTC().Hour()) {
+	target := openRouterModelFor(model)
+	if target == model {
 		return model, false
 	}
-	target, ok := peakRedirectMap[model]
-	if !ok || target == model {
-		return model, false
-	}
-	slog.Info("peak_redirect",
+	slog.Info("peak_reroute",
 		"request_id", requestID,
 		"from", model,
 		"to", target,
-		"reason", "deepseek peak hour",
+		"provider", config.ProviderOpenRouter,
 	)
 	return target, true
 }

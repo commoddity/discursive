@@ -21,18 +21,19 @@ import (
 
 // HealthInfo holds gateway runtime health data for the dashboard.
 type HealthInfo struct {
-	Version        string `json:"version"`
-	PID            int    `json:"pid"`
-	UptimeSeconds  int64  `json:"uptime_seconds"`
-	StartedAt      string `json:"started_at"`
-	HasMoonshotKey bool   `json:"has_moonshot_key"`
-	HasDeepSeekKey bool   `json:"has_deepseek_key"`
-	HasThauraKey   bool   `json:"has_thaura_key"`
-	HasZaiKey      bool   `json:"has_zai_key"`
-	TunnelMode     string `json:"tunnel_mode"`
-	PublicURL      string `json:"public_url"`
-	LocalPort      int    `json:"local_port"`
-	GatewayKey     string `json:"gateway_key"`
+	Version          string `json:"version"`
+	PID              int    `json:"pid"`
+	UptimeSeconds    int64  `json:"uptime_seconds"`
+	StartedAt        string `json:"started_at"`
+	HasMoonshotKey   bool   `json:"has_moonshot_key"`
+	HasDeepSeekKey   bool   `json:"has_deepseek_key"`
+	HasThauraKey     bool   `json:"has_thaura_key"`
+	HasZaiKey        bool   `json:"has_zai_key"`
+	HasOpenRouterKey bool   `json:"has_openrouter_key"`
+	TunnelMode       string `json:"tunnel_mode"`
+	PublicURL        string `json:"public_url"`
+	LocalPort        int    `json:"local_port"`
+	GatewayKey       string `json:"gateway_key"`
 }
 
 //go:embed static

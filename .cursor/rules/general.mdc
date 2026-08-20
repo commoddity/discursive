@@ -332,6 +332,7 @@ to the user. Never split without approval.
 | DeepSeek request/response quirks | `deepseek.mdc` |
 | Thaura AI request/response quirks | `thaura.mdc` |
 | Z.AI request/response quirks | `zai.mdc` |
+| OpenRouter peak-hour fallback / DeepSeek models / pricing | `openrouter.mdc` |
 | Sanitizer / tool schema / stream / model alias policy | `gateway.mdc` |
 | Subagent router / compression / model override | `gateway.mdc` |
 | Cursor settings reference / model alias map | `cursor-settings.mdc` |

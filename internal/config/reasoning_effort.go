@@ -7,14 +7,14 @@ import (
 
 // Real model IDs that expose configurable thinking / reasoning_effort.
 const (
-	ModelKimiK3          = "kimi-k3"
-	ModelKimiK27         = "kimi-k2.7-code"
-	ModelDeepSeekV4Pro   = "deepseek-v4-pro"
-	ModelDeepSeekV4Flash = "deepseek-v4-flash"
-	ModelZaiGLM53        = "glm-5.3"
-	ModelZaiGLM47        = "glm-4.7"
-	ModelZaiGLM47Flash   = "glm-4.7-flash"
-	ModelZaiGLM47FlashX  = "glm-4.7-flashx"
+	ModelKimiK3                    = "kimi-k3"
+	ModelKimiK27                   = "kimi-k2.7-code"
+	ModelDeepSeekV4Pro             = "deepseek-v4-pro"
+	ModelDeepSeekV4Flash           = "deepseek-v4-flash"
+	ModelZaiGLM53                  = "glm-5.3"
+	ModelZaiGLM47                  = "glm-4.7"
+	ModelOpenRouterDeepSeekV4Flash = "deepseek/deepseek-v4-flash-0731"
+	ModelOpenRouterDeepSeekV4Pro   = "deepseek/deepseek-v4-pro-0813"
 )
 
 // EffortOff disables thinking (DeepSeek / Z.AI). Not used for Kimi (K3 and

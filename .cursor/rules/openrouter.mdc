@@ -1,0 +1,64 @@
+---
+description: OpenRouter provider (peak fallback, models, pricing, sanitizer policy)
+globs: "**/gateway/alias.go,**/gateway/sanitizer.go,**/config/urls.go,**/gateway/peakguard.go"
+alwaysApply: false
+---
+
+# OpenRouter Rules
+
+OpenRouter is used **only** as an internal peak-hour fallback provider for DeepSeek models. It is not advertised as a user-selectable provider; Cursor aliases map to direct providers and the gateway reroutes to OpenRouter upstream IDs during peak hours.
+
+## Models
+
+| Upstream id                        | Fallback target | Size class |
+| ---------------------------------- | --------------- | ---------- |
+| `deepseek/deepseek-v4-flash-0731`  | small/flash     | small      |
+| `deepseek/deepseek-v4-pro-0813`    | big/pro         | big        |
+
+Peak reroute mapping (non-downgraded traffic only):
+- `deepseek-v4-pro`, `glm-5.3`, `kimi-k3` → `deepseek/deepseek-v4-pro-0813`
+- everything else (`deepseek-v4-flash`, `glm-4.7`, `kimi-k2.7-code`, `thaura`) → `deepseek/deepseek-v4-flash-0731`
+
+All subagent/router downgrades, lane-full overflows, Z.AI 429-quota fallbacks, and the compression worker use `deepseek/deepseek-v4-flash-0731` regardless of the originally requested model.
+
+## API key
+
+- Key field: `openRouterKeyEncrypted` in `config.AppSettings`
+- Set via: `discursive set --openrouter-key <key>` or `--openrouter-key` flag on `init`
+- Retrieved via: `settings.GetOpenRouterKey(dataRoot)` in gateway/server.go
+- OpenRouter is optional — if no key is configured, peak traffic falls through to the direct provider (pay peak), zero downtime
+
+## Pricing (USD per 1M tokens)
+
+Source: https://openrouter.ai/docs/api/api-reference/credits/get-remaining-credits (list rates)
+
+| Model                              | Cache hit | Input  | Output |
+| ---------------------------------- | --------- | ------ | ------ |
+| `deepseek/deepseek-v4-flash-0731`  | $0.014    | $0.065 | $0.14  |
+| `deepseek/deepseek-v4-pro-0813`    | $0.0396   | $1.188 | $3.564 |
+
+Typical blended (OpenRouter weighted average) informational rates shown in dashboard/README:
+- flash: $0.0464 in / $0.3494 out
+- pro: $0.2389 in / $3.084 out
+
+## Sanitizer policy
+
+Reuse `PolicyDeepSeek` for OpenRouter traffic — pass the `thinking` object through.
+
+## Upstream config
+
+| Item        | Value                          |
+| ----------- | ------------------------------ |
+| Default URL | `https://openrouter.ai/api/v1` |
+
+## Credits endpoint
+
+`GET https://openrouter.ai/api/v1/credits` returns `data.total_credits` and `data.total_usage`. Remaining credits = `total_credits - total_usage`. The balance is returned as USD (not a credit count). The endpoint may require a management key; on 401/403 surface an error string in the UI tooltip.
+
+## Color (usage UI)
+
+| Provider   | CSS variable   | Hex       |
+| ---------- | -------------- | --------- |
+| openrouter | `--openrouter` | `#0ea5e9` |
+
+<!-- last-verified: 2026-08 -->

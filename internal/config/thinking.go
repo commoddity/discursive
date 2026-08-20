@@ -23,18 +23,6 @@ func ThinkingEnabledCatalog() []ThinkingSpec {
 			Label:    "GLM-4.7",
 			Default:  false,
 		},
-		{
-			Model:    ModelZaiGLM47Flash,
-			Provider: ProviderZai,
-			Label:    "GLM-4.7 Flash",
-			Default:  false,
-		},
-		{
-			Model:    ModelZaiGLM47FlashX,
-			Provider: ProviderZai,
-			Label:    "GLM-4.7 FlashX",
-			Default:  false,
-		},
 	}
 }
 

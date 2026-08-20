@@ -30,8 +30,9 @@ func TestResolveModel(t *testing.T) {
 		{name: "zai glm-4.7 alias", request: "gpt-4.1", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
 		{name: "real glm-5.3", request: "glm-5.3", provider: config.ProviderZai, model: "glm-5.3", policy: PolicyZai},
 		{name: "real glm-4.7", request: "glm-4.7", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
-		{name: "real glm-4.7-flash resolves to plan model", request: "glm-4.7-flash", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
-		{name: "real glm-4.7-flashx resolves to plan model", request: "glm-4.7-flashx", provider: config.ProviderZai, model: "glm-4.7", policy: PolicyZai},
+		{name: "internal or-flash", request: "or-flash", provider: config.ProviderOpenRouter, model: "deepseek/deepseek-v4-flash-0731", policy: PolicyDeepSeek},
+		{name: "openrouter flash upstream", request: "deepseek/deepseek-v4-flash-0731", provider: config.ProviderOpenRouter, model: "deepseek/deepseek-v4-flash-0731", policy: PolicyDeepSeek},
+		{name: "openrouter pro upstream", request: "deepseek/deepseek-v4-pro-0813", provider: config.ProviderOpenRouter, model: "deepseek/deepseek-v4-pro-0813", policy: PolicyDeepSeek},
 		{name: "unknown", request: "gpt-3.5-turbo", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -56,27 +57,32 @@ func TestResolveModel(t *testing.T) {
 func TestListAdvertisedModels(t *testing.T) {
 	list := ListAdvertisedModels()
 	if len(list) != 15 {
-		t.Fatalf("len=%d want 15", len(list))
+		t.Fatalf("len=%d want 13", len(list))
 	}
-	var sawMoonshot, sawDeepSeek, sawThaura, sawZai bool
+	var sawMoonshot, sawDeepSeek, sawThaura, sawZai, sawOpenRouter bool
 	for i, m := range list {
 		if _, err := ResolveModel(m.ID); err != nil {
 			t.Fatalf("list[%d] id %q not resolvable: %v", i, m.ID, err)
 		}
-		if m.Provider == config.ProviderMoonshot {
+		switch m.Provider {
+		case config.ProviderMoonshot:
 			sawMoonshot = true
-		}
-		if m.Provider == config.ProviderDeepSeek {
+		case config.ProviderDeepSeek:
 			sawDeepSeek = true
-		}
-		if m.Provider == config.ProviderThaura {
+		case config.ProviderThaura:
 			sawThaura = true
-		}
-		if m.Provider == config.ProviderZai {
+		case config.ProviderZai:
 			sawZai = true
+		case config.ProviderOpenRouter:
+			sawOpenRouter = true
 		}
 	}
 	if !sawMoonshot || !sawDeepSeek || !sawThaura || !sawZai {
-		t.Fatal("expected all four providers in advertise list")
+		t.Fatal("expected all four direct providers in advertise list")
+	}
+	// OpenRouter is intentionally internal-only: used for peak fallback and
+	// subagent downgrades, not advertised as a user-selectable provider.
+	if sawOpenRouter {
+		t.Fatal("openrouter should not be advertised")
 	}
 }

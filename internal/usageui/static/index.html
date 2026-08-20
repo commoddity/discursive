@@ -24,6 +24,8 @@
       --thaura-light: #34d399;
       --zai: #ec4899;
       --zai-light: #f472b6;
+      --openrouter: #0ea5e9;
+      --openrouter-light: #7dd3fc;
     }
 
     * {
@@ -113,6 +115,17 @@
       background: rgba(88, 166, 255, 0.1);
       box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.18);
     }
+
+    .provider-moonshot { color: var(--moonshot); }
+    .provider-moonshot-light { color: var(--moonshot-light); }
+    .provider-deepseek { color: var(--deepseek); }
+    .provider-deepseek-light { color: var(--deepseek-light); }
+    .provider-thaura { color: var(--thaura); }
+    .provider-thaura-light { color: var(--thaura-light); }
+    .provider-zai { color: var(--zai); }
+    .provider-zai-light { color: var(--zai-light); }
+    .provider-openrouter { color: var(--openrouter); }
+    .provider-openrouter-light { color: var(--openrouter-light); }
 
     .peak-indicator {
       display: inline-flex;
@@ -376,6 +389,24 @@
       white-space: nowrap;
     }
 
+    .bal-credit-value.credit-stack {
+      flex-direction: column;
+      gap: 2px;
+      padding: 4px 0;
+    }
+
+    .bal-credit-value.credit-stack > div {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .credit-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
     .bal-card-header {
       align-items: center;
       min-height: 0;
@@ -435,8 +466,14 @@
     }
 
     #balances-summary {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 6px;
+    }
+
+    @media (max-width: 1100px) {
+      #balances-summary {
+        grid-template-columns: repeat(2, 1fr);
+      }
     }
 
     /* Force every provider balance card to the exact same height by stretching
@@ -1516,10 +1553,6 @@
               <input type="checkbox" id="toggle-tool-compression">
               <span class="setting-label">Tool-result compression</span>
             </label>
-            <label class="setting-toggle" data-tip="DeepSeek peak-hour hard guard: never route to DeepSeek during its peak hours; redirect those requests to equivalent GLM (Z.AI) models to cut cost.">
-              <input type="checkbox" id="toggle-peak-guard">
-              <span class="setting-label">DeepSeek peak-hour guard</span>
-            </label>
           </div>
           <div class="settings-save-status" id="settings-save-status"></div>
         </div>
@@ -1578,6 +1611,7 @@
     let zaiFlatFeeUsd = null; // null = loading, 0 = failed (fetched from /api/zai-flat-fee)
     let zaiMtdUsage = null; // { requests, tokens_in, tokens_out } MTD stats for hover tooltips
     let zaiBalance = null;  // latest /api/balances zai payload, for the Z.AI card hover tooltip
+    let openrouterBalance = null; // latest /api/balances openrouter payload, for the peak tooltip
     let zaiTipTimer = null; // 1s interval refreshing the weekly-reset countdown
     let balanceSpend = null; // { moonshot: {day,week,month}, deepseek: {day,week,month} } confirmed deltas
 
@@ -1632,7 +1666,11 @@
       if (cur === 'cny' && cnyRate > 0) {
         return (val * cnyRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ¥';
       }
-      return '$' + val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // USD: show cents when amount has fractional part
+      if (val !== Math.floor(val)) {
+        return '$' + val.toFixed(2);
+      }
+      return '$' + val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     }
 
     function moneySymbol() {
@@ -1712,8 +1750,8 @@
         hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
       });
     };
-    const PROVIDER_COLORS = { moonshot: '#7c3aed', deepseek: '#2563eb', thaura: '#059669', zai: '#ec4899' };
-    const PROVIDER_LIGHT = { moonshot: '#a78bfa', deepseek: '#60a5fa', thaura: '#34d399', zai: '#f472b6' };
+    const PROVIDER_COLORS = { moonshot: '#7c3aed', deepseek: '#2563eb', thaura: '#059669', zai: '#ec4899', openrouter: '#0ea5e9' };
+    const PROVIDER_LIGHT = { moonshot: '#a78bfa', deepseek: '#60a5fa', thaura: '#34d399', zai: '#f472b6', openrouter: '#7dd3fc' };
     function providerColor(p) { return PROVIDER_COLORS[p] || '#8b949e'; }
     function providerLight(p) { return PROVIDER_LIGHT[p] || '#c9d1d9'; }
     function providerClass(p) { return PROVIDER_COLORS[p] ? p : 'deepseek'; }
@@ -1729,6 +1767,8 @@
       'zai::glm-4.7': '#f472b6', // light pink
       'zai::glm-4.7-flash': '#f9a8d4', // lighter pink
       'zai::glm-4.7-flashx': '#fbcfe8', // palest pink
+      'openrouter::deepseek/deepseek-v4-flash-0731': '#7dd3fc',
+      'openrouter::deepseek/deepseek-v4-pro-0813': '#0ea5e9',
     };
     function modelColor(provider, modelName) {
       const key = provider + '::' + modelName;
@@ -1750,6 +1790,7 @@
       deepseek: '/static/deepseek.svg',
       thaura: '/static/thaura.png',
       zai: '/static/zai.svg',
+      openrouter: '/static/openrouter.png',
     };
 
     // Shared tooltip: shows cache hit & miss for the whole stacked bar with %.
@@ -1831,7 +1872,8 @@
       moonshot: 'https://platform.kimi.ai/docs/pricing',
       deepseek: 'https://api-docs.deepseek.com/quick_start/pricing',
       thaura: 'https://thaura.ai/pricing',
-      zai: 'https://docs.z.ai/guides/overview/pricing'
+      zai: 'https://docs.z.ai/guides/overview/pricing',
+      openrouter: 'https://openrouter.ai/docs'
     };
 
     // Provider top-up / pay console URLs (balance panel logo links)
@@ -1839,6 +1881,7 @@
       moonshot: 'https://platform.kimi.ai/console/pay',
       deepseek: 'https://platform.deepseek.com/top_up',
       zai: 'https://z.ai/manage-apikey/coding-plan/personal/usage',
+      openrouter: 'https://openrouter.ai/settings/credits',
     };
 
     // Pricing per 1M tokens in USD (source: usage.mdc rules)
@@ -1863,6 +1906,10 @@
       },
       thaura: {
         'thaura': { input: 0.50, output: 2.00 },
+      },
+      openrouter: {
+        'deepseek/deepseek-v4-flash-0731': { cache_hit: 0.014, input: 0.065, output: 0.14 },
+        'deepseek/deepseek-v4-pro-0813': { cache_hit: 0.0396, input: 1.188, output: 3.564 },
       },
       zai: {
         // Credit-based pricing (credits per 1M tokens), from official Coding
@@ -1906,6 +1953,9 @@
         lines.push(row);
       }
       let html = lines.join('<br><br>');
+      if (provider === 'openrouter') {
+        html += '<br><br><em style="font-size:0.65rem;color:var(--text-muted);">Typical blended (OpenRouter weighted avg): flash $0.0464 in / $0.3494 out; pro $0.2389 in / $3.084 out</em>';
+      }
       html += '<br><br><em style="font-size:0.65rem;color:var(--text-muted);">Pricing may be outdated — click for site</em>';
       return html;
     }
@@ -2080,10 +2130,10 @@
         // Provider indicator dots in header (with pricing links)
         const providers = document.getElementById('provider-indicators');
         const provData = [
-          { id: 'moonshot', name: 'Moonshot', logo: '/static/moonshot.svg', ok: h.has_moonshot_key },
-          { id: 'deepseek', name: 'DeepSeek', logo: '/static/deepseek.svg', ok: h.has_deepseek_key },
           { id: 'zai', name: 'Z.AI', logo: '/static/zai.svg', ok: h.has_zai_key },
-          { id: 'thaura', name: 'Thaura', logo: '/static/thaura.png', ok: h.has_thaura_key },
+          { id: 'deepseek', name: 'DeepSeek', logo: '/static/deepseek.svg', ok: h.has_deepseek_key },
+          { id: 'moonshot', name: 'Moonshot', logo: '/static/moonshot.svg', ok: h.has_moonshot_key },
+          { id: 'openrouter', name: 'OpenRouter', logo: '/static/openrouter.png', ok: h.has_openrouter_key },
         ];
         providers.innerHTML = provData.map(p =>
           '<div class="provider-indicator' + (p.ok ? ' enabled' : '') + '">' +
@@ -2138,7 +2188,7 @@
     }
 
     // --- Model Controls (compression, reasoning effort, verbosity) ---
-    const PROVIDER_NAMES = { moonshot: 'Moonshot', deepseek: 'DeepSeek', thaura: 'Thaura', zai: 'Z.AI' };
+    const PROVIDER_NAMES = { moonshot: 'Moonshot', deepseek: 'DeepSeek', thaura: 'Thaura', zai: 'Z.AI', openrouter: 'OpenRouter' };
     const EFFORT_DOC_URLS = {
       moonshot: 'https://platform.kimi.ai/docs/guide/use-reasoning-effort',
       deepseek: 'https://api-docs.deepseek.com/guides/thinking_mode',
@@ -2264,7 +2314,6 @@
         document.getElementById('model-controls-content').style.display = 'block';
 
         document.getElementById('toggle-tool-compression').checked = !!settings.toolCompressionEnabled;
-        document.getElementById('toggle-peak-guard').checked = !!settings.peakGuardEnabled;
 
         // Merge reasoning-effort providers with per-model verbosity toggles.
         const verbById = {};
@@ -2352,7 +2401,6 @@
       try {
         const body = {
           toolCompressionEnabled: document.getElementById('toggle-tool-compression').checked,
-          peakGuardEnabled: document.getElementById('toggle-peak-guard').checked,
         };
         const r = await fetch('/api/settings', {
           method: 'PUT',
@@ -2623,7 +2671,7 @@
       // native `title` is plain-text only, so mark the card and position a custom
       // element instead (see wireZaiBalanceTip).
       const isZai = provider === 'zai';
-      const isTipProv = provider === 'moonshot' || provider === 'deepseek'; // carriers with confirmed spend
+      const isTipProv = provider === 'moonshot' || provider === 'deepseek' || provider === 'openrouter'; // carriers with confirmed spend or balance
       const blurCls = getBalancesVisible() ? '' : ' gw-key-blur';
       const tipClass = isZai ? ' zai-hover' : (isTipProv ? ' bal-tip-hover' : '');
       const wrap = (inner) =>
@@ -2646,10 +2694,9 @@
           const clsS = balanceColorClassFromUsage(secondary.percentage);
           return wrap(
             '<div class="label">' + label + '</div>' +
-            '<div class="value bal-credit-value">' +
-            '<span class="credit-amount ' + clsW + '">' + fmtCredits(weekly.remaining) + '</span>' +
-            '<span class="credit-sep"> / </span>' +
-            '<span class="credit-amount ' + clsS + '">' + fmtCredits(secondary.remaining) + '</span>' +
+            '<div class="value bal-credit-value credit-stack">' +
+            '<div><span class="credit-amount ' + clsW + '">' + fmtCredits(weekly.remaining) + '</span> <span class="credit-label">Wk</span></div>' +
+            '<div><span class="credit-amount ' + clsS + '">' + fmtCredits(secondary.remaining) + '</span> <span class="credit-label">5h</span></div>' +
             '</div>'
           );
         }
@@ -2693,10 +2740,12 @@
         const div = document.getElementById('balances-summary');
         div.style.display = 'grid';
         div.innerHTML =
-          renderBalanceStat('moonshot', data.moonshot) +
+          renderBalanceStat('zai', data.zai) +
           renderBalanceStat('deepseek', data.deepseek) +
-          renderBalanceStat('zai', data.zai);
+          renderBalanceStat('moonshot', data.moonshot) +
+          renderBalanceStat('openrouter', data.openrouter);
         zaiBalance = data.zai;
+        openrouterBalance = data.openrouter;
         applyBalancesVisibility();
         wireZaiBalanceTip();
         wireBalConfirmedTip();
@@ -2805,6 +2854,23 @@
     // Confirmed-spend tooltip for USD balance cards (Moonshot, DeepSeek).
     // Shows actual day/week/month spend derived from balance-snapshot deltas.
     function confirmedTipBody(provider) {
+      if (provider === 'openrouter') {
+        const b = openrouterBalance;
+        if (!b) return '<div class="ct-title">OpenRouter</div><div class="ct-empt">Balance not available</div>';
+        if (b.error) return '<div class="ct-title">OpenRouter</div><div class="ct-empt">' + escapeHtml(b.error) + '</div>';
+        if (b.amount == null) return '<div class="ct-title">OpenRouter</div><div class="ct-empt">No balance data</div>';
+        const row = (label, v) => {
+          const val = v != null ? fmtMoney(v) : '—';
+          return '<div class="ct-row"><span class="ct-label">' + label + '</span><span class="ct-value">' + val + '</span></div>';
+        };
+        const totalCredits = (b.raw && b.raw.total_credits != null) ? b.raw.total_credits : null;
+        const totalUsage = (b.raw && b.raw.total_usage != null) ? b.raw.total_usage : null;
+        return '<div class="ct-title">OpenRouter balance</div>' +
+          row('Remaining', b.amount) +
+          (totalCredits != null ? row('Total credits', totalCredits) : '') +
+          (totalUsage != null ? row('Total usage', totalUsage) : '') +
+          '<div class="ct-row" style="margin-top:6px"><span class="ct-label" style="font-size:0.65rem;color:var(--text-muted);font-weight:400">Peak-hour DeepSeek fallback only</span></div>';
+      }
       const s = balanceSpend && balanceSpend[provider];
       if (!s) return '<div class="ct-title">' + (provider.charAt(0).toUpperCase() + provider.slice(1)) + '</div><div class="ct-empt">No confirmed spend data yet — collecting snapshots</div>';
 
@@ -3688,8 +3754,8 @@
       else { refreshAll(); startPolling(); startUptimeTicker(); renderPeakIndicator(); _peakInterval = setInterval(renderPeakIndicator, 1000); }
     });
 
-    // --- DeepSeek Peak / Off-peak indicator ---
-    // Peak windows (UTC): 01:00–04:00 and 06:00–10:00 (half-open: hours
+    // --- Provider Peak / Off-peak indicator ---
+    // DeepSeek peak windows (UTC): 01:00–04:00 and 06:00–10:00 (half-open: hours
     // 1,2,3 and 6,7,8,9). Off-peak is everything else. Peak bills at 2x the
     // off-peak rate. This is a live schedule independent of the pricing
     // cutover date, so the pill always shows today's current state.
@@ -3716,6 +3782,53 @@
       return Date.UTC(y, mo, day + 1, 1, 0, 0);           // tomorrow 01:00 peak starts
     }
 
+    // Z.AI peak windows (UTC): Mon–Fri 06:00–10:00.
+    function zaiIsPeak(utcMs) {
+      const d = new Date(utcMs);
+      const wd = d.getUTCDay();
+      if (wd === 0 || wd === 6) return false;
+      const h = d.getUTCHours();
+      return h >= 6 && h < 10;
+    }
+
+    // Next Z.AI peak boundary, skipping weekends.
+    function zaiNextBoundary(utcMs) {
+      const d = new Date(utcMs);
+      let y = d.getUTCFullYear();
+      let mo = d.getUTCMonth();
+      let day = d.getUTCDate();
+      let h = d.getUTCHours();
+      let wd = d.getUTCDay();
+
+      function make(year, month, date, hour) { return Date.UTC(year, month, date, hour, 0, 0); }
+
+      // Advance to next weekday if currently on a weekend.
+      while (wd === 0 || wd === 6) {
+        day += 1;
+        wd = (wd + 1) % 7;
+        if (day > 28) {
+          const probe = new Date(Date.UTC(y, mo, day));
+          y = probe.getUTCFullYear();
+          mo = probe.getUTCMonth();
+          day = probe.getUTCDate();
+          wd = probe.getUTCDay();
+        }
+      }
+
+      if (h < 6) return make(y, mo, day, 6);   // 06:00 peak starts
+      if (h < 10) return make(y, mo, day, 10); // 10:00 peak ends
+      // After today's window: move to next weekday 06:00.
+      do {
+        day += 1;
+        const probe = new Date(Date.UTC(y, mo, day));
+        y = probe.getUTCFullYear();
+        mo = probe.getUTCMonth();
+        day = probe.getUTCDate();
+        wd = probe.getUTCDay();
+      } while (wd === 0 || wd === 6);
+      return make(y, mo, day, 6);
+    }
+
     function fmtPeakDur(ms) {
       const total = Math.max(0, Math.ceil(ms / 1000));
       const h = Math.floor(total / 3600);
@@ -3739,19 +3852,38 @@
       const label = document.getElementById('peak-indicator-label');
       const tip = document.getElementById('peak-tooltip');
       const now = Date.now();
-      const peak = deepseekIsPeak(now);
-      const boundary = deepseekNextBoundary(now);
-      const nextStr = peak ? 'Off-peak' : 'Peak';
 
-      el.classList.toggle('peak', peak);
-      el.classList.toggle('offpeak', !peak);
-      label.textContent = peak ? 'Peak' : 'Off-peak';
+      const dsPeak = deepseekIsPeak(now);
+      const dsBoundary = deepseekNextBoundary(now);
+      const dsActive = dsPeak ? 'Peak (2× rate)' : 'Off-peak (0.5× rate)';
+      const dsNextLabel = dsPeak ? 'Off-peak' : 'Peak';
+      const dsCountdown = fmtPeakDur(dsBoundary - now) + ' (' + peakLocalTime(dsBoundary) + ')';
+
+      const zPeak = zaiIsPeak(now);
+      const zBoundary = zaiNextBoundary(now);
+      const zActive = zPeak ? 'Peak' : 'Off-peak';
+      const zNextLabel = zPeak ? 'Off-peak' : 'Peak';
+      const zCountdown = fmtPeakDur(zBoundary - now) + ' (' + peakLocalTime(zBoundary) + ')';
+
+      const anyPeak = dsPeak || zPeak;
+      el.classList.toggle('peak', anyPeak);
+      el.classList.toggle('offpeak', !anyPeak);
+      label.textContent = anyPeak ? 'Peak' : 'Off-peak';
+
+      let orRow = '';
+      if (openrouterBalance && openrouterBalance.usd !== undefined) {
+        orRow = '<div class="pk-row"><span class="pk-label">OpenRouter balance</span><span class="pk-value">' + fmtMoneyUSD(openrouterBalance.usd) + '</span></div>';
+      } else if (openrouterBalance !== null) {
+        orRow = '<div class="pk-row"><span class="pk-label">OpenRouter balance</span><span class="pk-value">—</span></div>';
+      }
 
       tip.innerHTML =
-        '<div class="pk-row"><span class="pk-label">Status</span><span class="pk-value">' + (peak ? 'Peak (2× rate)' : 'Off-peak (0.5× rate)') + '</span></div>' +
-        '<div class="pk-row"><span class="pk-label">' + nextStr + ' starts in</span><span class="pk-value">' + fmtPeakDur(boundary - now) + '</span></div>' +
-        '<div class="pk-row"><span class="pk-label">' + nextStr + ' at (local)</span><span class="pk-value">' + peakLocalTime(boundary) + '</span></div>' +
-        '<div class="pk-note">Peak hours: 01:00–04:00 &amp; 06:00–10:00 UTC. All other hours are off-peak. Applies to DeepSeek only.</div>';
+        '<div class="pk-row"><span class="pk-label">DeepSeek</span><span class="pk-value">' + dsActive + '</span></div>' +
+        '<div class="pk-row"><span class="pk-label">' + dsNextLabel + ' starts in</span><span class="pk-value">' + dsCountdown + '</span></div>' +
+        '<div class="pk-row"><span class="pk-label">Z.AI</span><span class="pk-value">' + zActive + '</span></div>' +
+        '<div class="pk-row"><span class="pk-label">' + zNextLabel + ' starts in</span><span class="pk-value">' + zCountdown + '</span></div>' +
+        orRow +
+        '<div class="pk-note">DeepSeek peak: 01:00–04:00 &amp; 06:00–10:00 UTC. Z.AI peak: Mon–Fri 06:00–10:00 UTC.</div>';
     }
 
     // --- Init ---
@@ -3787,7 +3919,6 @@
       loadHealth();
       loadModelControls();
       document.getElementById('toggle-tool-compression').addEventListener('change', saveGatewaySettings);
-      document.getElementById('toggle-peak-guard').addEventListener('change', saveGatewaySettings);
       loadBalances();
       loadMTD();
       reloadGraphs();

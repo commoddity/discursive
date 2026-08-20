@@ -70,18 +70,13 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if routerResult.ReleaseLaneSlot != nil {
 		defer routerResult.ReleaseLaneSlot()
 	}
-	// Free-tier Z.AI lane (set by the downgrade lane selector): route the
-	// request to the on-demand endpoint with the free key instead of the
-	// coding-plan endpoint, and skip the peak guard (the lane choice already
-	// accounted for peak pricing).
-	useFreeZai := routerResult.OverrideApplied && routerResult.OverrideModel == freeFlashModel
 	if routerResult.OverrideApplied {
 		sanitized.Model = routerResult.OverrideModel
-		// The override may map to a different provider (e.g. kimi-k3 →
-		// glm-4.7 via the default fallback). Re-resolve the provider from the
-		// overridden model so the request is sent to the correct upstream. If
-		// the override model is unknown, fall back to a best-effort client
-		// error — we must not send a model to the wrong provider's endpoint.
+		// The override may map to a different provider. Re-resolve the
+		// provider from the overridden model so the request is sent to the
+		// correct upstream. If the override model is unknown, fall back to a
+		// best-effort client error — we must not send a model to the wrong
+		// provider's endpoint.
 		if route, err := ResolveModel(routerResult.OverrideModel); err != nil {
 			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("override model %q not resolvable: %v", routerResult.OverrideModel, err), "provider", string(sanitized.Provider), "model", routerResult.OverrideModel)
 			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("override model %q not resolvable: %v", routerResult.OverrideModel, err), "upstream_error")
@@ -91,27 +86,24 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// DeepSeek peak-hour hard guard: never route to a DeepSeek model during a
-	// peak hour. Runs after any downgrade so it is the last word before the
-	// provider is resolved for the final model. Skipped for the free Z.AI
-	// overflow lane (the lane choice already accounted for peak pricing).
-	if !useFreeZai {
-		if newModel, redirected := s.applyPeakGuard(sanitized.Model, requestID, nil); redirected {
-			sanitized.Model = newModel
-			sanitized.Body["model"] = newModel
-			route, err := ResolveModel(newModel)
-			if err != nil {
-				logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("peak redirect model %q not resolvable: %v", newModel, err), "model", newModel)
-				writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("peak redirect model %q not resolvable: %v", newModel, err), "upstream_error")
-				return
-			}
-			sanitized.Provider = route.Provider
-			sanitized.Policy = route.Policy
-			// Re-apply the thinking/sampling policy for the new model so a
-			// redirect to a GLM-thinking-toggle model emits the correct shape
-			// (the sanitizer originally applied the DeepSeek shape).
-			applyThinkingPolicy(sanitized.Body, route, s.sanitizeConfig())
+	// Peak reroute: when the requested model's provider is in peak hours and
+	// an OpenRouter key is configured, route to the appropriate OpenRouter
+	// DeepSeek model. Runs after downgrade so cheap-class traffic already has
+	// its final model; peak reroute only applies to non-downgraded traffic.
+	if newModel, redirected := s.applyPeakReroute(sanitized.Model, requestID, time.Now()); redirected {
+		sanitized.Model = newModel
+		sanitized.Body["model"] = newModel
+		route, err := ResolveModel(newModel)
+		if err != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("peak redirect model %q not resolvable: %v", newModel, err), "model", newModel)
+			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("peak redirect model %q not resolvable: %v", newModel, err), "upstream_error")
+			return
 		}
+		sanitized.Provider = route.Provider
+		sanitized.Policy = route.Policy
+		// Re-apply the thinking/sampling policy for the new model so the
+		// OpenRouter DeepSeek shape is emitted correctly.
+		applyThinkingPolicy(sanitized.Body, route, s.sanitizeConfig())
 	}
 
 	// Thinking-effort coupling: for GLM-4.7-family models (thinking on/off),
@@ -135,9 +127,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		s.verbosity.ApplyRequest(sanitized.Body, sanitized.Model)
 	}
 
-	// Pin the output language to English on every Z.AI-bound request (plan and
-	// free tier): GLM models intermittently drift to Chinese without an
-	// explicit pin. Runs after routing so it keys on the FINAL provider.
+	// Pin the output language to English on every Z.AI-bound request (plan):
+	// GLM models intermittently drift to Chinese without an explicit pin. Runs
+	// after routing so it keys on the FINAL provider.
 	if sanitized.Provider == config.ProviderZai {
 		s.injectZaiLanguageDirective(sanitized.Body)
 	}
@@ -147,7 +139,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// endpoint. Doing this after key/URL resolution would send the overflowed
 	// model to the wrong upstream.
 	var releaseZaiSlot func()
-	if sanitized.Provider == config.ProviderZai && !useFreeZai {
+	if sanitized.Provider == config.ProviderZai {
 		chosen, release, ok := s.acquireZaiLaneOrOverflow(sanitized.Model, requestID, nil)
 		if !ok {
 			logRequest(requestID, "status", http.StatusBadGateway, "error", "zai lane: request cancelled while waiting for slot", "model", sanitized.Model)
@@ -160,9 +152,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			slog.Info("zai_lane: direct request overflow", "request_id", requestID, "from", sanitized.Model, "to", chosen)
 			sanitized.Model = chosen
 			sanitized.Body["model"] = chosen
-			if chosen == freeFlashModel {
-				useFreeZai = true
-			} else if route, rerr := ResolveModel(chosen); rerr == nil {
+			if route, rerr := ResolveModel(chosen); rerr == nil {
 				sanitized.Provider = route.Provider
 				sanitized.Policy = route.Policy
 				applyThinkingPolicy(sanitized.Body, route, s.sanitizeConfig())
@@ -170,33 +160,17 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var upstreamKey string
-	if useFreeZai {
-		k, kerr := s.zaiFreeUpstreamKey()
-		if kerr != nil {
-			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("free zai key: %v", kerr), "provider", string(sanitized.Provider), "model", sanitized.Model)
-			writeJSONError(w, http.StatusBadGateway, kerr.Error(), "upstream_error")
-			return
-		}
-		upstreamKey = k
-	} else {
-		upstreamKey, err = s.upstreamKey(sanitized.Provider)
-		if err != nil {
-			logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
-			writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
-			return
-		}
+	upstreamKey, err := s.upstreamKey(sanitized.Provider)
+	if err != nil {
+		logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
+		writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
+		return
 	}
-	var chatURL string
-	if useFreeZai {
-		chatURL = zaiOnDemandChatURL()
-	} else {
-		chatURL, err = s.chatURL(sanitized.Provider, sanitized.Model)
-		if err != nil {
-			logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
-			writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
-			return
-		}
+	chatURL, err := s.chatURL(sanitized.Provider, sanitized.Model)
+	if err != nil {
+		logRequest(requestID, "status", http.StatusBadGateway, "error", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
+		writeJSONError(w, http.StatusBadGateway, err.Error(), "upstream_error")
+		return
 	}
 
 	effort := sanitized.Effort
@@ -256,63 +230,41 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Z.AI quota-exhaustion fallback: when the plan rejects the request
-	// (429 code 1305/1113), retry once on the fallback lane — free-tier
-	// glm-4.7-flash at peak, deepseek-v4-flash off-peak.
+	// (429 code 1305/1113), retry once on the fallback lane — OpenRouter
+	// DeepSeek flash if an OpenRouter key is configured, otherwise direct
+	// DeepSeek flash.
 	if sanitized.Provider == config.ProviderZai && isZaiQuotaError(resp.StatusCode, respBody) {
-		fbModel, useFreeZai, ok := s.applyFallback(requestID, nil)
-		if ok {
-			fbBody := cloneMapDeep(sanitized.Body)
-			fbBody["model"] = fbModel
-			if fbRoute, rerr := ResolveModel(fbModel); rerr == nil {
-				applyThinkingPolicy(fbBody, fbRoute, s.sanitizeConfig())
-			}
-			var fbURL, fbKey string
-			if useFreeZai {
-				fbURL = zaiOnDemandChatURL()
-				k, kerr := s.zaiFreeUpstreamKey()
-				if kerr != nil {
-					logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback key unavailable: %v", kerr), "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort)
-					s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
-					return
-				}
-				fbKey = k
-			} else {
-				fbRoute2, rerr := ResolveModel(fbModel)
-				if rerr != nil {
-					logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback model not resolvable: %v", rerr), "provider", string(sanitized.Provider), "model", fbModel, "effort", effort)
-					s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
-					return
-				}
-				u, uerr := s.chatURL(fbRoute2.Provider, fbModel)
-				if uerr != nil {
-					logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback url: %v", uerr), "provider", string(fbRoute2.Provider), "model", fbModel, "effort", effort)
-					s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
-					return
-				}
-				k, kerr := s.upstreamKey(fbRoute2.Provider)
-				if kerr != nil {
-					logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback key: %v", kerr), "model", fbModel, "effort", effort)
-					s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
-					return
-				}
-				fbURL, fbKey = u, k
-			}
-			logRequest(requestID, "fallback", fbModel, "from", sanitized.Model, "provider", string(sanitized.Provider))
-			resp2, ferr := s.doUpstream(r, fbURL, fbKey, fbBody)
-			if ferr != nil {
-				logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("fallback request failed: %v", ferr), "model", fbModel, "effort", effort)
-				writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("upstream request failed: %v", ferr), "upstream_error")
-				return
-			}
-			fbProvider := config.ProviderZai
-			if !useFreeZai {
-				if fbRoute3, rerr := ResolveModel(fbModel); rerr == nil {
-					fbProvider = fbRoute3.Provider
-				}
-			}
-			s.finishUpstream(w, resp2, wantsStream, fbProvider, fbModel, effort, requestID, started)
+		fbModel := s.applyFallback(requestID)
+		fbBody := cloneMapDeep(sanitized.Body)
+		fbBody["model"] = fbModel
+		fbRoute, rerr := ResolveModel(fbModel)
+		if rerr != nil {
+			logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback model not resolvable: %v", rerr), "provider", string(sanitized.Provider), "model", fbModel, "effort", effort)
+			s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
 			return
 		}
+		applyThinkingPolicy(fbBody, fbRoute, s.sanitizeConfig())
+		u, uerr := s.chatURL(fbRoute.Provider, fbModel)
+		if uerr != nil {
+			logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback url: %v", uerr), "provider", string(fbRoute.Provider), "model", fbModel, "effort", effort)
+			s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
+			return
+		}
+		k, kerr := s.upstreamKey(fbRoute.Provider)
+		if kerr != nil {
+			logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback key: %v", kerr), "model", fbModel, "effort", effort)
+			s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
+			return
+		}
+		logRequest(requestID, "fallback", fbModel, "from", sanitized.Model, "provider", string(sanitized.Provider))
+		resp2, ferr := s.doUpstream(r, u, k, fbBody)
+		if ferr != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("fallback request failed: %v", ferr), "model", fbModel, "effort", effort)
+			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("upstream request failed: %v", ferr), "upstream_error")
+			return
+		}
+		s.finishUpstream(w, resp2, wantsStream, fbRoute.Provider, fbModel, effort, requestID, started)
+		return
 	}
 
 	if isToolCallIDError(resp.StatusCode, string(respBody)) {
@@ -515,9 +467,9 @@ func (s *Server) doUpstreamWithRetry(r *http.Request, url, apiKey string, body m
 }
 
 // acquireZaiLaneOrOverflow reserves a Z.AI plan slot for a direct (non-
-// downgraded) request, or overflows to a fast lane when both slots are busy.
-// Unlike the router downgrade path (which never blocks), direct requests get
-// a short grace wait — the user explicitly picked this model, so we give a
+// downgraded) request, or overflows to the fallback lane when both slots are
+// busy. Unlike the router downgrade path (which never blocks), direct requests
+// get a short grace wait — the user explicitly picked this model, so we give a
 // slot a chance to free before rerouting. Returns (chosenModel, release, ok);
 // ok=false means the wait context expired.
 func (s *Server) acquireZaiLaneOrOverflow(model, requestID string, nowUTC func() time.Time) (string, func(), bool) {
@@ -539,19 +491,13 @@ func (s *Server) acquireZaiLaneOrOverflow(model, requestID string, nowUTC func()
 		return model, func() { <-s.zaiSem }, true
 	case <-ctx.Done():
 	}
-	// Overflow: same policy as the downgrade lane.
-	fbModel, useFreeZai, ok := s.applyFallback(requestID, nowUTC)
-	if !ok {
-		// No fallback computable — block on the slot rather than 429.
-		s.zaiSem <- struct{}{}
-		return model, func() { <-s.zaiSem }, true
-	}
-	_ = useFreeZai // caller re-derives from model == freeFlashModel
+	// Overflow: route to OpenRouter flash if possible, else direct DeepSeek flash.
+	fbModel := s.applyFallback(requestID)
 	return fbModel, func() {}, true
 }
 
 // zaiSlotGraceWait is how long a direct Z.AI request waits for a plan slot
-// before overflowing to a fast lane. Short enough that a queued request is
-// rerouted before the user notices a stall; long enough to absorb bursty
+// before overflowing to the fallback lane. Short enough that a queued request
+// is rerouted before the user notices a stall; long enough to absorb bursty
 // double-submits (main chat + one subagent finishing).
 const zaiSlotGraceWait = 2 * time.Second

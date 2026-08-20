@@ -119,6 +119,18 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 		}(),
 	})
 
+	// 3b. openrouter_key_present
+	checks = append(checks, Check{
+		Name: "openrouter_key_present",
+		OK:   settings.HasOpenRouterKey(),
+		Detail: func() string {
+			if settings.HasOpenRouterKey() {
+				return ""
+			}
+			return "optional: OpenRouter API key not saved (run set --openrouter-key to enable peak-hour DeepSeek fallback)"
+		}(),
+	})
+
 	// 4. gateway_key_valid
 	gkOk := crypto.IsOpenAIStyleGatewayKey(settings.GatewayKey)
 	checks = append(checks, Check{

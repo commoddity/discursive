@@ -11,14 +11,13 @@ Public reachability is via tunnel / BYO URL — see `tunnel.mdc`.
 
 ## Key model (upstream ×2 + gateway)
 
-| Key                       | Config field           | Who sees it                          |
-| ------------------------- | ---------------------- | ------------------------------------ |
-| Moonshot / Kimi API key   | `moonshotKeyEncrypted` | App only → Authorization to Moonshot |
-| DeepSeek API key          | `deepseekKeyEncrypted` | App only → Authorization to DeepSeek |
-| Thaura AI API key         | `thauraKeyEncrypted`   | App only → Authorization to Thaura   |
-| Z.AI API key              | `zaiKeyEncrypted`      | App only → Authorization to Z.AI      |
-| Z.AI free tier key        | `zaiFreeKeyEncrypted`  | App only → Authorization to Z.AI on-demand (peak-hour fallback) |
-| Gateway key (`sk-{alnum}`) | `gatewayKey`           | Cursor as "OpenAI API Key"           |
+|| Key                       | Config field           | Who sees it                          ||
+|| ------------------------- | ---------------------- | ------------------------------------ ||
+|| Moonshot / Kimi API key   | `moonshotKeyEncrypted` | App only → Authorization to Moonshot ||
+|| DeepSeek API key          | `deepseekKeyEncrypted` | App only → Authorization to DeepSeek ||
+|| Thaura AI API key         | `thauraKeyEncrypted`   | App only → Authorization to Thaura   ||
+|| Z.AI API key              | `zaiKeyEncrypted`      | App only → Authorization to Z.AI      ||
+|| Gateway key (`sk-{alnum}`) | `gatewayKey`           | Cursor as "OpenAI API Key"           ||
 
 Never log or return upstream provider keys. Wrong gateway key → OpenAI-shaped 401.
 Routing picks which upstream key to use from the **model map** (alias → provider).
@@ -28,26 +27,26 @@ Routing picks which upstream key to use from the **model map** (alias → provid
 Hardcoded defaults + optional env overrides live in
 `internal/config/urls.go` (`UpstreamBaseURL`, `ChatCompletionsURL`).
 
-| Provider | Default base                 |
-| -------- | ---------------------------- |
-| moonshot | `https://api.moonshot.ai/v1` |
-| deepseek | `https://api.deepseek.com`   |
-| thaura   | `https://backend.thaura.ai/v1` |
-| zai       | `https://api.z.ai/api/coding/paas/v4` |
-| zai-free  | `https://api.z.ai/api/paas/v4` |
+|| Provider | Default base                 ||
+|| -------- | ---------------------------- ||
+|| moonshot | `https://api.moonshot.ai/v1` ||
+|| deepseek | `https://api.deepseek.com`   ||
+|| openrouter | `https://openrouter.ai/api/v1` ||
+|| thaura   | `https://backend.thaura.ai/v1` ||
+|| zai       | `https://api.z.ai/api/coding/paas/v4` ||
 
 Use those helpers so Moonshot's `/v1` and DeepSeek's host root never produce
 `/v1/v1/...`. Do not scatter raw URL string literals in the gateway proxy.
 
 ## Endpoints (MVP)
 
-| Endpoint                    | Purpose                                              |
-| --------------------------- | ---------------------------------------------------- |
-| `GET /health`               | Status, metrics, URLs, which provider keys present   |
-| `GET|POST /v1/models`      | Advertise aliases + real ids (+ provider)            |
-| `POST /v1/chat/completions` | Main path                                            |
-| `POST /v1/responses`        | Same handler after Responses→Chat adapt              |
-| Other `/v1/*`               | Proxy when cheap (embeddings/files) — provider-aware |
+|| Endpoint                    | Purpose                                              ||
+|| --------------------------- | ---------------------------------------------------- ||
+|| `GET /health`               | Status, metrics, URLs, which provider keys present   ||
+|| `GET|POST /v1/models`      | Advertise aliases + real ids (+ provider)            ||
+|| `POST /v1/chat/completions` | Main path                                            ||
+|| `POST /v1/responses`        | Same handler after Responses→Chat adapt              ||
+|| Other `/v1/*`               | Proxy when cheap (embeddings/files) — provider-aware ||
 
 ## Model map (alias → provider → real id)
 
@@ -57,24 +56,27 @@ and pricing row.
 
 ### Primary Cursor aliases (Agent-first)
 
-| Cursor alias    | Provider | Real model       | Typical use         |
-| --------------- | -------- | ---------------- | ------------------- |
-| `gpt-4o`        | moonshot | `kimi-k3`         | Planning / flagship |
-| `gpt-4o-mini`   | moonshot | `kimi-k2.7-code`  | Coding; always thinks |
-| `o1`            | deepseek | `deepseek-v4-pro` | Harder execution    |
-| `o3-mini`       | deepseek | `deepseek-v4-flash` | Cheap execution     |
-| `gpt-5-nano`    | thaura   | `thaura`          | Ethical AI; optional provider |
-| `gpt-4.1-turbo` | zai      | `glm-5.3[1m]`    | 1M context flagship; always thinks |
-| `gpt-4.1`       | zai      | `glm-4.7`         | Budget workhorse; thinking on/off |
-| `gpt-4-turbo`   | zai      | `glm-5.3[1m]`    | **Compat alias** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` |
+|| Cursor alias    | Provider | Real model       | Typical use         ||
+|| --------------- | -------- | ---------------- | ------------------- ||
+|| `gpt-4o`        | moonshot | `kimi-k3`         | Planning / flagship ||
+|| `gpt-4o-mini`   | moonshot | `kimi-k2.7-code`  | Coding; always thinks ||
+|| `o1`            | deepseek | `deepseek-v4-pro` | Harder execution    ||
+|| `o3-mini`       | deepseek | `deepseek-v4-flash` | Cheap execution     ||
+|| `gpt-5-nano`    | thaura   | `thaura`          | Ethical AI; optional provider ||
+|| `gpt-4.1-turbo` | zai      | `glm-5.3[1m]`    | 1M context flagship; always thinks ||
+|| `gpt-4.1`       | zai      | `glm-4.7`         | Budget workhorse; thinking on/off ||
+|| `gpt-4-turbo`   | zai      | `glm-5.3[1m]`    | **Compat alias** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
 
-> **DeepSeek peak-hour hard guard.** When `PeakGuardEnabled` (live toggle, default
-> ON) is set and the final served model is a DeepSeek model during a DeepSeek peak
-> hour (01:00–04:00, 06:00–10:00 UTC), the gateway **redirects it** to `glm-4.7`.
-> This is the last word before provider resolve — it applies regardless of how the
-> DeepSeek model was chosen (alias, downgrade map, defaultFlashModel). The provider +
-> sanitizer thinking policy are re-applied for the redirect target. Logs
-> `peak_redirect` at INFO with from/to + request_id.
+> **Peak-hour fallback (always on).** During DeepSeek peak hours
+> (01:00–04:00, 06:00–10:00 UTC) or Z.AI peak hours (Mon–Fri 06:00–10:00 UTC)
+> the gateway redirects the matching model to an OpenRouter DeepSeek model:
+> big models (`deepseek-v4-pro`, `glm-5.3`, `kimi-k3`) → `deepseek/deepseek-v4-pro-0813`,
+> everything else → `deepseek/deepseek-v4-flash-0731`. No OpenRouter key? Traffic
+> falls through to the direct provider and pays peak rates. Logs
+> `peak_reroute` at INFO with from/to + request_id. This applies to non-downgraded
+> traffic only; all subagent/router downgrades, lane-full overflows, Z.AI 429-quota
+> fallbacks, and the compression worker use `deepseek/deepseek-v4-flash-0731`
+> regardless of the originally requested model.
 
 Set the alias manually in Cursor Settings → Models. The gateway maps it and
 picks the right base URL + API key. No auto-application to Cursor's state.vscdb
@@ -82,9 +84,9 @@ picks the right base URL + API key. No auto-application to Cursor's state.vscdb
 
 ### `Cursor rewrites a model ID (model picker ≠ sent model)`
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.3[1m]`). Do not treat the rewritten name as a gateway bug. |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.3[1m]`). Do not treat the rewritten name as a gateway bug. ||
 
 ## Sanitizer order (preserve)
 
@@ -108,73 +110,70 @@ model-specific quirks.
 
 ## Quota-exhaustion fallback
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| Z.AI plan returns 429 (code 1305 "overloaded" / 1113 "insufficient balance") for `glm-5.3`/`glm-4.7` | Coding plan quota exhausted or service rejecting plan traffic. | Detect 429 + code in `isZaiQuotaError()`, retry once with fallback lane: **DeepSeek peak hours** → free `glm-4.7-flash` (on-demand endpoint, free tier key); **DeepSeek off-peak** → `deepseek-v4-flash`. Implemented in `internal/gateway/fallback.go`. |
-| No free-tier fallback when Z.AI plan exhausted during DeepSeek peak hours | Free-tier Z.AI key not configured (`zaiFreeKeyEncrypted` missing). | Set free key via `discursive set --zai-free-key <key>`. Fallback auto-downgrades to `deepseek-v4-flash` when key missing. |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| Z.AI plan returns 429 (code 1305 "overloaded" / 1113 "insufficient balance") for `glm-5.3`/`glm-4.7` | Coding plan quota exhausted or service rejecting plan traffic. | Detect 429 + code in `isZaiQuotaError()`, retry once with `deepseek/deepseek-v4-flash-0731` (OpenRouter) when an OpenRouter key is present; otherwise fall through to `deepseek-v4-flash` (direct). Implemented in `internal/gateway/fallback.go`. ||
 
 ## Concurrency limiter (Z.AI)
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| Z.AI returns 429 "service overloaded" intermittently under heavy subagent load | Concurrent Z.AI requests exceed plan capacity (concurrency limits, not just token quota) | Hold all coding-plan traffic to ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2); direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow), router downgrades stay non-blocking via `selectDowngradeLane`. Retry once on 429 with 1s delay. |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| Z.AI returns 429 "service overloaded" intermittently under heavy subagent load | Concurrent Z.AI requests exceed plan capacity (concurrency limits, not just token quota) | Hold all coding-plan traffic to ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2); direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow to `deepseek/deepseek-v4-flash-0731`), router downgrades stay non-blocking via `selectDowngradeLane`. Retry once on 429 with 1s delay. ||
 
 > **Shared plan-budget model (2026-08).** All Z.AI **coding-plan** traffic is bound
 > by ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2). Chat and vision share it.
 > Direct glm-4.7/glm-5.3 requests use `acquireZaiLaneOrOverflow` — a ~2s grace wait
-> for a slot, then **overflow** to a fast lane (`deepseek-v4-flash` off-peak, free
-> `glm-4.7-flash` at peak) instead of queueing 20-45s. Router downgrades stay
-> non-blocking via `selectDowngradeLane`. Never queue on glm-4.7 when a fast lane
-> exists — queueing is the effective slowdown users feel.
+> for a slot, then **overflow** to `deepseek/deepseek-v4-flash-0731` (OpenRouter)
+> instead of queueing 20-45s. Router downgrades stay non-blocking via
+> `selectDowngradeLane`. Never queue on glm-4.7 when a fast lane exists — queueing
+> is the effective slowdown users feel.
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| Direct glm-4.7 request hangs 20-45s when the plan's 2 slots are busy (main chat + parallel subagents) | `acquireZaiSlot` blocked the goroutine indefinitely instead of overflowing | Use `acquireZaiLaneOrOverflow` (2s grace, then overflow). No `zaiSlotGraceWait`==0 call sites (2s const). |
-| Cancelled request drains a slot it never took, shrinking effective capacity | `acquireZaiSlot` returned a releasing closure even when `ctx.Done()` fired pre-acquire | Release closure must be a no-op when the slot was never acquired |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| Direct glm-4.7 request hangs 20-45s when the plan's 2 slots are busy (main chat + parallel subagents) | `acquireZaiSlot` blocked the goroutine indefinitely instead of overflowing | Use `acquireZaiLaneOrOverflow` (2s grace, then overflow). No `zaiSlotGraceWait`==0 call sites (2s const). ||
+|| Cancelled request drains a slot it never took, shrinking effective capacity | `acquireZaiSlot` returned a releasing closure even when `ctx.Done()` fired pre-acquire | Release closure must be a no-op when the slot was never acquired ||
 
 ### `Vision bypasses the plan concurrency budget`
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| glm-4.6v describe calls 429/stall chat turns while the plan is saturated | Vision described images on the same coding-plan endpoint with its own `maxConcurrent` semaphore, invisible to the chat budget | Wire `s.vision.SetPlanSlotter` to block on the same `zaiSem` before each describe. One budget, one endpoint. |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| glm-4.6v describe calls 429/stall chat turns while the plan is saturated | Vision described images on the same coding-plan endpoint with its own `maxConcurrent` semaphore, invisible to the chat budget | Wire `s.vision.SetPlanSlotter` to block on the same `zaiSem` before each describe. One budget, one endpoint. ||
 
 <!-- last-verified: 2026-08 -->
 
 ### `Verifying a gateway fix against a stale process`
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| New gateway log lines never appear after a code change; behavior identical to before the edit | The running gateway is the pre-fix binary — source edited but never rebuilt/restarted | Compare process start + binary mtime to source mtime BEFORE reading logs: `ps -o pid,lstart -p "$(pgrep discursive | head -1)"`; `ls -l "$(go env GOPATH)/bin/discursive"`. If the process predates the edit, stop reading logs and ask the user to `go install ./... && discursive stop && discursive start`. |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| New gateway log lines never appear after a code change; behavior identical to before the edit | The running gateway is the pre-fix binary — source edited but never rebuilt/restarted | Compare process start + binary mtime to source mtime BEFORE reading logs: `ps -o pid,lstart -p "$(pgrep discursive | head -1)"`; `ls -l "$(go env GOPATH)/bin/discursive"`. If the process predates the edit, stop reading logs and ask the user to `go install ./... && discursive stop && discursive start`. ||
 
 <!-- last-verified: 2026-08 -->
 
 ## Retry logic (transient Z.AI errors)
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| Z.AI request fails with 429 or 502, succeeds on immediate retry | Transient capacity issue or brief upstream hiccup. | Replace direct `doUpstream()` call with `doUpstreamWithRetry()` for Z.AI requests: on 429 (codes 1305/1113), retry once after 1s delay. Single retry avoids infinite loops while catching blips. |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| Z.AI request fails with 429 or 502, succeeds on immediate retry | Transient capacity issue or brief upstream hiccup. | Replace direct `doUpstream()` call with `doUpstreamWithRetry()` for Z.AI requests: on 429 (codes 1305/1113), retry once after 1s delay. Single retry avoids infinite loops while catching blips. ||
 
 ## Tool-result compression tuning
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| Compression fires on small tool results, paying 1-3s latency + flash cost for minimal token savings | Threshold too low (4000 chars); no token-budget awareness; empty-summary failures paid full cost then sent original | Raise `toolResultMaxLen` to 24000; add `compressMinTotalChars` (20000 chars aggregate gate); truncate on summarizer failure instead of fail-open; detect soft failures (empty/not-shorter) to truncate per-job without aborting batch |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| Compression fires on small tool results, paying 1-3s latency + flash cost for minimal token savings | Threshold too low (4000 chars); no token-budget awareness; empty-summary failures paid full cost then sent original | Raise `toolResultMaxLen` to 24000; add `compressMinTotalChars` (20000 chars aggregate gate); truncate on summarizer failure instead of fail-open; detect soft failures (empty/not-shorter) to truncate per-job without aborting batch ||
 
 <!-- last-verified: 2026-08 -->
 
-## Router downgrade context-size gate
+## No context-size gate for router downgrades
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| Large-context "automation" requests (160k-800k tokens) downgraded to glm-4.7 take 20-45s each, serializing through 2-slot lane, while deepseek-v4-flash completes in ~2s | Router downgrades all "automation" class requests to glm-4.7 regardless of context size; glm-4.7's 2-slot plan concurrency + slow long-context prefill destroy performance | Add context-size gate (`downgradeMaxContextChars = 100_000`); skip downgrade when request payload exceeds threshold and log `subagent_router: downgrade skipped — context too large` |
+All cheap-class subagent/router downgrades target `deepseek/deepseek-v4-flash-0731` (OpenRouter DeepSeek flash) which has 1M context and fast cached prefill; there is no performance-based reason to skip downgrades based on context size, unlike the old glm-4.7 lane model.
 
 <!-- last-verified: 2026-08 -->
 
 ## Lane state visibility
 
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| Cannot verify whether glm-4.7 downgrade lane overflow is firing correctly or if requests are unnecessarily waiting for slots | Channel doesn't expose current buffer depth; no visibility into in-flight count | Add `atomic.Int64` counter `glm47LaneInUse` alongside semaphore; log `in_use`/`capacity` on every routing decision in `selectDowngradeLane` |
+|| Symptom | Cause | Fix ||
+|| ------- | ----- | ---- ||
+|| Cannot verify whether glm-4.7 downgrade lane overflow is firing correctly or if requests are unnecessarily waiting for slots | Channel doesn't expose current buffer depth; no visibility into in-flight count | Add `atomic.Int64` counter `glm47LaneInUse` alongside semaphore; log `in_use`/`capacity` on every routing decision in `selectDowngradeLane` ||
 
 <!-- last-verified: 2026-08 -->
 
@@ -197,33 +196,33 @@ model-specific quirks.
 
 ## Runtime settings (no restart)
 
-| Aspect | Detail |
-| ------- | ------ |
-| Compression runtime toggles | `GET/PUT /api/settings` in usage UI → applies immediately, no restart |
-| Config fields | `ToolCompressionEnabled bool`, `Verbosity map[string]bool`, `ThinkingEnabled map[string]bool` (in `AppSettings`/`LiveSettings`) |
-| Tool threshold | `toolResultMaxLen` (4000 chars) |
-| Failure / key-missing | Soft failures (empty/not-shorter summary) truncate to `toolResultMaxLen`; hard errors fail-open with original body |
+|| Aspect | Detail ||
+|| ------- | ------ ||
+|| Compression runtime toggles | `GET/PUT /api/settings` in usage UI → applies immediately, no restart ||
+|| Config fields | `ToolCompressionEnabled bool`, `Verbosity map[string]bool`, `ThinkingEnabled map[string]bool` (in `AppSettings`/`LiveSettings`) ||
+|| Tool threshold | `toolResultMaxLen` (4000 chars) ||
+|| Failure / key-missing | Soft failures (empty/not-shorter summary) truncate to `toolResultMaxLen`; hard errors fail-open with original body ||
 
 ## Global subagent model sizing (flash fleet)
 
 The live subagent fleet lives in `/.cursor/agents/` (10 files).
-All agents now use `model: o3-mini` (deepseek-v4-flash) so the high-volume
+All agents now use `model: or-flash` (OpenRouter deepseek-v4-flash-0731) so the high-volume
 flash fleet never competes with the main chat's glm-4.7 plan slots (2
 concurrent) — cached deepseek turns answer in ~2s vs 20-45s queued on GLM.
-Free tier fallback handles peak-hour exhaustion automatically.
+OpenRouter peak fallback handles peak-hour exhaustion automatically.
 
-| Agent | model: | Rationale |
-| ----- | ------ | --------- |
-| explore-flash | `o3-mini` | Read-only search/read/cite; high volume |
-| browser-flash | `o3-mini` | Read-only fetch + extract + cite |
-| web-researcher-flash | `o3-mini` | Read-only search + cite synthesis |
-| doc-writer-flash | `o3-mini` | Prose generation from diffs |
-| bash-flash | `o3-mini` | Multi-step CLI loops; tool/agentic chops |
-| refactor-flash | `o3-mini` | Mechanical, must not break call-sites |
-| test-runner-flash | `o3-mini` | Runs tests + simple fixes |
-| implementer-flash | `o3-mini` | Writes working code |
-| code-reviewer-flash | `o3-mini` | Finds correctness bugs |
-| verifier-flash | `o3-mini` | Independent validation |
+|| Agent | model: | Rationale ||
+|| ----- | ------ | --------- ||
+|| explore-flash | `or-flash` | Read-only search/read/cite; high volume ||
+|| browser-flash | `or-flash` | Read-only fetch + extract + cite ||
+|| web-researcher-flash | `or-flash` | Read-only search + cite synthesis ||
+|| doc-writer-flash | `or-flash` | Prose generation from diffs ||
+|| bash-flash | `or-flash` | Multi-step CLI loops; tool/agentic chops ||
+|| refactor-flash | `or-flash` | Mechanical, must not break call-sites ||
+|| test-runner-flash | `or-flash` | Runs tests + simple fixes ||
+|| implementer-flash | `or-flash` | Writes working code ||
+|| code-reviewer-flash | `or-flash` | Finds correctness bugs ||
+|| verifier-flash | `or-flash` | Independent validation ||
 
 Keep this table in sync when editing `/.cursor/agents/*.md`.
 
