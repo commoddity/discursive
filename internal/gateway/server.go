@@ -45,23 +45,24 @@ type ServerConfig struct {
 
 // Server is the loopback gateway HTTP server.
 type Server struct {
-	cfg            ServerConfig
-	mux            *http.ServeMux
-	httpSrv        *http.Server
-	client         *http.Client
-	store          *usage.Store
-	agg            *usage.Aggregator
-	sessionID      string
-	settings       *config.AppSettings
-	live           *config.LiveSettings
-	vision         *vision.Describer
-	visionCache    interface{ Close() error } // durable image-description cache; nil in tests
-	router         *SubAgentRouter
-	compressor     *Compressor
-	verbosity      *verbosity.Controller
-	zaiSem         chan struct{} // limits concurrent Z.AI requests (plan concurrency)
-	glm47Lane      chan struct{} // glm-4.7 downgrade lane (cap = plan concurrency limit)
-	glm47LaneInUse atomic.Int64  // concurrent in-flight requests using the glm-4.7 lane
+	cfg             ServerConfig
+	mux             *http.ServeMux
+	httpSrv         *http.Server
+	client          *http.Client
+	store           *usage.Store
+	agg             *usage.Aggregator
+	sessionID       string
+	settings        *config.AppSettings
+	live            *config.LiveSettings
+	vision          *vision.Describer
+	visionCache     interface{ Close() error } // durable image-description cache; nil in tests
+	router          *SubAgentRouter
+	compressor      *Compressor
+	verbosity       *verbosity.Controller
+	zaiSem          chan struct{}    // limits concurrent Z.AI requests (plan concurrency)
+	glm47Lane       chan struct{}    // glm-4.7 downgrade lane (cap = plan concurrency limit)
+	glm47LaneInUse  atomic.Int64     // concurrent in-flight requests using the glm-4.7 lane
+	stickyFallbacks *stickyFallbacks // per-model sticky fallback after lane overflow
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -175,6 +176,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	// glm-4.7 downgrade lane: downgrade selection is non-blocking — overflow
 	// is delegated to another lane (see selectDowngradeLane) instead of queueing.
 	s.glm47Lane = make(chan struct{}, glm47LaneCap)
+	s.stickyFallbacks = newStickyFallbacks()
 
 	// Always allocate the compressor and verbosity controller so they can be
 	// enabled/disabled at runtime from the usage dashboard without a restart.

@@ -205,14 +205,14 @@ func TestEstimateUSD(t *testing.T) {
 			provider: config.ProviderOpenRouter,
 			model:    "deepseek/deepseek-v4-pro-0813",
 			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
-			want:     1.188 + 3.564,
+			want:     0.66 + 1.98,
 		},
 		{
 			name:     "openrouter_pro_cache_hit",
 			provider: config.ProviderOpenRouter,
 			model:    "deepseek/deepseek-v4-pro-0813",
 			tokens:   UsageTokens{CacheHitTokens: 1_000_000},
-			want:     0.0396,
+			want:     0.022,
 		},
 		{
 			name:     "unknown_openrouter_model",

@@ -132,15 +132,18 @@ var zaiPricing = map[string]zaiRates{
 //
 //	https://openrouter.ai/deepseek/deepseek-v4-pro-0813
 //
-// Weighted-average "typical blended" rates (informational): flash $0.0464 in /
-// $0.3494 out; pro $0.2389 in / $3.084 out.
+// OpenRouter charges one flat list rate year-round — it does NOT have
+// peak/off-peak pricing (https://openrouter.ai/blog/insights/why-openrouter-for-deepseek/).
+// These are the catalog list rates: flash $0.014/$0.065/$0.14;
+// pro $0.022/$0.66/$1.98. Weighted-average "typical blended" provider rates
+// (informational): flash ≈ $0.0476 in / $0.384 out; pro ≈ $0.2365 in / $3.174 out.
 type openrouterRates struct {
 	cacheHit, input, output float64
 }
 
 var openrouterPricing = map[string]openrouterRates{
 	"deepseek/deepseek-v4-flash-0731": {0.014, 0.065, 0.14},
-	"deepseek/deepseek-v4-pro-0813":   {0.0396, 1.188, 3.564},
+	"deepseek/deepseek-v4-pro-0813":   {0.022, 0.66, 1.98},
 }
 
 // zaiCreditsPerMTok holds official Coding Plan credit multipliers per 10k

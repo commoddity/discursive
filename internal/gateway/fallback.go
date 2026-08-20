@@ -36,9 +36,24 @@ func isZaiQuotaError(status int, body []byte) bool {
 // applyFallback computes the fallback model for a failed Z.AI plan request.
 // It always returns an OpenRouter DeepSeek flash model when an OpenRouter key
 // is configured, otherwise falls back to direct DeepSeek flash.
+// This is used for quota-exhaustion fallback (429 errors), where flash is
+// always appropriate because the upstream Z.AI plan has already rejected the
+// request regardless of model size.
 func (s *Server) applyFallback(requestID string) string {
 	if s.settings != nil && s.settings.HasOpenRouterKey() {
 		return openRouterFlash
 	}
+	return "deepseek-v4-flash"
+}
+
+// applyFallbackWithModel computes the fallback model for a Z.AI lane overflow.
+// Unlike quota-exhaustion, lane overflow preserves model size: direct requests
+// for big models (glm-5.3, deepseek-v4-pro, kimi-k3) are rerouted to OpenRouter
+// pro, while downgraded or small-model requests go to flash.
+func (s *Server) applyFallbackWithModel(originalModel, requestID string) string {
+	if s.settings != nil && s.settings.HasOpenRouterKey() {
+		return openRouterModelFor(originalModel)
+	}
+	// No OpenRouter key: always fall back to direct flash regardless of model size
 	return "deepseek-v4-flash"
 }

@@ -470,11 +470,25 @@ func (s *Server) doUpstreamWithRetry(r *http.Request, url, apiKey string, body m
 // downgraded) request, or overflows to the fallback lane when both slots are
 // busy. Unlike the router downgrade path (which never blocks), direct requests
 // get a short grace wait — the user explicitly picked this model, so we give a
-// slot a chance to free before rerouting. Returns (chosenModel, release, ok);
-// ok=false means the wait context expired.
+// slot a chance to free before rerouting.
+//
+// Sticky fallback: once a model overflows, subsequent requests for that model
+// go straight to the fallback (no grace wait) until the lane has been free for
+// zaiStickyFreeStreak consecutive requests. This avoids flip-flopping between
+// upstreams (cold prompt cache on both) and keeps quality consistent within a
+// turn sequence.
+// Returns (chosenModel, release, ok); ok=false means the wait context expired.
 func (s *Server) acquireZaiLaneOrOverflow(model, requestID string, nowUTC func() time.Time) (string, func(), bool) {
 	if s.zaiSem == nil {
 		return model, func() {}, true
+	}
+	// Sticky: stay on the fallback unless the lane probe lifts stickiness.
+	if s.stickyFallbacks.sticky(model) {
+		if !s.stickyLaneProbe(model, requestID) {
+			fbModel := s.applyFallbackWithModel(model, requestID)
+			return fbModel, func() {}, true
+		}
+		// Stickiness lifted: fall through and take a slot normally.
 	}
 	// Non-blocking first try.
 	select {
@@ -491,8 +505,9 @@ func (s *Server) acquireZaiLaneOrOverflow(model, requestID string, nowUTC func()
 		return model, func() { <-s.zaiSem }, true
 	case <-ctx.Done():
 	}
-	// Overflow: route to OpenRouter flash if possible, else direct DeepSeek flash.
-	fbModel := s.applyFallback(requestID)
+	// Overflow: preserve "big" model choice for direct requests; pin sticky.
+	s.stickyFallbacks.markOverflowed(model)
+	fbModel := s.applyFallbackWithModel(model, requestID)
 	return fbModel, func() {}, true
 }
 

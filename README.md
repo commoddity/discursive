@@ -400,10 +400,10 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 | API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role                                                                     |
 | ------------ | ---------------- | ------------ | ------------- | ------------------------------------------------------------------------ |
 | `glm-5.3`    | $0.26            | $1.40        | $4.40         | Planning model; always thinks; reasoning_effort + cache |
-| `glm-4.7`    | $0.11            | $0.60        | $2.20         | Budget execution; thinking on/off                                        |
+| `glm-4.7`    | $0.12            | $0.46        | $1.60         | Budget execution; thinking on/off                                        |
 
 
-| `glm-4.6v`   | $0.05            | $0.30        | $0.90         | Vision worker — describes images for ALL providers (not user-selectable) |
+| `glm-4.6v`   | $0.03            | $0.12        | $0.27         | Vision worker — describes images for ALL providers (not user-selectable) |
 
 > **PROVISIONAL — `glm-5.3` per-token rates.** Z.AI still lists GLM-5.2 as its
 > newest row and the GLM-5.3 docs say "The GLM-5.3 API is coming soon". The
@@ -422,12 +422,13 @@ the direct provider is in peak pricing and an OpenRouter key is configured.
 | Upstream ID | Cache hit / MTok | Input / MTok | Output / MTok | Role |
 | --- | --- | --- | --- | --- |
 | `deepseek/deepseek-v4-flash-0731` | $0.014 | $0.065 | $0.14 | Peak fallback for small models |
-| `deepseek/deepseek-v4-pro-0813` | $0.0396 | $1.188 | $3.564 | Peak fallback for big models |
+| `deepseek/deepseek-v4-pro-0813` | $0.022 | $0.66 | $1.98 | Peak fallback for big models |
 
-> **List rates.** OpenRouter's weighted-average "typical blended cost" is
-> informational: flash ≈ $0.0464 in / $0.3494 out, pro ≈ $0.2389 in / $3.084
-> out. The dashboard and usage records use the list rates above.
-> pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing).
+> **Flat list rates.** OpenRouter has no peak/off-peak pricing
+> (see [Why Use OpenRouter for DeepSeek](https://openrouter.ai/blog/insights/why-openrouter-for-deepseek/)),
+> so these rates apply year-round. Weighted-average "typical blended cost" is
+> informational: flash ≈ $0.0476 in / $0.384 out, pro ≈ $0.2365 in / $3.174 out.
+> The dashboard and usage records use the list rates above.
 
 
 > **GLM Coding Plan quota is points-based (2026-08).** Model calls consume

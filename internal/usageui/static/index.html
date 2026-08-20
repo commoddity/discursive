@@ -1909,7 +1909,7 @@
       },
       openrouter: {
         'deepseek/deepseek-v4-flash-0731': { cache_hit: 0.014, input: 0.065, output: 0.14 },
-        'deepseek/deepseek-v4-pro-0813': { cache_hit: 0.0396, input: 1.188, output: 3.564 },
+        'deepseek/deepseek-v4-pro-0813': { cache_hit: 0.022, input: 0.66, output: 1.98 },
       },
       zai: {
         // Credit-based pricing (credits per 1M tokens), from official Coding
@@ -1954,7 +1954,7 @@
       }
       let html = lines.join('<br><br>');
       if (provider === 'openrouter') {
-        html += '<br><br><em style="font-size:0.65rem;color:var(--text-muted);">Typical blended (OpenRouter weighted avg): flash $0.0464 in / $0.3494 out; pro $0.2389 in / $3.084 out</em>';
+        html += '<br><br><em style="font-size:0.65rem;color:var(--text-muted);">Typical blended (OpenRouter weighted avg): flash $0.0476 in / $0.384 out; pro $0.2365 in / $3.174 out</em>';
       }
       html += '<br><br><em style="font-size:0.65rem;color:var(--text-muted);">Pricing may be outdated — click for site</em>';
       return html;

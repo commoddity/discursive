@@ -32,18 +32,23 @@ func TestAcquireZaiLaneOrOverflow(t *testing.T) {
 		s        *Server
 		clock    func() time.Time
 		inFlight int
+		model    string
 		want     string
 	}{
-		{"free slot keeps glm-4.7 off-peak", &Server{}, offpeak, 0, "glm-4.7"},
-		{"free slot keeps glm-4.7 at peak", &Server{}, peak, 0, "glm-4.7"},
-		{"full sem off-peak overflows to direct flash (no OR key)", &Server{}, offpeak, glm47LaneCap, "deepseek-v4-flash"},
-		{"full sem peak overflows to openrouter flash (OR key)", newServerWithKey(), peak, glm47LaneCap, openRouterFlash},
+		{"free slot keeps glm-4.7 off-peak", &Server{}, offpeak, 0, "glm-4.7", "glm-4.7"},
+		{"free slot keeps glm-4.7 at peak", &Server{}, peak, 0, "glm-4.7", "glm-4.7"},
+		{"free slot keeps glm-5.3 off-peak", &Server{}, offpeak, 0, "glm-5.3", "glm-5.3"},
+		{"free slot keeps glm-5.3 at peak", &Server{}, peak, 0, "glm-5.3", "glm-5.3"},
+		{"full sem small model overflows to flash (no OR key)", &Server{}, offpeak, glm47LaneCap, "glm-4.7", "deepseek-v4-flash"},
+		{"full sem big model overflows to flash (no OR key)", &Server{}, offpeak, glm47LaneCap, "glm-5.3", "deepseek-v4-flash"},
+		{"full sem small model overflows to flash (OR key)", newServerWithKey(), peak, glm47LaneCap, "glm-4.7", openRouterFlash},
+		{"full sem big model overflows to pro (OR key)", newServerWithKey(), peak, glm47LaneCap, "glm-5.3", openRouterPro},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.s.zaiSem = make(chan struct{}, glm47LaneCap)
 			fillSem(tt.s, tt.inFlight)
-			got, release, ok := tt.s.acquireZaiLaneOrOverflow("glm-4.7", "req_test", tt.clock)
+			got, release, ok := tt.s.acquireZaiLaneOrOverflow(tt.model, "req_test", tt.clock)
 			if !ok {
 				t.Fatal("expected ok=true")
 			}

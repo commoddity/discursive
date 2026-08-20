@@ -104,7 +104,7 @@ OpenRouter hosts DeepSeek models and is used only as an internal peak-hour fallb
 || Upstream ID                         | Cache hit | Cache miss | Output ||
 || ----------------------------------- | --------- | ---------- | ------ ||
 || `deepseek/deepseek-v4-flash-0731`  | $0.014    | $0.065     | $0.14  ||
-|| `deepseek/deepseek-v4-pro-0813`    | $0.0396   | $1.188     | $3.564 ||
+|| `deepseek/deepseek-v4-pro-0813`    | $0.022    | $0.66      | $1.98  ||
 
 > **List rates.** OpenRouter's weighted-average "typical blended cost" is
 > informational: flash ≈ $0.0464 in / $0.3494 out, pro ≈ $0.2389 in / $3.084
