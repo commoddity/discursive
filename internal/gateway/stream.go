@@ -53,6 +53,17 @@ func parseUsageObject(u map[string]any) tokenUsage {
 		}
 	}
 
+	// OpenRouter reports cache write/hit inside prompt_tokens_details when it
+	// exposes them at all. cache_write_tokens indicates newly-cached (miss) work.
+	if details, ok := u["prompt_tokens_details"].(map[string]any); ok {
+		if writeTokens := uint64Field(details, "cache_write_tokens"); writeTokens > 0 {
+			out.CacheMissTokens = writeTokens
+		}
+		if cached := uint64Field(details, "cached_tokens"); cached > 0 {
+			out.CacheHitTokens = cached
+		}
+	}
+
 	return out
 }
 

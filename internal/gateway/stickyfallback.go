@@ -74,6 +74,8 @@ func (sf *stickyFallbacks) probeBusy(model string) {
 	if sf == nil {
 		return
 	}
+	sf.mu.Lock()
+	defer sf.mu.Unlock()
 	if e, ok := sf.entries[model]; ok {
 		e.freeStreak = 0
 	}

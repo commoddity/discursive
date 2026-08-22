@@ -19,6 +19,7 @@ func newStickyServerWithKey(t *testing.T) *Server {
 // keeps it there while the lane stays busy, then returns to the direct model
 // only after the free-streak threshold is met.
 func TestStickyFallback(t *testing.T) {
+	t.Setenv(EnvForcePeak, "1")
 	s := newStickyServerWithKey(t)
 	s.zaiSem = make(chan struct{}, glm47LaneCap)
 	clock := func() time.Time { return time.Now() }
@@ -71,6 +72,7 @@ func TestStickyFallback(t *testing.T) {
 
 // TestStickyFallbackStreakReset verifies a busy probe resets the streak.
 func TestStickyFallbackStreakReset(t *testing.T) {
+	t.Setenv(EnvForcePeak, "1")
 	s := newStickyServerWithKey(t)
 	s.zaiSem = make(chan struct{}, glm47LaneCap)
 	clock := func() time.Time { return time.Now() }

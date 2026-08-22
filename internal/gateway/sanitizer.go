@@ -17,6 +17,7 @@ type SanitizeConfig struct {
 	ThinkingDisabled           bool              // retained for tests/compat; K2 uses EffortByModel off|on
 	EffortByModel              map[string]string // real model id → effort (from app settings)
 	ThinkingEnabledByModel     map[string]bool   // real model id → thinking on/off (GLM-4.7 family)
+	OpenRouterSort             string            // provider.sort value for OpenRouter; empty disables
 }
 
 // DefaultSanitizeConfig returns product defaults.
@@ -29,6 +30,7 @@ func DefaultSanitizeConfig() SanitizeConfig {
 		ThinkingDisabled:           true,
 		EffortByModel:              config.DefaultReasoningEffort(),
 		ThinkingEnabledByModel:     config.DefaultThinkingEnabled(),
+		OpenRouterSort:             config.OpenRouterSort(),
 	}
 }
 
@@ -75,6 +77,7 @@ func SanitizeRequest(body map[string]any, cfg SanitizeConfig) (SanitizeResult, e
 	const stripImages = false
 
 	applyThinkingPolicy(body, route, cfg)
+	applyOpenRouterSort(body, route, cfg.OpenRouterSort)
 
 	if cfg.ForceNonStreaming {
 		body["stream"] = false
@@ -192,6 +195,15 @@ func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
 // reasoning_effort (always-thinks) shape instead.
 func zaiThinkingToggle(realModel string) bool {
 	return realModel == config.ModelZaiGLM47
+}
+
+// applyOpenRouterSort injects the OpenRouter provider routing hint. It is a
+// no-op for other providers or when the sort value is empty.
+func applyOpenRouterSort(body map[string]any, route Route, sort string) {
+	if route.Provider != config.ProviderOpenRouter || sort == "" {
+		return
+	}
+	body["provider"] = map[string]any{"sort": sort}
 }
 
 // effectiveEffort reports the effort label for logs after policy application.

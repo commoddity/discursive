@@ -44,7 +44,9 @@ func TestPeakNow(t *testing.T) {
 		want  bool
 	}{
 		{"deepseek pro peak morning", "deepseek-v4-pro", peakTime(7, time.Tuesday), true},
-		{"deepseek flash peak early", "deepseek-v4-flash", peakTime(2, time.Sunday), true},
+		{"deepseek flash peak early sunday pre-cutover", "deepseek-v4-flash", peakTime(2, time.Sunday), true},
+		{"deepseek flash sunday post-cutover off-peak", "deepseek-v4-flash", time.Date(2026, 8, 23, 7, 0, 0, 0, time.UTC), false},
+		{"deepseek flash saturday post-cutover off-peak", "deepseek-v4-flash", time.Date(2026, 8, 29, 7, 0, 0, 0, time.UTC), false},
 		{"deepseek off peak", "deepseek-v4-pro", peakTime(12, time.Tuesday), false},
 		{"zai peak weekday", "glm-4.7", peakTime(7, time.Friday), true},
 		{"zai off peak weekend", "glm-4.7", peakTime(7, time.Saturday), false},
@@ -58,6 +60,24 @@ func TestPeakNow(t *testing.T) {
 				t.Fatalf("peakNow(%q, %v) = %v, want %v", tt.model, tt.at, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPeakNowForcePeak(t *testing.T) {
+	t.Setenv(EnvForcePeak, "1")
+	offpeak := peakTime(12, time.Tuesday) // 12:00 UTC is off-peak for all providers
+	for model, want := range map[string]bool{
+		"deepseek-v4-pro":   true,
+		"deepseek-v4-flash": true,
+		"glm-5.3":           true,
+		"glm-4.7":           true,
+		"kimi-k3":           false, // moonshot is never peak-eligible
+		"kimi-k2.7-code":    false,
+		"thaura":            false,
+	} {
+		if got := peakNow(model, offpeak); got != want {
+			t.Fatalf("peakNow(%q, offpeak) under force-peak = %v, want %v", model, got, want)
+		}
 	}
 }
 
@@ -111,4 +131,59 @@ func TestOpenRouterTargetsResolveToOpenRouter(t *testing.T) {
 			t.Fatalf("%q resolved to policy %d, want PolicyDeepSeek", id, route.Policy)
 		}
 	}
+}
+
+// TestOpenRouterOnlyDuringPeak is the hard-rule enforcement test: every
+// fallback/override mapping must return a non-OpenRouter model when peakNow
+// is false, and the send-time guard must correct OpenRouter ids off-peak.
+func TestOpenRouterOnlyDuringPeak(t *testing.T) {
+	withKey := func() *Server {
+		s := &Server{settings: &config.AppSettings{}}
+		_ = s.settings.SetOpenRouterKey(t.TempDir(), "sk-or")
+		return s
+	}
+
+	// Force peak off deterministically by asserting against a fixed off-peak
+	// instant via the guard's correction behavior under known env state.
+	t.Run("guard corrects OpenRouter id when not forced", func(t *testing.T) {
+		s := withKey()
+		if peakNow("deepseek-v4-flash", time.Now()) {
+			t.Skip("test run during real DeepSeek peak hours; guard check non-deterministic")
+		}
+		if got := s.isPeakAllowedOpenRouter(openRouterFlash, "req"); got != "deepseek-v4-flash" {
+			t.Fatalf("guard returned %q, want corrected deepseek-v4-flash", got)
+		}
+	})
+	t.Run("guard keeps OpenRouter id when peak forced", func(t *testing.T) {
+		t.Setenv(EnvForcePeak, "1")
+		s := withKey()
+		if got := s.isPeakAllowedOpenRouter(openRouterFlash, "req"); got != openRouterFlash {
+			t.Fatalf("guard returned %q, want openRouterFlash under forced peak", got)
+		}
+	})
+	t.Run("realFallbackModel never returns OpenRouter", func(t *testing.T) {
+		for _, m := range []string{"glm-5.3", "glm-4.7", "deepseek-v4-pro", "kimi-k3", "kimi-k2.7-code", "thaura", "unknown"} {
+			if got := realFallbackModel(m); got != "deepseek-v4-flash" && got != "deepseek-v4-pro" {
+				t.Fatalf("realFallbackModel(%q) = %q, want a real DeepSeek model", m, got)
+			}
+		}
+	})
+	t.Run("fallbackTargetFor returns real model off-peak", func(t *testing.T) {
+		// Use peakTime's fixed off-peak instant semantics indirectly: with the
+		// real clock, if we happen to be in real peak, skip; else assert real ids.
+		s := withKey()
+		if peakNow("deepseek-v4-flash", time.Now()) {
+			t.Skip("test run during real DeepSeek peak hours")
+		}
+		for _, m := range []string{"glm-5.3", "glm-4.7", "kimi-k3"} {
+			if got := s.fallbackTargetFor(m, "req"); got != "deepseek-v4-flash" && got != "deepseek-v4-pro" {
+				t.Fatalf("fallbackTargetFor(%q) = %q, want real DeepSeek model", m, got)
+			}
+		}
+	})
+	t.Run("default downgrade target is real", func(t *testing.T) {
+		if defaultFlashModel == openRouterFlash || defaultProModel == openRouterPro {
+			t.Fatal("router downgrade candidates must be real DeepSeek models")
+		}
+	})
 }

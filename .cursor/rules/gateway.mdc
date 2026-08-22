@@ -67,16 +67,20 @@ and pricing row.
 || `gpt-4.1`       | zai      | `glm-4.7`         | Budget workhorse; thinking on/off ||
 || `gpt-4-turbo`   | zai      | `glm-5.3[1m]`    | **Compat alias** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
 
-> **Peak-hour fallback (always on).** During DeepSeek peak hours
-> (01:00–04:00, 06:00–10:00 UTC) or Z.AI peak hours (Mon–Fri 06:00–10:00 UTC)
-> the gateway redirects the matching model to an OpenRouter DeepSeek model:
-> big models (`deepseek-v4-pro`, `glm-5.3`, `kimi-k3`) → `deepseek/deepseek-v4-pro-0813`,
-> everything else → `deepseek/deepseek-v4-flash-0731`. No OpenRouter key? Traffic
-> falls through to the direct provider and pays peak rates. Logs
-> `peak_reroute` at INFO with from/to + request_id. This applies to non-downgraded
-> traffic only; all subagent/router downgrades, lane-full overflows, Z.AI 429-quota
-> fallbacks, and the compression worker use `deepseek/deepseek-v4-flash-0731`
-> regardless of the originally requested model.
+> **Peak-hour fallback (always on, HARD RULE: OpenRouter is peak-only).**
+> During DeepSeek peak hours (01:00–04:00, 06:00–10:00 UTC) or Z.AI peak
+> hours (Mon–Fri 06:00–10:00 UTC) the gateway redirects the matching model to
+> an OpenRouter DeepSeek model: big models (`deepseek-v4-pro`, `glm-5.3`,
+> `kimi-k3`) → `deepseek/deepseek-v4-pro-0813`, everything else →
+> `deepseek/deepseek-v4-flash-0731`. **Outside peak hours OpenRouter is never
+> used**: subagent/router downgrades, lane-full overflows, Z.AI 429-quota
+> fallbacks, and the compression worker use the real models
+> `deepseek-v4-flash`/`deepseek-v4-pro` (see `fallbackTargetFor` in
+> `internal/gateway/fallback.go` and the send-time guard
+> `isPeakAllowedOpenRouter` in `peakguard.go`; `DISCURSIVE_FORCE_PEAK` simulates
+> peak for testing). No OpenRouter key? Peak traffic falls through to the
+> direct provider and pays peak rates. Logs `peak_reroute` at INFO with
+> from/to + request_id. This applies to non-downgraded traffic only.
 
 Set the alias manually in Cursor Settings → Models. The gateway maps it and
 picks the right base URL + API key. No auto-application to Cursor's state.vscdb
@@ -112,21 +116,21 @@ model-specific quirks.
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| Z.AI plan returns 429 (code 1305 "overloaded" / 1113 "insufficient balance") for `glm-5.3`/`glm-4.7` | Coding plan quota exhausted or service rejecting plan traffic. | Detect 429 + code in `isZaiQuotaError()`, retry once with `deepseek/deepseek-v4-flash-0731` (OpenRouter) when an OpenRouter key is present; otherwise fall through to `deepseek-v4-flash` (direct). Implemented in `internal/gateway/fallback.go`. ||
+|| Z.AI plan returns 429 (code 1305 "overloaded" / 1113 "insufficient balance") for `glm-5.3`/`glm-4.7` | Coding plan quota exhausted or service rejecting plan traffic. | Detect 429 + code in `isZaiQuotaError()`, retry once via `fallbackTargetFor`: real `deepseek-v4-flash` (direct) off-peak, OpenRouter flash only during DeepSeek peak with an OR key. Implemented in `internal/gateway/fallback.go`. ||
 
 ## Concurrency limiter (Z.AI)
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| Z.AI returns 429 "service overloaded" intermittently under heavy subagent load | Concurrent Z.AI requests exceed plan capacity (concurrency limits, not just token quota) | Hold all coding-plan traffic to ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2); direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow to `deepseek/deepseek-v4-flash-0731`), router downgrades stay non-blocking via `selectDowngradeLane`. Retry once on 429 with 1s delay. ||
+|| Z.AI returns 429 "service overloaded" intermittently under heavy subagent load | Concurrent Z.AI requests exceed plan capacity (concurrency limits, not just token quota) | Hold all coding-plan traffic to ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2); direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow to real `deepseek-v4-flash`/`v4-pro` — OpenRouter only during peak, via `fallbackTargetFor`), router downgrades stay non-blocking via `selectDowngradeLane`. Retry once on 429 with 1s delay. ||
 
 > **Shared plan-budget model (2026-08).** All Z.AI **coding-plan** traffic is bound
 > by ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2). Chat and vision share it.
 > Direct glm-4.7/glm-5.3 requests use `acquireZaiLaneOrOverflow` — a ~2s grace wait
-> for a slot, then **overflow** to `deepseek/deepseek-v4-flash-0731` (OpenRouter)
-> instead of queueing 20-45s. Router downgrades stay non-blocking via
-> `selectDowngradeLane`. Never queue on glm-4.7 when a fast lane exists — queueing
-> is the effective slowdown users feel.
+> for a slot, then **overflow** to real DeepSeek flash/pro (`fallbackTargetFor`;
+> OpenRouter equivalents only during DeepSeek peak) instead of queueing 20-45s.
+> Router downgrades stay non-blocking via `selectDowngradeLane`. Never queue on
+> glm-4.7 when a fast lane exists — queueing is the effective slowdown users feel.
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
@@ -165,7 +169,7 @@ model-specific quirks.
 
 ## No context-size gate for router downgrades
 
-All cheap-class subagent/router downgrades target `deepseek/deepseek-v4-flash-0731` (OpenRouter DeepSeek flash) which has 1M context and fast cached prefill; there is no performance-based reason to skip downgrades based on context size, unlike the old glm-4.7 lane model.
+All cheap-class subagent/router downgrades target the real `deepseek-v4-flash` (via `defaultFlashModel`, OpenRouter equivalent only during peak) which has 1M context and fast cached prefill; there is no performance-based reason to skip downgrades based on context size, unlike the old glm-4.7 lane model.
 
 <!-- last-verified: 2026-08 -->
 
@@ -206,10 +210,11 @@ All cheap-class subagent/router downgrades target `deepseek/deepseek-v4-flash-07
 ## Global subagent model sizing (flash fleet)
 
 The live subagent fleet lives in `/.cursor/agents/` (10 files).
-All agents now use `model: or-flash` (OpenRouter deepseek-v4-flash-0731) so the high-volume
+All agents now use `model: or-flash` (gateway alias; resolves to real DeepSeek
+flash via `deepseek-v4-flash` during off-peak, OpenRouter flash during peak) so the high-volume
 flash fleet never competes with the main chat's glm-4.7 plan slots (2
 concurrent) — cached deepseek turns answer in ~2s vs 20-45s queued on GLM.
-OpenRouter peak fallback handles peak-hour exhaustion automatically.
+The peak-only OpenRouter rule (see `openrouter.mdc`) governs all substitution.
 
 || Agent | model: | Rationale ||
 || ----- | ------ | --------- ||

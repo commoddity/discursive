@@ -3412,13 +3412,14 @@
         const spend = await api(url);
         const buckets = spend.buckets || [];
 
-        const order = ['moonshot', 'deepseek', 'zai', 'thaura'];
-        const totals = { moonshot: 0, deepseek: 0, zai: 0, thaura: 0 };
+        const order = ['moonshot', 'deepseek', 'openrouter', 'zai', 'thaura'];
+        const totals = { moonshot: 0, deepseek: 0, zai: 0, thaura: 0, openrouter: 0 };
         for (const b of buckets) {
           totals.moonshot += b.moonshot || 0;
           totals.deepseek += b.deepseek || 0;
           totals.zai += b.zai || 0;
           totals.thaura += b.thaura || 0;
+          totals.openrouter += b.openrouter || 0;
         }
         const provs = order.filter(p => totals[p] > 0);
         const hasData = provs.length > 0;
@@ -3453,11 +3454,11 @@
           }
         });
 
-        // "includes est." note when Z.AI or Thaura contribute.
+        // "includes est." note when Z.AI, Thaura, or OpenRouter contribute.
         let noteHtml = '';
-        if (hasData && (totals.zai > 0 || totals.thaura > 0)) {
+        if (hasData && (totals.zai > 0 || totals.thaura > 0 || totals.openrouter > 0)) {
           noteHtml = '<div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-top:6px">' +
-            'Includes est. USD (Z.AI + Thaura). Moonshot/DeepSeek are billing-confirmed.</div>';
+            'Includes est. USD (Z.AI + Thaura + OpenRouter). Moonshot/DeepSeek are billing-confirmed.</div>';
         }
         document.getElementById('by-provider-note').innerHTML = noteHtml;
       } catch (e) { /* chart stays empty */ }
@@ -3478,7 +3479,7 @@
           }
           const i = tooltip.dataPoints[0].dataIndex;
           const prov = provs[i];
-          const name = prov.charAt(0).toUpperCase() + prov.slice(1);
+          const name = prov === 'openrouter' ? 'OpenRouter' : prov.charAt(0).toUpperCase() + prov.slice(1);
           const isConfirmed = prov === 'moonshot' || prov === 'deepseek';
           const val = totals[prov] || 0;
 
@@ -3756,30 +3757,58 @@
 
     // --- Provider Peak / Off-peak indicator ---
     // DeepSeek peak windows (UTC): 01:00–04:00 and 06:00–10:00 (half-open: hours
-    // 1,2,3 and 6,7,8,9). Off-peak is everything else. Peak bills at 2x the
-    // off-peak rate. This is a live schedule independent of the pricing
-    // cutover date, so the pill always shows today's current state.
+    // 1,2,3 and 6,7,8,9) on Beijing weekdays. Off-peak is everything else.
+    // From 2026-08-23 00:00 Beijing, weekends (Beijing time) are off-peak all day.
+
+    const DEEPSEEK_WEEKEND_CUTOVER_MS = Date.UTC(2026, 7, 22, 16, 0, 0); // Aug 23 00:00 Beijing
+
+    function deepseekBeijingWeekday(utcMs) {
+      const beijing = new Date(utcMs + 8 * 60 * 60 * 1000);
+      return beijing.getUTCDay(); // 0=Sun … 6=Sat in Beijing local calendar
+    }
 
     function deepseekIsPeak(utcMs) {
+      if (utcMs >= DEEPSEEK_WEEKEND_CUTOVER_MS) {
+        const wd = deepseekBeijingWeekday(utcMs);
+        if (wd === 0 || wd === 6) return false;
+      }
       const h = new Date(utcMs).getUTCHours();
       return (h >= 1 && h < 4) || (h >= 6 && h < 10);
+    }
+
+    function deepseekNextPeakStart(utcMs) {
+      const d = new Date(utcMs);
+      const y = d.getUTCFullYear();
+      const mo = d.getUTCMonth();
+      const day = d.getUTCDate();
+      const candidates = [];
+      for (let add = 0; add < 8; add++) {
+        candidates.push(Date.UTC(y, mo, day + add, 1, 0, 0));
+        candidates.push(Date.UTC(y, mo, day + add, 6, 0, 0));
+      }
+      candidates.sort((a, b) => a - b);
+      for (const c of candidates) {
+        if (c > utcMs && deepseekIsPeak(c)) return c;
+      }
+      return utcMs + 24 * 60 * 60 * 1000;
     }
 
     // Next UTC transition instant, as milliseconds since epoch, strictly after
     // utcMs. Peak windows are half-open [1,4) and [6,10); transitions occur at
     // the top of each boundary hour.
     function deepseekNextBoundary(utcMs) {
+      if (!deepseekIsPeak(utcMs)) {
+        return deepseekNextPeakStart(utcMs);
+      }
       const d = new Date(utcMs);
       const y = d.getUTCFullYear();
       const mo = d.getUTCMonth();
       const day = d.getUTCDate();
       const h = d.getUTCHours();
 
-      if (h < 1)  return Date.UTC(y, mo, day, 1, 0, 0);   // 01:00 peak starts
       if (h < 4)  return Date.UTC(y, mo, day, 4, 0, 0);   // 04:00 peak ends
-      if (h < 6)  return Date.UTC(y, mo, day, 6, 0, 0);   // 06:00 peak starts
       if (h < 10) return Date.UTC(y, mo, day, 10, 0, 0);  // 10:00 peak ends
-      return Date.UTC(y, mo, day + 1, 1, 0, 0);           // tomorrow 01:00 peak starts
+      return deepseekNextPeakStart(utcMs);
     }
 
     // Z.AI peak windows (UTC): Mon–Fri 06:00–10:00.
@@ -3883,7 +3912,7 @@
         '<div class="pk-row"><span class="pk-label">Z.AI</span><span class="pk-value">' + zActive + '</span></div>' +
         '<div class="pk-row"><span class="pk-label">' + zNextLabel + ' starts in</span><span class="pk-value">' + zCountdown + '</span></div>' +
         orRow +
-        '<div class="pk-note">DeepSeek peak: 01:00–04:00 &amp; 06:00–10:00 UTC. Z.AI peak: Mon–Fri 06:00–10:00 UTC.</div>';
+        '<div class="pk-note">DeepSeek peak: Beijing weekdays 01:00–04:00 &amp; 06:00–10:00 UTC (weekends off-peak). Z.AI peak: Mon–Fri 06:00–10:00 UTC.</div>';
     }
 
     // --- Init ---

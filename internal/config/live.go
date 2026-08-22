@@ -201,6 +201,13 @@ func (l *LiveSettings) HasOpenRouterKey() bool {
 	return l.settings.HasOpenRouterKey()
 }
 
+// OpenRouterSort returns the live OpenRouter provider sort preference.
+func (l *LiveSettings) OpenRouterSort() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return OpenRouterSort()
+}
+
 // HasTunnelToken reports whether a tunnel token is configured.
 func (l *LiveSettings) HasTunnelToken() bool {
 	l.mu.RLock()

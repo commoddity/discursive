@@ -20,7 +20,9 @@ import (
 //	https://openrouter.ai/docs
 //
 // DeepSeek switched to peak/off-peak billing at 2026-08-16 16:00 UTC; peak
-// hours (01:00–04:00 and 06:00–10:00 UTC) bill at 2x the off-peak rates.
+// hours (01:00–04:00 and 06:00–10:00 UTC) bill at 2x the off-peak rates on
+// Beijing weekdays. From 2026-08-23 00:00 Beijing, weekends (Beijing time)
+// are off-peak all day.
 
 var ErrUnknownModel = errors.New("unknown model for pricing")
 
@@ -74,10 +76,28 @@ var deepseekPricingOffPeak = map[string]deepseekRates{
 // Source: https://api-docs.deepseek.com/quick_start/pricing
 var DeepSeekPeakCutover = time.Date(2026, 8, 16, 16, 0, 0, 0, time.UTC)
 
-// DeepSeekPeakHours reports whether a UTC hour is a peak hour. Peak windows are
-// half-open [01:00,04:00) and [06:00,10:00) UTC (hours 1,2,3 and 6,7,8,9).
-func DeepSeekPeakHours(utcHour int) bool {
-	return (utcHour >= 1 && utcHour < 4) || (utcHour >= 6 && utcHour < 10)
+// DeepSeekWeekendOffPeakCutover is when Beijing weekend days stop having peak
+// billing windows (effective 2026-08-23 00:00 Beijing = 2026-08-22 16:00 UTC).
+var DeepSeekWeekendOffPeakCutover = time.Date(2026, 8, 22, 16, 0, 0, 0, time.UTC)
+
+// beijingTZ is China Standard Time (UTC+8). DeepSeek defines weekday/weekend
+// billing in Beijing time.
+var beijingTZ = time.FixedZone("Asia/Shanghai", 8*60*60)
+
+// DeepSeekPeakHours reports whether at falls in a DeepSeek peak billing window.
+// Peak windows are half-open [01:00,04:00) and [06:00,10:00) UTC (hours
+// 1,2,3 and 6,7,8,9) on Beijing weekdays. From DeepSeekWeekendOffPeakCutover
+// onward, Beijing Saturday and Sunday are off-peak all day.
+func DeepSeekPeakHours(at time.Time) bool {
+	utc := at.UTC()
+	if !utc.Before(DeepSeekWeekendOffPeakCutover) {
+		wd := utc.In(beijingTZ).Weekday()
+		if wd == time.Saturday || wd == time.Sunday {
+			return false
+		}
+	}
+	h := utc.Hour()
+	return (h >= 1 && h < 4) || (h >= 6 && h < 10)
 }
 
 // deepseekRateFor selects the rate card for a given billing instant: the legacy
@@ -94,7 +114,7 @@ func deepseekRateFor(model string, at time.Time) (deepseekRates, error) {
 	if !ok {
 		return deepseekRates{}, fmt.Errorf("%w: deepseek %q", ErrUnknownModel, model)
 	}
-	if DeepSeekPeakHours(at.UTC().Hour()) {
+	if DeepSeekPeakHours(at) {
 		return deepseekRates{cacheHit: r.cacheHit * 2, cacheMiss: r.cacheMiss * 2, output: r.output * 2}, nil
 	}
 	return r, nil
@@ -204,7 +224,8 @@ func CursorComparisonReference() (input, cache, output float64) {
 // EstimateUSDAt computes estimated cost for provider + real model id at the
 // billing instant (per-request timestamp). For DeepSeek the rate card depends
 // on the instant: legacy flat card before 2026-08-16 16:00 UTC, then
-// off-peak/peak (peak hours 01:00–04:00 and 06:00–10:00 UTC bill at 2x).
+// off-peak/peak (Beijing weekdays: peak hours 01:00–04:00 and 06:00–10:00 UTC
+// bill at 2x; Beijing weekends off-peak all day from Aug 23 2026).
 func EstimateUSDAt(provider config.Provider, model string, u UsageTokens, at time.Time) (float64, error) {
 	if at.IsZero() {
 		at = time.Now().UTC()

@@ -14,7 +14,7 @@ const glm47LaneCap = 2
 // land on glm-4.7:
 //
 //	glm-4.7 while a lane slot is free (plan concurrency)
-//	→ lane full → OpenRouter deepseek-v4-flash-0731 (cheap overflow)
+//	→ lane full → deepseek-v4-flash (direct; OpenRouter only during peak)
 //
 // Returns the chosen model and a release func that frees the lane slot when
 // the request completes (no-op for overflow lanes).
@@ -32,15 +32,15 @@ func (s *Server) selectDowngradeLane(requestID string) (string, func()) {
 			"capacity", glm47LaneCap)
 		return "glm-4.7", s.releaseGLM47LaneSlot
 	default:
-		// Lane full: route to OpenRouter flash overflow.
+		// Lane full: route to real DeepSeek flash overflow (peak-gated).
 		slog.Info("downgrade_lane: glm-4.7 lane full",
 			"request_id", requestID,
 			"in_use", s.glm47LaneInUse.Load(),
 			"capacity", glm47LaneCap)
 	}
-	slog.Info("downgrade_lane: overflow → openrouter deepseek-v4-flash-0731",
+	slog.Info("downgrade_lane: overflow → deepseek-v4-flash",
 		"request_id", requestID)
-	return openRouterFlash, func() {}
+	return "deepseek-v4-flash", func() {}
 }
 
 // releaseGLM47LaneSlot decrements the in-use counter and frees the semaphore slot.

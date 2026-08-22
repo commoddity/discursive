@@ -183,15 +183,13 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	// Per-request gates (compressionEnabled / verbosityEnabled) read the live
 	// setting; when disabled they short-circuit before any work is done, so the
 	// always-allocated structs add zero hot-path cost.
-	// Compression worker targets OpenRouter DeepSeek flash when an OpenRouter
-	// key is configured, otherwise falls back to direct DeepSeek flash.
-	compressURL, _ := config.ChatCompletionsURL(config.ProviderOpenRouter)
+	// Compression worker targets the real DeepSeek flash endpoint. HARD RULE:
+	// OpenRouter is peak-only; a background summarizer never needs it, so it
+	// always runs direct.
+	compressURL, _ := config.ChatCompletionsURL(config.ProviderDeepSeek)
 	// Strip /chat/completions suffix — Compressor.ChatURL expects the base URL.
 	flashBase := strings.TrimSuffix(compressURL, "/chat/completions")
 	flashKeyFn := func() (string, bool) {
-		if k, err := s.settings.GetOpenRouterKey(s.cfg.DataRoot); err == nil && k != nil && *k != "" {
-			return *k, true
-		}
 		k, err := s.settings.GetDeepSeekKey(s.cfg.DataRoot)
 		if err != nil || k == nil || *k == "" {
 			return "", false
@@ -207,11 +205,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		// sentinel session so the cost accrues without polluting the active
 		// chat session grouping.
 		RecordUsage: func(model string, promptTokens, completionTokens uint64, latency time.Duration) {
-			provider := config.ProviderOpenRouter
-			if model == "deepseek-v4-flash" {
-				provider = config.ProviderDeepSeek
-			}
-			s.recordAuxUsage(auxCompressSession, provider, model, auxCompressRequestID, latency, tokenUsage{
+			s.recordAuxUsage(auxCompressSession, config.ProviderDeepSeek, model, auxCompressRequestID, latency, tokenUsage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
 			})

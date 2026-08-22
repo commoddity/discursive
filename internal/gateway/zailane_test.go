@@ -9,11 +9,13 @@ import (
 
 // TestAcquireZaiLaneOrOverflow covers the direct-request lane: free slot keeps
 // the model, full lane + grace-wait expiry overflows to the fallback lane
-// (OpenRouter flash when an OpenRouter key is configured, otherwise direct
-// DeepSeek flash), and the release func is a no-op when no slot was taken.
+// (real DeepSeek, size-preserving; OpenRouter equivalents only during DeepSeek
+// peak), and the release func is a no-op when no slot was taken.
 func TestAcquireZaiLaneOrOverflow(t *testing.T) {
-	peak := laneClock(8)     // 08:00 UTC = DeepSeek peak window
-	offpeak := laneClock(12) // 12:00 UTC = off-peak
+	// Force peak so OpenRouter substitution is deterministic regardless of the
+	// wall clock the tests run at.
+	t.Setenv(EnvForcePeak, "1")
+	offpeak := laneClock(12)
 
 	fillSem := func(s *Server, n int) {
 		for i := 0; i < n; i++ {
@@ -36,13 +38,13 @@ func TestAcquireZaiLaneOrOverflow(t *testing.T) {
 		want     string
 	}{
 		{"free slot keeps glm-4.7 off-peak", &Server{}, offpeak, 0, "glm-4.7", "glm-4.7"},
-		{"free slot keeps glm-4.7 at peak", &Server{}, peak, 0, "glm-4.7", "glm-4.7"},
 		{"free slot keeps glm-5.3 off-peak", &Server{}, offpeak, 0, "glm-5.3", "glm-5.3"},
-		{"free slot keeps glm-5.3 at peak", &Server{}, peak, 0, "glm-5.3", "glm-5.3"},
+		// Under forced peak, real-vs-OpenRouter substitution is gated by the OR
+		// key; without a key everything lands on real DeepSeek.
 		{"full sem small model overflows to flash (no OR key)", &Server{}, offpeak, glm47LaneCap, "glm-4.7", "deepseek-v4-flash"},
-		{"full sem big model overflows to flash (no OR key)", &Server{}, offpeak, glm47LaneCap, "glm-5.3", "deepseek-v4-flash"},
-		{"full sem small model overflows to flash (OR key)", newServerWithKey(), peak, glm47LaneCap, "glm-4.7", openRouterFlash},
-		{"full sem big model overflows to pro (OR key)", newServerWithKey(), peak, glm47LaneCap, "glm-5.3", openRouterPro},
+		{"full sem big model overflows to pro (no OR key)", &Server{}, offpeak, glm47LaneCap, "glm-5.3", "deepseek-v4-pro"},
+		{"full sem small model overflows to OR flash (OR key)", newServerWithKey(), offpeak, glm47LaneCap, "glm-4.7", openRouterFlash},
+		{"full sem big model overflows to OR pro (OR key)", newServerWithKey(), offpeak, glm47LaneCap, "glm-5.3", openRouterPro},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

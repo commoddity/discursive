@@ -769,6 +769,29 @@ func TestParseUsageObject(t *testing.T) {
 			},
 			wantHit: 2000, wantMiss: 0, wantIn: 1000, wantOut: 100,
 		},
+		{
+			name: "OpenRouter cached_tokens + cache_write_tokens",
+			usage: map[string]any{
+				"prompt_tokens":     1000,
+				"completion_tokens": 200,
+				"prompt_tokens_details": map[string]any{
+					"cached_tokens":      800,
+					"cache_write_tokens": 200,
+				},
+			},
+			wantHit: 800, wantMiss: 200, wantIn: 1000, wantOut: 200,
+		},
+		{
+			name: "OpenRouter cache_write_tokens only (cold cache)",
+			usage: map[string]any{
+				"prompt_tokens":     1000,
+				"completion_tokens": 200,
+				"prompt_tokens_details": map[string]any{
+					"cache_write_tokens": 1000,
+				},
+			},
+			wantHit: 0, wantMiss: 1000, wantIn: 1000, wantOut: 200,
+		},
 	}
 
 	for _, tt := range tests {
@@ -785,6 +808,51 @@ func TestParseUsageObject(t *testing.T) {
 			}
 			if got.CompletionTokens != tt.wantOut {
 				t.Errorf("CompletionTokens: got %d, want %d", got.CompletionTokens, tt.wantOut)
+			}
+		})
+	}
+}
+
+func TestSanitizeRequest_OpenRouterSort(t *testing.T) {
+	tests := []struct {
+		name         string
+		model        string
+		sort         string
+		wantSort     string
+		wantProvider config.Provider
+	}{
+		{name: "or-flash default", model: "or-flash", sort: "", wantSort: "throughput", wantProvider: config.ProviderOpenRouter},
+		{name: "or-flash custom", model: "or-flash", sort: "latency", wantSort: "latency", wantProvider: config.ProviderOpenRouter},
+		{name: "or-flash disabled", model: "or-flash", sort: "disabled", wantSort: "disabled", wantProvider: config.ProviderOpenRouter},
+		{name: "deepseek not affected", model: "o3-mini", sort: "throughput", wantSort: "", wantProvider: config.ProviderDeepSeek},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.OpenRouterSort = tt.sort
+			if tt.sort == "" {
+				cfg.OpenRouterSort = "throughput"
+			}
+			body := map[string]any{
+				"model":    tt.model,
+				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+			}
+			res, err := SanitizeRequest(body, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Provider != tt.wantProvider {
+				t.Fatalf("provider: got %s want %s", res.Provider, tt.wantProvider)
+			}
+			prov, ok := res.Body["provider"].(map[string]any)
+			if tt.wantSort == "" {
+				if ok {
+					t.Fatalf("expected no provider field, got %v", prov)
+				}
+				return
+			}
+			if !ok || prov["sort"] != tt.wantSort {
+				t.Fatalf("provider.sort: got %v want %q", res.Body["provider"], tt.wantSort)
 			}
 		})
 	}

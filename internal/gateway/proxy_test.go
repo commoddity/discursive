@@ -405,6 +405,9 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 	if err := settings.SetOpenRouterKey(dataRoot, "sk-or"); err != nil {
 		t.Fatal(err)
 	}
+	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
+		t.Fatal(err)
+	}
 	if err := config.Save(dataRoot, settings); err != nil {
 		t.Fatal(err)
 	}
@@ -420,6 +423,17 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 	}))
 	t.Cleanup(orUp.Close)
 
+	var dsCalled atomic.Int32
+	var dsModel string
+	dsUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dsCalled.Add(1)
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		dsModel, _ = body["model"].(string)
+		_ = json.NewEncoder(w).Encode(mockCompletion(dsModel))
+	}))
+	t.Cleanup(dsUp.Close)
+
 	srv, err := gateway.NewServer(gateway.ServerConfig{
 		ListenAddr:            "127.0.0.1:0",
 		GatewayKey:            settings.GatewayKey,
@@ -431,6 +445,7 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 			config.ProviderMoonshot:   moonshotUp.URL + "/moonshot/chat/completions",
 			config.ProviderZai:        zaiUp.URL + "/zai/chat/completions",
 			config.ProviderOpenRouter: orUp.URL + "/openrouter/chat/completions",
+			config.ProviderDeepSeek:   dsUp.URL + "/deepseek/chat/completions",
 		},
 	})
 	if err != nil {
@@ -444,8 +459,8 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 
 	// gpt-4o resolves to kimi-k3 (Moonshot). It's a short, simple lookup —
 	// classified SimpleLookup → downgraded to defaultFlashModel
-	// (OpenRouter DeepSeek flash-0731). The request must reach the
-	// OpenRouter upstream with the overridden model.
+	// (deepseek-v4-flash). Off-peak the request must reach the direct
+	// DeepSeek upstream (OpenRouter is peak-only), with the overridden model.
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
 		"model": "gpt-4o",
 		"messages": []any{
@@ -462,10 +477,13 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 	if moonshotCalled.Load() != 0 {
 		t.Fatalf("Moonshot upstream was called %d times for a downgraded request, it must not be", moonshotCalled.Load())
 	}
-	if orCalled.Load() != 1 {
-		t.Fatalf("expected OpenRouter upstream to be called exactly once, got %d", orCalled.Load())
+	if orCalled.Load() != 0 {
+		t.Fatalf("OpenRouter upstream was called %d times off-peak, it must not be", orCalled.Load())
 	}
-	if orModel != "deepseek/deepseek-v4-flash-0731" {
-		t.Fatalf("expected overridden model sent to OpenRouter, got %q", orModel)
+	if dsCalled.Load() != 1 {
+		t.Fatalf("expected DeepSeek upstream to be called exactly once, got %d", dsCalled.Load())
+	}
+	if dsModel != "deepseek-v4-flash" {
+		t.Fatalf("expected overridden model sent to DeepSeek, got %q", dsModel)
 	}
 }

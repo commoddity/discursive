@@ -11,6 +11,23 @@ import (
 
 const configFileName = "config.json"
 
+const (
+	// EnvOpenRouterSort is the env var that controls the OpenRouter provider
+	// routing sort preference. Default is "throughput". Set to empty to disable.
+	EnvOpenRouterSort = "DISCURSIVE_OPENROUTER_SORT"
+	// DefaultOpenRouterSort is the default OpenRouter sort hint.
+	DefaultOpenRouterSort = "throughput"
+)
+
+// OpenRouterSort returns the configured OpenRouter provider sort preference.
+// Empty disables the sort hint entirely.
+func OpenRouterSort() string {
+	if v := os.Getenv(EnvOpenRouterSort); v != "" {
+		return v
+	}
+	return DefaultOpenRouterSort
+}
+
 // AppSettings is the persisted settings (secrets encrypted at rest).
 type AppSettings struct {
 	LocalPort              uint16            `json:"localPort"`

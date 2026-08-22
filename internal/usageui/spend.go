@@ -1,5 +1,5 @@
 // Spend endpoint: blends confirmed (balance-delta) spend for Moonshot/DeepSeek
-// with estimated (usage-table) spend for Z.AI/Thaura into one per-bucket series.
+// with estimated (usage-table) spend for Z.AI/Thaura/OpenRouter into one per-bucket series.
 package usageui
 
 import (
@@ -20,19 +20,21 @@ type SpendBucketResponse struct {
 }
 
 // SpendBucket is one time bucket's spend split by provider. Confirmed =
-// moonshot+deepseek (balance-derived); Estimated = thaura (usage-derived).
+// moonshot+deepseek (balance-derived); Estimated = thaura/openrouter
+// (usage-derived).
 // Z.AI is deliberately excluded from headline spend totals: it is a flat-fee
 // GLM Coding Plan (credit-based, not real per-token money), so its token
 // estimate must never inflate the spend number. Z.AI usage is surfaced
 // separately in its own balance/credits card.
 type SpendBucket struct {
-	Bucket    string  `json:"bucket"`
-	Confirmed float64 `json:"confirmed"`
-	Estimated float64 `json:"estimated"`
-	Moonshot  float64 `json:"moonshot"`
-	DeepSeek  float64 `json:"deepseek"`
-	Zai       float64 `json:"zai"`
-	Thaura    float64 `json:"thaura"`
+	Bucket     string  `json:"bucket"`
+	Confirmed  float64 `json:"confirmed"`
+	Estimated  float64 `json:"estimated"`
+	Moonshot   float64 `json:"moonshot"`
+	DeepSeek   float64 `json:"deepseek"`
+	Zai        float64 `json:"zai"`
+	Thaura     float64 `json:"thaura"`
+	OpenRouter float64 `json:"openrouter"`
 }
 
 // fxUSDPerCNY is the CNY-per-USD rate used to derive confirmed CNY spend.
@@ -107,6 +109,9 @@ func (s *Server) handleSpend(w http.ResponseWriter, r *http.Request) {
 		case config.ProviderThaura:
 			b.Thaura += row.EstUSD
 			b.Estimated += row.EstUSD
+		case config.ProviderOpenRouter:
+			b.OpenRouter += row.EstUSD
+			b.Estimated += row.EstUSD
 		}
 		est[row.Bucket] = b
 	}
@@ -133,6 +138,7 @@ func (s *Server) handleSpend(w http.ResponseWriter, r *http.Request) {
 		b.Estimated += e.Estimated
 		b.Zai += e.Zai
 		b.Thaura += e.Thaura
+		b.OpenRouter += e.OpenRouter
 		buckets = append(buckets, b)
 	}
 	if buckets == nil {

@@ -315,6 +315,13 @@ func TestEstimateUSDDepSeekPeakOffPeak(t *testing.T) {
 			toks:  pro,
 			want:  0.044,
 		},
+		{
+			name:  "flash_sunday_post_weekend_cutover_off_peak",
+			model: "deepseek-v4-flash",
+			at:    time.Date(2026, 8, 23, 7, 0, 0, 0, time.UTC), // Sunday Beijing, UTC peak hour
+			toks:  flash,
+			want:  0.22 + 0.66,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -324,6 +331,28 @@ func TestEstimateUSDDepSeekPeakOffPeak(t *testing.T) {
 			}
 			if math.Abs(got-tt.want) > eps {
 				t.Fatalf("got %v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDeepSeekPeakHours(t *testing.T) {
+	tests := []struct {
+		name string
+		at   time.Time
+		want bool
+	}{
+		{"tuesday 07:00 utc peak", time.Date(2026, 8, 18, 7, 0, 0, 0, time.UTC), true},
+		{"tuesday 12:00 utc off-peak", time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC), false},
+		{"sunday pre-weekend-cutover peak hour", time.Date(2026, 1, 11, 7, 0, 0, 0, time.UTC), true},
+		{"saturday post-weekend-cutover off-peak", time.Date(2026, 8, 29, 7, 0, 0, 0, time.UTC), false},
+		{"sunday post-weekend-cutover off-peak", time.Date(2026, 8, 23, 7, 0, 0, 0, time.UTC), false},
+		{"monday post-weekend-cutover peak", time.Date(2026, 8, 24, 7, 0, 0, 0, time.UTC), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DeepSeekPeakHours(tt.at); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}

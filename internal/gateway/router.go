@@ -70,9 +70,12 @@ type ClassifierResult struct {
 }
 
 // defaultFlashModel is the single downgrade target for all cheap-class traffic.
-// All subagent/router downgrades and lane-full overflows land on OpenRouter's
-// DeepSeek flash model, regardless of the originally requested model.
-const defaultFlashModel = "deepseek/deepseek-v4-flash-0731"
+// HARD RULE: downgrades land on the real DeepSeek flash model; OpenRouter is
+// only ever used during peak hours (see peakguard / fallbackTargetFor).
+const defaultFlashModel = "deepseek-v4-flash"
+
+// defaultProModel is the big-model DeepSeek target the router may pick.
+const defaultProModel = "deepseek-v4-pro"
 
 // SubAgentRouter performs request classification and optional model override.
 type SubAgentRouter struct {
@@ -137,7 +140,8 @@ func (r *SubAgentRouter) ClassifyAndOverride(body map[string]any, requestID stri
 		return result
 	}
 
-	// Cheap-class traffic always uses the single OpenRouter flash target.
+	// Cheap-class traffic always downgrades to the real DeepSeek flash target
+	// (never OpenRouter; peak reroute below substitutes when DeepSeek is in peak).
 	override := defaultFlashModel
 
 	// Capacity-aware lane selection: let the server steer glm-4.7 downgrades

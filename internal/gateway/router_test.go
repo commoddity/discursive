@@ -26,7 +26,7 @@ func TestSubAgentRouter_SubagentDetection(t *testing.T) {
 			},
 			enabled:      true,
 			wantClass:    ClassCodeSearch, // content-based: "find" keyword
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "subagent: all 3 signals → short prompt + 3 msgs + tools",
@@ -194,7 +194,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "explain prefix → flash",
@@ -206,7 +206,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "how does prefix → flash",
@@ -218,7 +218,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "summarization: capture conversation → flash",
@@ -230,7 +230,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup, // summarization beats editing (despite "write")
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "summarization: summarize this chat → flash",
@@ -242,7 +242,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup, // summarization beats editing
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "code search: find keyword → flash",
@@ -254,7 +254,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "code search: search keyword → flash",
@@ -266,7 +266,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "code search: explore keyword → flash",
@@ -278,7 +278,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "code search: long exploration → code search (exploration guard)",
@@ -297,7 +297,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassCodeSearch, // exploration guard blocks long-message heuristic; falls through to code search
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "code search + complex keyword → complex reasoning (explicit signals beat guard)",
@@ -322,7 +322,7 @@ This is a read-only exploration task — do not modify any files.`},
 				"response_format": map[string]any{"type": "json_object"},
 			},
 			wantClass:    ClassStructuredExtraction,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "structured extraction: json_schema → flash",
@@ -335,7 +335,7 @@ This is a read-only exploration task — do not modify any files.`},
 				"response_format": map[string]any{"type": "json_schema"},
 			},
 			wantClass:    ClassStructuredExtraction,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "automation: pull request → flash",
@@ -347,7 +347,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "automation: git push → flash",
@@ -359,7 +359,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "automation: gh pr → flash",
@@ -371,7 +371,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "automation: run script → flash",
@@ -383,7 +383,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "automation: run a script → flash",
@@ -395,7 +395,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "editing+complex: refactor + pipeline → keep model (complex beats editing)",
@@ -920,7 +920,7 @@ func TestContentClassification_WithCursorXML(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "code search wrapped in attached_files",
@@ -932,7 +932,7 @@ func TestContentClassification_WithCursorXML(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: "deepseek/deepseek-v4-flash-0731",
+			wantOverride: "deepseek-v4-flash",
 		},
 		{
 			name: "editing+complex wrapped in XML",

@@ -444,13 +444,13 @@ func (c *Compressor) compressChatURL() string {
 	if c.cfg.ChatURL != "" {
 		return c.cfg.ChatURL + compressRequestPath
 	}
-	// Default: OpenRouter DeepSeek flash endpoint. The caller should set
-	// ChatURL to the OpenRouter base URL via config.DefaultOpenRouterBaseURL.
-	return "https://openrouter.ai/api/v1/chat/completions"
+	// Default: direct DeepSeek flash endpoint (OpenRouter is peak-only).
+	return "https://api.deepseek.com/chat/completions"
 }
 
 // compressModel is the real model id used for tool-result summarization.
-const compressModel = "deepseek/deepseek-v4-flash-0731"
+// HARD RULE: direct DeepSeek flash — OpenRouter is used only during peak.
+const compressModel = "deepseek-v4-flash"
 
 // summarizeContent calls deepseek-v4-flash to summarize the given content.
 // Uses a brief system prompt for compression.

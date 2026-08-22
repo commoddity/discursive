@@ -2,11 +2,23 @@ package gateway
 
 import (
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
 	"github.com/commoddity/discursive/internal/usage"
 )
+
+// EnvForcePeak makes the gateway behave as if the current time is a peak
+// billing hour for every peak-eligible model (DeepSeek, Z.AI). Any non-empty
+// value (e.g. "1") enables it. Used to test peak reroute/fallback behavior
+// outside real peak hours, without changing the system clock.
+const EnvForcePeak = "DISCURSIVE_FORCE_PEAK"
+
+// forcePeak reports whether peak behavior is forced via env for testing.
+func forcePeak() bool {
+	return os.Getenv(EnvForcePeak) != ""
+}
 
 // openRouterFlash is the small-model target for all OpenRouter fallback traffic.
 const openRouterFlash = "deepseek/deepseek-v4-flash-0731"
@@ -53,17 +65,59 @@ func isDeepSeekModel(model string) bool {
 }
 
 // peakNow reports whether model is in peak billing for its provider at at.
-// Z.AI models peak Mon–Fri 06:00–10:00 UTC; DeepSeek models peak daily
-// 01:00–04:00 and 06:00–10:00 UTC (only after the pricing cutover).
+// Z.AI models peak Mon–Fri 06:00–10:00 UTC; DeepSeek models peak on Beijing
+// weekdays 01:00–04:00 and 06:00–10:00 UTC (Beijing weekends off-peak all day
+// from 2026-08-23 00:00 Beijing).
+// When EnvForcePeak is set, any peak-eligible model (DeepSeek, Z.AI) is
+// treated as in peak for testing.
 func peakNow(model string, at time.Time) bool {
+	if forcePeak() && (isZaiModel(model) || isDeepSeekModel(model)) {
+		return true
+	}
 	switch {
 	case isZaiModel(model):
 		return usage.ZaiPeakHours(at)
 	case isDeepSeekModel(model):
-		return usage.DeepSeekPeakHours(at.UTC().Hour())
+		return usage.DeepSeekPeakHours(at)
 	default:
 		return false
 	}
+}
+
+// openRouterTargets maps real DeepSeek model ids to their OpenRouter
+// equivalents. This is the ONLY sanctioned OpenRouter substitution table;
+// OpenRouter ids appear at runtime exclusively through it (peak-gated).
+var openRouterTargets = map[string]string{
+	"deepseek-v4-flash": openRouterFlash,
+	"deepseek-v4-pro":   openRouterPro,
+}
+
+// openRouterRealFor returns the real DeepSeek model for an OpenRouter id ("" if unknown).
+func openRouterRealFor(id string) string {
+	for real, or := range openRouterTargets {
+		if or == id {
+			return real
+		}
+	}
+	return ""
+}
+
+// isPeakAllowedOpenRouter enforces the hard rule at send time: OpenRouter may
+// only be used when the equivalent real provider is in peak billing (or peak
+// is forced via DISCURSIVE_FORCE_PEAK). It returns the corrected model — the
+// input when usage is allowed, or the real DeepSeek model when it is not —
+// logging loudly on correction.
+func (s *Server) isPeakAllowedOpenRouter(model, requestID string) string {
+	if openRouterRealFor(model) == "" {
+		return model // not an OpenRouter id
+	}
+	if peakNow("deepseek-v4-flash", time.Now()) {
+		return model // DeepSeek is in peak (or forced): OpenRouter allowed
+	}
+	real := openRouterRealFor(model)
+	slog.Error("openrouter_guard: off-peak OpenRouter usage blocked, rerouting to real provider",
+		"request_id", requestID, "model", model, "corrected", real)
+	return real
 }
 
 // applyPeakReroute reroutes non-downgraded traffic to OpenRouter DeepSeek models

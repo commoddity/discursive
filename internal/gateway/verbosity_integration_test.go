@@ -267,13 +267,14 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 		t.Fatalf("status %d: %s", res.StatusCode, body)
 	}
 
-	// The request must have been downgraded to the default flash model.
-	if upstreamModel != "deepseek/deepseek-v4-flash-0731" {
-		t.Fatalf("expected downgrade to openrouter flash, got %q", upstreamModel)
+	// The request must have been downgraded to the real DeepSeek flash model
+	// (OpenRouter is peak-only; this test runs off-peak).
+	if upstreamModel != "deepseek-v4-flash" {
+		t.Fatalf("expected downgrade to deepseek-v4-flash, got %q", upstreamModel)
 	}
 
-	// OpenRouter DeepSeek flash now has verbosity config — the directive must be
-	// injected and the token cap applied to the final served model.
+	// DeepSeek flash has verbosity config — the directive must be injected and
+	// the token cap applied to the final served model.
 	found := false
 	for _, m := range upstreamBody["messages"].([]any) {
 		if c, _ := m.(map[string]any)["content"].(string); strings.Contains(c, "CRITICAL OUTPUT CONSTRAINT") {
@@ -281,10 +282,10 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("verbosity directive must be applied to the openrouter flash downgrade target")
+		t.Fatalf("verbosity directive must be applied to the flash downgrade target")
 	}
 	if mt, ok := upstreamBody["max_tokens"].(float64); ok && mt > 8192 {
-		t.Fatalf("max_tokens must be capped for the openrouter flash downgrade target, got %v", upstreamBody["max_tokens"])
+		t.Fatalf("max_tokens must be capped for the flash downgrade target, got %v", upstreamBody["max_tokens"])
 	}
 }
 

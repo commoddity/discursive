@@ -103,7 +103,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		sanitized.Policy = route.Policy
 		// Re-apply the thinking/sampling policy for the new model so the
 		// OpenRouter DeepSeek shape is emitted correctly.
-		applyThinkingPolicy(sanitized.Body, route, s.sanitizeConfig())
+		cfg := s.sanitizeConfig()
+		applyThinkingPolicy(sanitized.Body, route, cfg)
+		applyOpenRouterSort(sanitized.Body, route, cfg.OpenRouterSort)
 	}
 
 	// Thinking-effort coupling: for GLM-4.7-family models (thinking on/off),
@@ -155,8 +157,25 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			if route, rerr := ResolveModel(chosen); rerr == nil {
 				sanitized.Provider = route.Provider
 				sanitized.Policy = route.Policy
-				applyThinkingPolicy(sanitized.Body, route, s.sanitizeConfig())
+				cfg := s.sanitizeConfig()
+				applyThinkingPolicy(sanitized.Body, route, cfg)
+				applyOpenRouterSort(sanitized.Body, route, cfg.OpenRouterSort)
 			}
+		}
+	}
+
+	// HARD RULE guard at send time: OpenRouter may only be used while the
+	// equivalent real provider is in peak. If any upstream path produced an
+	// OpenRouter model off-peak, correct it back to the real model.
+	if corrected := s.isPeakAllowedOpenRouter(sanitized.Model, requestID); corrected != sanitized.Model {
+		sanitized.Model = corrected
+		sanitized.Body["model"] = corrected
+		if route, rerr := ResolveModel(corrected); rerr == nil {
+			sanitized.Provider = route.Provider
+			sanitized.Policy = route.Policy
+			cfg := s.sanitizeConfig()
+			applyThinkingPolicy(sanitized.Body, route, cfg)
+			applyOpenRouterSort(sanitized.Body, route, cfg.OpenRouterSort)
 		}
 	}
 
@@ -243,7 +262,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
 			return
 		}
-		applyThinkingPolicy(fbBody, fbRoute, s.sanitizeConfig())
+		cfg := s.sanitizeConfig()
+		applyThinkingPolicy(fbBody, fbRoute, cfg)
+		applyOpenRouterSort(fbBody, fbRoute, cfg.OpenRouterSort)
 		u, uerr := s.chatURL(fbRoute.Provider, fbModel)
 		if uerr != nil {
 			logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback url: %v", uerr), "provider", string(fbRoute.Provider), "model", fbModel, "effort", effort)
