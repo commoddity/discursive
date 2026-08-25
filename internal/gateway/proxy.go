@@ -383,58 +383,33 @@ func (s *Server) doUpstream(r *http.Request, url, apiKey string, body map[string
 	return resp, err
 }
 
-// doUpstreamWithRetry wraps doUpstream with retry logic for Z.AI 429 (code 1305
-// "service may be temporarily overloaded") and 1113 ("insufficient balance or
-// no resource package") responses. These are concurrency/plan errors that often
-// clear on retry with backoff. We retry once with a 1s delay; if the second try
-// still fails, we surface the error to the caller (which logs at ERROR and
-// returns a 502 to Cursor). Non-Z.AI providers bypass retries and call
-// doUpstream directly.
+// doUpstreamWithRetry wraps doUpstream with retry logic for Z.AI HTTP 429
+// responses. Transient plan/concurrency limits often clear quickly; we retry up
+// to three times with short exponential backoff before returning the 429 to
+// Cursor. Non-Z.AI providers bypass retries and call doUpstream directly.
 func (s *Server) doUpstreamWithRetry(r *http.Request, url, apiKey string, body map[string]any, requestID, model string, provider config.Provider, effort string) (*http.Response, error) {
-	const maxRetries = 1
-	// Short backoff: with the concurrency semaphore correctly sized to the
-	// plan limit, a 429 here means a transient blip — 1s just compounds
-	// latency on every affected turn.
-	const retryDelay = 250 * time.Millisecond
+	const maxRetries = 3
+	const baseDelay = 250 * time.Millisecond
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		resp, err := s.doUpstream(r, url, apiKey, body)
 		if err != nil {
 			return nil, err
 		}
-		// Only retry Z.AI 429/1113 errors; everything else returns immediately.
-		if provider != config.ProviderZai || attempt == maxRetries {
+		if provider != config.ProviderZai || resp.StatusCode != http.StatusTooManyRequests || attempt == maxRetries {
 			return resp, nil
 		}
-		if resp.StatusCode != 429 {
-			return resp, nil
-		}
-		// Check if this is a retryable Z.AI error (code 1305 or 1113).
-		retryable := false
-		if bodyBytes, readErr := io.ReadAll(resp.Body); readErr == nil {
-			_ = resp.Body.Close()
-			var errObj map[string]any
-			if json.Unmarshal(bodyBytes, &errObj) == nil {
-				if code, ok := errObj["error"].(map[string]any)["code"]; ok {
-					if code == float64(1305) || code == float64(1113) {
-						retryable = true
-						slog.Info("zai_retry: backing off",
-							"request_id", requestID,
-							"model", model,
-							"code", code,
-							"attempt", attempt+1,
-							"max_attempts", maxRetries+1,
-						)
-					}
-				}
-			}
-		}
-		if !retryable {
-			return resp, nil
-		}
-		// Wait before retry.
+		_ = resp.Body.Close()
+		delay := baseDelay * time.Duration(1<<attempt)
+		slog.Info("zai_retry: backing off",
+			"request_id", requestID,
+			"model", model,
+			"attempt", attempt+1,
+			"max_retries", maxRetries,
+			"delay", delay,
+		)
 		select {
-		case <-time.After(retryDelay):
+		case <-time.After(delay):
 		case <-r.Context().Done():
 			return nil, r.Context().Err()
 		}

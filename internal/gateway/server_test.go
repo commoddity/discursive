@@ -353,6 +353,50 @@ func TestProxyZai(t *testing.T) {
 	}
 }
 
+func TestZai429RetriesBeforeSuccess(t *testing.T) {
+	var calls atomic.Int32
+	env := setupEnv(t, "", "", "sk-zai", func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) < 3 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"overloaded","code":1305}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockCompletion("glm-4.7"))
+	})
+
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model":    "gpt-4.1",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d %s", res.StatusCode, body)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("upstream calls = %d, want 3", calls.Load())
+	}
+}
+
+func TestZai429ExhaustedReturns429(t *testing.T) {
+	env := setupEnv(t, "", "", "sk-zai", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"overloaded","code":1305}}`))
+	})
+
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model":    "gpt-4.1",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	if res.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("status %d, want 429: %s", res.StatusCode, body)
+	}
+	if env.upCalls.Load() != 4 {
+		t.Fatalf("upstream calls = %d, want 4 (initial + 3 retries)", env.upCalls.Load())
+	}
+}
+
 func TestMissingZaiKeyNoFallback(t *testing.T) {
 	env := setupEnv(t, "sk-moon", "", "", func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("must not hit upstream")

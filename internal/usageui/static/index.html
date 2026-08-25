@@ -1233,17 +1233,6 @@
       white-space: nowrap;
     }
 
-    .model-verb-toggle {
-      padding: 6px 10px;
-      border-color: rgba(88, 166, 255, 0.35);
-      background: rgba(88, 166, 255, 0.06);
-    }
-
-    .model-verb-toggle .setting-label {
-      font-size: 0.78rem;
-      white-space: nowrap;
-    }
-
     .model-control-save-status {
       margin-top: 10px;
       font-size: 0.78rem;
@@ -1270,21 +1259,6 @@
     }
 
     .effort-toggle-btn>.effort-toggle-text {
-      grid-area: 1 / 1;
-      white-space: nowrap;
-    }
-
-    .verbosity-toggle-btn::before {
-      content: "Hide";
-      grid-area: 1 / 1;
-      visibility: hidden;
-      height: 0;
-      overflow: hidden;
-      white-space: nowrap;
-      pointer-events: none;
-    }
-
-    .verbosity-toggle-btn>.verbosity-toggle-text {
       grid-area: 1 / 1;
       white-space: nowrap;
     }
@@ -1532,7 +1506,7 @@
       <h2>⚙️ Model Controls</h2>
       <div class="bal-header-actions">
         <span class="health-info" style="margin-left:0"
-          data-tip="Per-model controls grouped by provider: reasoning effort and output verbosity (where supported). All changes apply to new requests immediately — no restart required.">?</span>
+          data-tip="Per-model controls grouped by provider: reasoning effort and thinking toggles (where supported). All changes apply to new requests immediately — no restart required.">?</span>
       </div>
     </div>
     <div id="model-controls-body">
@@ -2183,7 +2157,7 @@
       copyToClipboard(event, raw);
     }
 
-    // --- Model Controls (compression, reasoning effort, verbosity) ---
+    // --- Model Controls (compression, reasoning effort, thinking) ---
     const PROVIDER_NAMES = { moonshot: 'Moonshot', deepseek: 'DeepSeek', thaura: 'Thaura', zai: 'Z.AI', openrouter: 'OpenRouter' };
     const EFFORT_DOC_URLS = {
       moonshot: 'https://platform.kimi.ai/docs/guide/use-reasoning-effort',
@@ -2260,12 +2234,6 @@
           const opts = (m.options || []).map(o =>
             '<option value="' + o + '"' + (o === m.effort ? ' selected' : '') + '>' + o + '</option>'
           ).join('');
-          const verbToggle = m.verbosity !== undefined
-            ? '<label class="setting-toggle model-verb-toggle" data-tip="Output verbosity: inject a terseness directive and cap output tokens to keep replies concise. Responses are never edited.">' +
-              '<input type="checkbox" id="verb-opt-' + m.id + '"' + (!!m.verbosity ? ' checked' : '') + ' onchange="saveModelVerbosity(\'' + m.id + '\')">' +
-              '<span class="setting-label">🍃 Terse</span>' +
-              '</label>'
-            : '';
           const thinkToggle = m.thinking !== undefined
             ? '<label class="setting-toggle model-think-toggle" data-tip="Thinking on/off (GLM-4.7 family): enable deeper reasoning for higher-quality answers, at the cost of more tokens/time. Mechanical turns still force thinking off.">' +
               '<input type="checkbox" id="think-opt-' + m.id + '"' + (!!m.thinking ? ' checked' : '') + ' onchange="saveModelThinking(\'' + m.id + '\')">' +
@@ -2275,7 +2243,6 @@
           return '<div class="effort-row" data-model="' + m.id + '">' +
             '<div class="effort-model-head">' +
             '<div class="effort-model-label">' + (m.label || m.id) + '</div>' +
-            verbToggle +
             thinkToggle +
             '</div>' +
             '<div class="effort-model-actions">' +
@@ -2299,10 +2266,9 @@
     async function loadModelControls() {
       window._controls = null;
       try {
-        const [settings, effort, verbosity, thinking] = await Promise.all([
+        const [settings, effort, thinking] = await Promise.all([
           api('/api/settings'),
           api('/api/reasoning-effort'),
-          api('/api/verbosity'),
           api('/api/thinking-enabled'),
         ]);
         document.getElementById('model-controls-loading').style.display = 'none';
@@ -2311,9 +2277,6 @@
 
         document.getElementById('toggle-tool-compression').checked = !!settings.toolCompressionEnabled;
 
-        // Merge reasoning-effort providers with per-model verbosity toggles.
-        const verbById = {};
-        (verbosity.models || []).forEach(v => { verbById[v.id] = !!v.enabled; });
         const thinkById = {};
         (thinking.models || []).forEach(v => { thinkById[v.id] = !!v.enabled; });
         const controls = (effort.providers || []).map(p => ({
@@ -2324,7 +2287,6 @@
             label: m.label,
             options: m.options,
             effort: m.effort,
-            ...(m.id in verbById ? { verbosity: verbById[m.id] } : {}),
             ...(m.id in thinkById ? { thinking: thinkById[m.id] } : {}),
           })),
         }));
@@ -2361,7 +2323,6 @@
           throw new Error(t || (r.status + ' ' + r.statusText));
         }
         const data = await r.json();
-        // Save response carries only effort changes; re-merge verbosity state.
         mergeEffortIntoControls(data);
         renderEffortProviders(window._controls);
         status.className = 'model-control-save-status ok';
@@ -2413,54 +2374,6 @@
         status.className = 'settings-save-status err';
         status.textContent = 'Error: ' + e.message;
       }
-    }
-
-    // --- Output verbosity (per-model toggles, rendered inside merged model controls) ---
-    async function saveModelVerbosity(modelId) {
-      const status = document.getElementById('model-controls-save-status');
-      const cb = document.getElementById('verb-opt-' + modelId);
-      if (status) {
-        status.className = 'settings-save-status';
-        status.textContent = 'Saving…';
-      }
-      try {
-        const body = {};
-        body[modelId] = !!cb.checked;
-        const r = await fetch('/api/verbosity', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!r.ok) {
-          const t = await r.text();
-          throw new Error(t || (r.status + ' ' + r.statusText));
-        }
-        const data = await r.json();
-        const verbById = {};
-        (data.models || []).forEach(v => { verbById[v.id] = !!v.enabled; });
-        // Update the merged in-memory controls and re-render provider rows.
-        updateControlsVerbosity(verbById);
-        renderEffortProviders(window._controls);
-        if (status) {
-          status.className = 'settings-save-status ok';
-          status.textContent = 'Saved ' + modelId + ' verbosity';
-        }
-      } catch (e) {
-        if (status) {
-          status.className = 'settings-save-status err';
-          status.textContent = 'Error: ' + e.message;
-        }
-      }
-    }
-
-    function updateControlsVerbosity(verbById) {
-      const controls = window._controls && window._controls.controls;
-      if (!controls) return;
-      controls.forEach(p => {
-        (p.models || []).forEach(m => {
-          if (m.id in verbById) m.verbosity = verbById[m.id];
-        });
-      });
     }
 
     function updateControlsThinking(thinkById) {
