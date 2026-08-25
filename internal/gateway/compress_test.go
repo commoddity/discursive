@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/commoddity/discursive/internal/config"
 )
 
 // stubFlashServer returns an httptest server that responds with a summary and
@@ -49,8 +51,13 @@ func stubErrorFlashServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func stubDeepSeekKey() func() (string, bool) {
-	return func() (string, bool) { return "ds-test-key", true }
+func testCompressCtx(srvURL string) CompressContext {
+	return CompressContext{
+		Provider: config.ProviderDeepSeek,
+		Model:    config.ModelDeepSeekV4Flash,
+		ChatURL:  srvURL + "/chat/completions",
+		APIKey:   "ds-test-key",
+	}
 }
 
 func shortToolResult(content string) map[string]any {
@@ -94,7 +101,7 @@ func longString(approxChars int) string {
 func TestCompress_NilCompressor(t *testing.T) {
 	var c *Compressor
 	body := bodyWithMessages(shortToolResult("hello"))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, CompressContext{})
 	if err != nil {
 		t.Fatalf("nil compressor should not error: %v", err)
 	}
@@ -106,7 +113,7 @@ func TestCompress_NilCompressor(t *testing.T) {
 func TestCompress_NoToolMessages(t *testing.T) {
 	c := &Compressor{}
 	body := bodyWithMessages(userMessage("hello"), userMessage("world"))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, CompressContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -119,7 +126,7 @@ func TestCompress_UnderThreshold(t *testing.T) {
 	c := &Compressor{}
 	short := longString(500) // well under 4000
 	body := bodyWithMessages(shortToolResult(short))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, CompressContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -137,15 +144,12 @@ func TestCompress_UnderThreshold(t *testing.T) {
 func TestCompress_OverThreshold(t *testing.T) {
 	srv, count := stubFlashServer(t, "compressed summary of the long output")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
 	body := bodyWithMessages(shortToolResult(long))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -171,17 +175,14 @@ func TestCompress_OverThreshold(t *testing.T) {
 func TestCompress_CacheHit(t *testing.T) {
 	srv, count := stubFlashServer(t, "cached summary")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
 
 	// First call — should hit flash.
 	body1 := bodyWithMessages(shortToolResult(long))
-	stats1, err := c.Compress(t.Context(), body1)
+	stats1, err := c.Compress(t.Context(), body1, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("first call: unexpected error: %v", err)
 	}
@@ -194,7 +195,7 @@ func TestCompress_CacheHit(t *testing.T) {
 
 	// Second call with same content — should be cache hit.
 	body2 := bodyWithMessages(shortToolResult(long))
-	stats2, err := c.Compress(t.Context(), body2)
+	stats2, err := c.Compress(t.Context(), body2, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("second call: unexpected error: %v", err)
 	}
@@ -224,10 +225,7 @@ func TestCompress_CacheKeyStability(t *testing.T) {
 func TestCompress_CacheExpiry(t *testing.T) {
 	srv, count := stubFlashServer(t, "expired summary")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
@@ -241,7 +239,7 @@ func TestCompress_CacheExpiry(t *testing.T) {
 
 	// Should call flash because the entry is expired.
 	body := bodyWithMessages(shortToolResult(long))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -255,14 +253,12 @@ func TestCompress_CacheExpiry(t *testing.T) {
 
 func TestCompress_NoDeepSeekKey(t *testing.T) {
 	c := &Compressor{
-		cfg: CompressorConfig{
-			GetAPIKey: func() (string, bool) { return "", false },
-		},
+		cfg:    CompressorConfig{},
 		client: &http.Client{},
 	}
 	long := longString(30000)
 	body := bodyWithMessages(shortToolResult(long))
-	_, err := c.Compress(t.Context(), body)
+	_, err := c.Compress(t.Context(), body, CompressContext{Provider: config.ProviderDeepSeek, Model: config.ModelDeepSeekV4Flash, ChatURL: "http://example.invalid/chat/completions"})
 	if err == nil {
 		t.Fatal("expected error when DeepSeek key is missing")
 	}
@@ -273,15 +269,12 @@ func TestCompress_FailOpen(t *testing.T) {
 	// error but the body should be left untouched (the caller sends original).
 	srv := stubErrorFlashServer(t)
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
 	body := bodyWithMessages(shortToolResult(long))
-	_, err := c.Compress(t.Context(), body)
+	_, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err == nil {
 		t.Fatal("expected error from flash model")
 	}
@@ -296,17 +289,14 @@ func TestCompress_FailOpen(t *testing.T) {
 func TestCompress_MultipleToolResults(t *testing.T) {
 	srv, count := stubFlashServer(t, "summary")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
 	// Use content with a distinct suffix to produce different hashes.
 	long2 := long + "\nUNIQUE_APPENDIX_FOR_TEST"
 	body := bodyWithMessages(shortToolResult(long), shortToolResult(long2))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -330,7 +320,7 @@ func TestCompress_ExactThreshold(t *testing.T) {
 		t.Fatalf("test setup: expected len=%d, got %d", toolResultMaxLen, len(exact))
 	}
 	body := bodyWithMessages(shortToolResult(exact))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, CompressContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -343,10 +333,7 @@ func TestCompress_ExactThreshold(t *testing.T) {
 func TestCompress_JustOverThreshold(t *testing.T) {
 	srv, _ := stubFlashServer(t, "summary")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	// Build a tool result of exactly toolResultMaxLen+1 chars, plus a second
@@ -362,7 +349,7 @@ func TestCompress_JustOverThreshold(t *testing.T) {
 	}
 	seed := longString(compressMinTotalChars + 1) // guarantees we pass the min-total gate
 	body := bodyWithMessages(shortToolResult(justOver), shortToolResult(seed))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -412,10 +399,7 @@ func toolMsg(toolCallID, name, content string) map[string]any {
 func TestCompress_SkipsFileReadToolResult(t *testing.T) {
 	srv, count := stubFlashServer(t, "should not be called")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
@@ -427,7 +411,7 @@ func TestCompress_SkipsFileReadToolResult(t *testing.T) {
 		assistantWithToolCall("call_abc", "read_file"),
 		toolMsg("call_abc", "", long),
 	)
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -448,17 +432,14 @@ func TestCompress_SkipsFileReadToolResult(t *testing.T) {
 func TestCompress_SkipsFileReadByNameField(t *testing.T) {
 	srv, count := stubFlashServer(t, "should not be called")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
 
 	// Tool message with explicit name field (no assistant needed).
 	body := bodyWithMessages(toolMsg("call_x", "read_file", long))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -473,10 +454,7 @@ func TestCompress_SkipsFileReadByNameField(t *testing.T) {
 func TestCompress_CompressesShellToolResult(t *testing.T) {
 	srv, count := stubFlashServer(t, "shell output summary")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
@@ -486,7 +464,7 @@ func TestCompress_CompressesShellToolResult(t *testing.T) {
 		assistantWithToolCall("call_sh", "shell"),
 		toolMsg("call_sh", "", long),
 	)
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -501,10 +479,7 @@ func TestCompress_CompressesShellToolResult(t *testing.T) {
 func TestCompress_CompressesUnknownToolName(t *testing.T) {
 	srv, count := stubFlashServer(t, "unknown tool summary")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
@@ -513,7 +488,7 @@ func TestCompress_CompressesUnknownToolName(t *testing.T) {
 	// to compress (safe default — unknown tools are more likely
 	// shell/test/log output than verbatim file content).
 	body := bodyWithMessages(toolMsg("orphan_call", "", long))
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -528,10 +503,7 @@ func TestCompress_CompressesUnknownToolName(t *testing.T) {
 func TestCompress_SkipsGrepToolResult(t *testing.T) {
 	srv, count := stubFlashServer(t, "should not be called")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
@@ -539,7 +511,7 @@ func TestCompress_SkipsGrepToolResult(t *testing.T) {
 		assistantWithToolCall("call_g", "Grep"),
 		toolMsg("call_g", "", long),
 	)
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -554,10 +526,7 @@ func TestCompress_SkipsGrepToolResult(t *testing.T) {
 func TestCompress_SkipsMcpPrefixedToolName(t *testing.T) {
 	srv, count := stubFlashServer(t, "should not be called")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
@@ -565,7 +534,7 @@ func TestCompress_SkipsMcpPrefixedToolName(t *testing.T) {
 		assistantWithToolCall("call_mcp", "mcp.fs.read_file"),
 		toolMsg("call_mcp", "", long),
 	)
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -580,10 +549,7 @@ func TestCompress_SkipsMcpPrefixedToolName(t *testing.T) {
 func TestCompress_SkipsWebFetchToolResult(t *testing.T) {
 	srv, count := stubFlashServer(t, "should not be called")
 	c := &Compressor{
-		cfg: CompressorConfig{
-			ChatURLOverride: srv.URL + "/chat/completions",
-			GetAPIKey:       stubDeepSeekKey(),
-		},
+		cfg:    CompressorConfig{},
 		client: srv.Client(),
 	}
 	long := longString(30000)
@@ -591,7 +557,7 @@ func TestCompress_SkipsWebFetchToolResult(t *testing.T) {
 		assistantWithToolCall("call_wf", "WebFetch"),
 		toolMsg("call_wf", "", long),
 	)
-	stats, err := c.Compress(t.Context(), body)
+	stats, err := c.Compress(t.Context(), body, testCompressCtx(srv.URL))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

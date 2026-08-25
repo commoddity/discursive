@@ -8,7 +8,6 @@ import (
 )
 
 func peakTime(hour int, weekday time.Weekday) time.Time {
-	// 2026-01-06 is a Tuesday; shift by weekday delta.
 	base := time.Date(2026, time.January, 6, hour, 0, 0, 0, time.UTC)
 	return base.AddDate(0, 0, int(weekday-time.Tuesday))
 }
@@ -18,14 +17,14 @@ func TestOpenRouterModelFor(t *testing.T) {
 		model string
 		want  string
 	}{
-		{"deepseek-v4-pro", openRouterPro},
-		{"glm-5.3", openRouterPro},
-		{"kimi-k3", openRouterPro},
-		{"deepseek-v4-flash", openRouterFlash},
-		{"glm-4.7", openRouterFlash},
-		{"kimi-k2.7-code", openRouterFlash},
-		{"thaura", openRouterFlash},
-		{"unknown", openRouterFlash},
+		{"deepseek-v4-pro", config.ModelOpenRouterDeepSeekV4Pro},
+		{"glm-5.3", config.ModelOpenRouterZaiGLM53},
+		{"kimi-k3", "kimi-k3"},
+		{"deepseek-v4-flash", config.ModelOpenRouterDeepSeekV4Flash},
+		{"glm-4.7", config.ModelOpenRouterZaiGLM47},
+		{"kimi-k2.7-code", "kimi-k2.7-code"},
+		{"thaura", "thaura"},
+		{"unknown", "unknown"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
@@ -65,13 +64,13 @@ func TestPeakNow(t *testing.T) {
 
 func TestPeakNowForcePeak(t *testing.T) {
 	t.Setenv(EnvForcePeak, "1")
-	offpeak := peakTime(12, time.Tuesday) // 12:00 UTC is off-peak for all providers
+	offpeak := peakTime(12, time.Tuesday)
 	for model, want := range map[string]bool{
 		"deepseek-v4-pro":   true,
 		"deepseek-v4-flash": true,
 		"glm-5.3":           true,
 		"glm-4.7":           true,
-		"kimi-k3":           false, // moonshot is never peak-eligible
+		"kimi-k3":           false,
 		"kimi-k2.7-code":    false,
 		"thaura":            false,
 	} {
@@ -99,10 +98,10 @@ func TestApplyPeakReroute(t *testing.T) {
 		want    string
 		reroute bool
 	}{
-		{"deepseek big peak with key", withKey(), "deepseek-v4-pro", peakTime(8, time.Tuesday), openRouterPro, true},
-		{"deepseek small peak with key", withKey(), "deepseek-v4-flash", peakTime(8, time.Tuesday), openRouterFlash, true},
-		{"zai big peak with key", withKey(), "glm-5.3", peakTime(7, time.Wednesday), openRouterPro, true},
-		{"zai small peak with key", withKey(), "glm-4.7", peakTime(7, time.Wednesday), openRouterFlash, true},
+		{"deepseek big peak with key", withKey(), "deepseek-v4-pro", peakTime(8, time.Tuesday), config.ModelOpenRouterDeepSeekV4Pro, true},
+		{"deepseek small peak with key", withKey(), "deepseek-v4-flash", peakTime(8, time.Tuesday), config.ModelOpenRouterDeepSeekV4Flash, true},
+		{"zai big peak with key", withKey(), "glm-5.3", peakTime(7, time.Wednesday), config.ModelOpenRouterZaiGLM53, true},
+		{"zai small peak with key", withKey(), "glm-4.7", peakTime(7, time.Wednesday), config.ModelOpenRouterZaiGLM47, true},
 		{"peak without key falls through", withoutKey(), "deepseek-v4-pro", peakTime(8, time.Tuesday), "deepseek-v4-pro", false},
 		{"off peak unchanged", withKey(), "deepseek-v4-pro", peakTime(12, time.Tuesday), "deepseek-v4-pro", false},
 		{"non-peak provider unchanged", withKey(), "kimi-k3", peakTime(8, time.Tuesday), "kimi-k3", false},
@@ -119,7 +118,7 @@ func TestApplyPeakReroute(t *testing.T) {
 }
 
 func TestOpenRouterTargetsResolveToOpenRouter(t *testing.T) {
-	for _, id := range []string{openRouterFlash, openRouterPro} {
+	for _, id := range []string{config.ModelOpenRouterDeepSeekV4Flash, config.ModelOpenRouterDeepSeekV4Pro, config.ModelOpenRouterZaiGLM53, config.ModelOpenRouterZaiGLM47} {
 		route, err := ResolveModel(id)
 		if err != nil {
 			t.Fatalf("ResolveModel(%q): %v", id, err)
@@ -127,15 +126,9 @@ func TestOpenRouterTargetsResolveToOpenRouter(t *testing.T) {
 		if route.Provider != config.ProviderOpenRouter {
 			t.Fatalf("%q resolved to provider %s, want openrouter", id, route.Provider)
 		}
-		if route.Policy != PolicyDeepSeek {
-			t.Fatalf("%q resolved to policy %d, want PolicyDeepSeek", id, route.Policy)
-		}
 	}
 }
 
-// TestOpenRouterOnlyDuringPeak is the hard-rule enforcement test: every
-// fallback/override mapping must return a non-OpenRouter model when peakNow
-// is false, and the send-time guard must correct OpenRouter ids off-peak.
 func TestOpenRouterOnlyDuringPeak(t *testing.T) {
 	withKey := func() *Server {
 		s := &Server{settings: &config.AppSettings{}}
@@ -143,47 +136,34 @@ func TestOpenRouterOnlyDuringPeak(t *testing.T) {
 		return s
 	}
 
-	// Force peak off deterministically by asserting against a fixed off-peak
-	// instant via the guard's correction behavior under known env state.
-	t.Run("guard corrects OpenRouter id when not forced", func(t *testing.T) {
+	t.Run("guard corrects DeepSeek OpenRouter id when not forced", func(t *testing.T) {
 		s := withKey()
 		if peakNow("deepseek-v4-flash", time.Now()) {
 			t.Skip("test run during real DeepSeek peak hours; guard check non-deterministic")
 		}
-		if got := s.isPeakAllowedOpenRouter(openRouterFlash, "req"); got != "deepseek-v4-flash" {
-			t.Fatalf("guard returned %q, want corrected deepseek-v4-flash", got)
+		if got := s.isPeakAllowedOpenRouter(config.ModelOpenRouterDeepSeekV4Flash, "req"); got != config.ModelDeepSeekV4Flash {
+			t.Fatalf("guard returned %q, want corrected %s", got, config.ModelDeepSeekV4Flash)
 		}
 	})
-	t.Run("guard keeps OpenRouter id when peak forced", func(t *testing.T) {
+	t.Run("guard corrects Z.AI OpenRouter id when not forced", func(t *testing.T) {
+		s := withKey()
+		if peakNow("glm-4.7", time.Now()) {
+			t.Skip("test run during real Z.AI peak hours; guard check non-deterministic")
+		}
+		if got := s.isPeakAllowedOpenRouter(config.ModelOpenRouterZaiGLM47, "req"); got != config.ModelZaiGLM47 {
+			t.Fatalf("guard returned %q, want corrected %s", got, config.ModelZaiGLM47)
+		}
+	})
+	t.Run("guard keeps DeepSeek OpenRouter id when peak forced", func(t *testing.T) {
 		t.Setenv(EnvForcePeak, "1")
 		s := withKey()
-		if got := s.isPeakAllowedOpenRouter(openRouterFlash, "req"); got != openRouterFlash {
-			t.Fatalf("guard returned %q, want openRouterFlash under forced peak", got)
+		if got := s.isPeakAllowedOpenRouter(config.ModelOpenRouterDeepSeekV4Flash, "req"); got != config.ModelOpenRouterDeepSeekV4Flash {
+			t.Fatalf("guard returned %q, want %s under forced peak", got, config.ModelOpenRouterDeepSeekV4Flash)
 		}
 	})
-	t.Run("realFallbackModel never returns OpenRouter", func(t *testing.T) {
-		for _, m := range []string{"glm-5.3", "glm-4.7", "deepseek-v4-pro", "kimi-k3", "kimi-k2.7-code", "thaura", "unknown"} {
-			if got := realFallbackModel(m); got != "deepseek-v4-flash" && got != "deepseek-v4-pro" {
-				t.Fatalf("realFallbackModel(%q) = %q, want a real DeepSeek model", m, got)
-			}
-		}
-	})
-	t.Run("fallbackTargetFor returns real model off-peak", func(t *testing.T) {
-		// Use peakTime's fixed off-peak instant semantics indirectly: with the
-		// real clock, if we happen to be in real peak, skip; else assert real ids.
-		s := withKey()
-		if peakNow("deepseek-v4-flash", time.Now()) {
-			t.Skip("test run during real DeepSeek peak hours")
-		}
-		for _, m := range []string{"glm-5.3", "glm-4.7", "kimi-k3"} {
-			if got := s.fallbackTargetFor(m, "req"); got != "deepseek-v4-flash" && got != "deepseek-v4-pro" {
-				t.Fatalf("fallbackTargetFor(%q) = %q, want real DeepSeek model", m, got)
-			}
-		}
-	})
-	t.Run("default downgrade target is real", func(t *testing.T) {
-		if defaultFlashModel == openRouterFlash || defaultProModel == openRouterPro {
-			t.Fatal("router downgrade candidates must be real DeepSeek models")
+	t.Run("openRouterTwinFor maps real models", func(t *testing.T) {
+		if twin, ok := openRouterTwinFor(config.ModelDeepSeekV4Flash); !ok || twin != config.ModelOpenRouterDeepSeekV4Flash {
+			t.Fatalf("openRouterTwinFor flash = %q, %v", twin, ok)
 		}
 	})
 }

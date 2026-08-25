@@ -87,46 +87,6 @@ func TestVerbosityEnabled_AppliesRequestSideControls_PassthroughResponse(t *test
 	}
 }
 
-func TestVerbosityDisabled_Passthrough(t *testing.T) {
-	// Per-model verbosity off for flash must not trim, inject, or cap.
-	var gotBody map[string]any
-	upstream := func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewDecoder(r.Body).Decode(&gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(verboseFlashCompletion())
-	}
-
-	env := setupVerbosityDisabledEnv(t, upstream)
-
-	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
-		"model":      "o3-mini",
-		"messages":   []any{map[string]any{"role": "user", "content": "fix it"}},
-		"max_tokens": json.Number("20000"),
-		"stream":     false,
-	})
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("status %d: %s", res.StatusCode, body)
-	}
-
-	// No directive injected.
-	for _, m := range gotBody["messages"].([]any) {
-		if c, _ := m.(map[string]any)["content"].(string); strings.Contains(c, "CRITICAL OUTPUT CONSTRAINT") {
-			t.Fatalf("directive injected despite verbosity off")
-		}
-	}
-	// max_tokens unchanged.
-	if mt, ok := gotBody["max_tokens"].(float64); !ok || mt != 20000 {
-		t.Fatalf("max_tokens mutated despite verbosity off: %v", gotBody["max_tokens"])
-	}
-	// Content passthrough unchanged (verbose prose intact).
-	var completion map[string]any
-	_ = json.Unmarshal(body, &completion)
-	content := completion["choices"].([]any)[0].(map[string]any)["message"].(map[string]any)["content"].(string)
-	if !strings.Contains(content, "first sentence") {
-		t.Fatalf("content was mutated despite verbosity off: %q", content)
-	}
-}
-
 // TestVerbosityEnabled_StreamingPassthrough verifies that a pure-text verbose
 // stream is passed through byte-for-byte (verbosity never edits streams).
 func TestVerbosityEnabled_StreamingPassthrough(t *testing.T) {
@@ -219,7 +179,6 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 
 	dataRoot := t.TempDir()
 	settings := config.DefaultSettings()
-	settings.Verbosity[config.ModelOpenRouterDeepSeekV4Flash] = true
 	if err := settings.EnsureGatewayKey(); err != nil {
 		t.Fatal(err)
 	}
@@ -289,10 +248,7 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 	}
 }
 
-// setupVerbosityEnv builds a gateway with per-model verbosity control. When
-// enableRouter is true, the subagent router is also enabled (so model
-// downgrades to flash occur for cheap work). verbosity overrides the settings
-// map before load (default: DeepSeek flash on, pro off).
+// setupVerbosityEnv builds a gateway for verbosity integration tests.
 func setupVerbosityEnv(t *testing.T, upstream http.HandlerFunc, enableRouter ...bool) *testEnv {
 	t.Helper()
 	routerOn := false
@@ -322,48 +278,6 @@ func setupVerbosityEnv(t *testing.T, upstream http.HandlerFunc, enableRouter ...
 		Settings:              &settings,
 		HTTPClient:            up.Client(),
 		SubAgentRouterEnabled: routerOn,
-		ChatURLOverride: map[config.Provider]string{
-			config.ProviderDeepSeek: up.URL + "/deepseek/chat/completions",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
-	t.Cleanup(func() { _ = srv.Shutdown(t.Context()) })
-
-	return &testEnv{srv: srv, ts: ts, gatewayKey: settings.GatewayKey, dataRoot: dataRoot}
-}
-
-// setupVerbosityDisabledEnv builds a gateway with flash verbosity explicitly
-// turned off, for asserting that verbosity controls are inert by default per
-// model setting.
-func setupVerbosityDisabledEnv(t *testing.T, upstream http.HandlerFunc) *testEnv {
-	t.Helper()
-	dataRoot := t.TempDir()
-	settings := config.DefaultSettings()
-	settings.Verbosity[config.ModelDeepSeekV4Flash] = false
-	// Peak guard OFF for deterministic DeepSeek-routing in these tests.
-	if err := settings.EnsureGatewayKey(); err != nil {
-		t.Fatal(err)
-	}
-	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
-		t.Fatal(err)
-	}
-	if err := config.Save(dataRoot, settings); err != nil {
-		t.Fatal(err)
-	}
-
-	up := httptest.NewServer(upstream)
-	t.Cleanup(up.Close)
-
-	srv, err := gateway.NewServer(gateway.ServerConfig{
-		ListenAddr: "127.0.0.1:0",
-		GatewayKey: settings.GatewayKey,
-		DataRoot:   dataRoot,
-		Settings:   &settings,
-		HTTPClient: up.Client(),
 		ChatURLOverride: map[config.Provider]string{
 			config.ProviderDeepSeek: up.URL + "/deepseek/chat/completions",
 		},

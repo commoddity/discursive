@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/commoddity/discursive/internal/config"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -48,10 +49,6 @@ const (
 	// the conversation prefix is mostly cache-hit input billed at a discount)
 	// do not offset the 1–3s latency and flash-model cost.
 	compressMinTotalChars = 20000
-
-	// compressRequestPath is the chat completions path appended to the flash
-	// model's base URL.
-	compressRequestPath = "/chat/completions"
 )
 
 // toolResultSummarizePrompt is the instruction sent to the cheap summarizer
@@ -93,24 +90,25 @@ var verbatimToolNames = map[string]bool{
 // CompressorConfig configures the Compressor.
 type CompressorConfig struct {
 	Enabled bool
-	// ChatURL is the deepseek-v4-flash endpoint base (not including /chat/completions).
-	// Defaults to DeepSeek base URL when empty.
-	ChatURL string
-	// GetAPIKey is a callback that returns the DeepSeek API key (or "", false).
-	GetAPIKey func() (string, bool)
 	// RecordUsage is an optional best-effort usage meter called after each
-	// successful summarizer call with the real model id, prompt/completion
+	// successful summarizer call with provider, real model id, prompt/completion
 	// token counts, and round-trip latency. May be nil (disabled).
-	RecordUsage func(model string, promptTokens, completionTokens uint64, latency time.Duration)
-	// ChatURLOverride is for test use only.
-	ChatURLOverride string
+	RecordUsage func(provider config.Provider, model string, promptTokens, completionTokens uint64, latency time.Duration)
+}
+
+// CompressContext selects the summarizer endpoint for one request.
+type CompressContext struct {
+	Provider config.Provider
+	Model    string
+	ChatURL  string
+	APIKey   string
 }
 
 // Compressor compresses verbose tool results and long conversation histories.
 type Compressor struct {
 	cfg         CompressorConfig
 	client      *http.Client
-	recordUsage func(model string, promptTokens, completionTokens uint64, latency time.Duration)
+	recordUsage func(provider config.Provider, model string, promptTokens, completionTokens uint64, latency time.Duration)
 
 	cache sync.Map           // sha256(content) → cacheEntry
 	sfg   singleflight.Group // deduplicate concurrent calls for the same hash
@@ -239,7 +237,7 @@ func buildToolNameMap(msgs []any) map[string]string {
 // length threshold, and replaces their content in-place with a compressed
 // summary. Returns compression stats. On any error, returns the error and
 // zero stats — the caller logs the error and sends the original body.
-func (c *Compressor) Compress(ctx context.Context, body map[string]any) (CompressionStats, error) {
+func (c *Compressor) Compress(ctx context.Context, body map[string]any, cctx CompressContext) (CompressionStats, error) {
 	if c == nil {
 		return CompressionStats{}, nil
 	}
@@ -371,7 +369,7 @@ func (c *Compressor) Compress(ctx context.Context, body map[string]any) (Compres
 			defer func() { <-sem }()
 
 			val, err, _ := c.sfg.Do(j.hash, func() (any, error) {
-				summary, err := c.summarizeContent(ctx, j.content)
+				summary, err := c.summarizeContent(ctx, j.content, cctx)
 				if err != nil {
 					return nil, err
 				}
@@ -436,32 +434,14 @@ func (c *Compressor) Compress(ctx context.Context, body map[string]any) (Compres
 	return stats, nil
 }
 
-// compressChatURL returns the flash model's chat completions URL.
-func (c *Compressor) compressChatURL() string {
-	if c.cfg.ChatURLOverride != "" {
-		return c.cfg.ChatURLOverride
-	}
-	if c.cfg.ChatURL != "" {
-		return c.cfg.ChatURL + compressRequestPath
-	}
-	// Default: direct DeepSeek flash endpoint (OpenRouter is peak-only).
-	return "https://api.deepseek.com/chat/completions"
-}
-
-// compressModel is the real model id used for tool-result summarization.
-// HARD RULE: direct DeepSeek flash — OpenRouter is used only during peak.
-const compressModel = "deepseek-v4-flash"
-
-// summarizeContent calls deepseek-v4-flash to summarize the given content.
-// Uses a brief system prompt for compression.
-func (c *Compressor) summarizeContent(ctx context.Context, content string) (string, error) {
-	key, ok := c.cfg.GetAPIKey()
-	if !ok || key == "" {
+// summarizeContent calls the provider's small model to summarize content.
+func (c *Compressor) summarizeContent(ctx context.Context, content string, cctx CompressContext) (string, error) {
+	if cctx.APIKey == "" {
 		return "", fmt.Errorf("compress: no API key configured")
 	}
 
 	reqBody := map[string]any{
-		"model": compressModel,
+		"model": cctx.Model,
 		"messages": []map[string]any{
 			{"role": "system", "content": toolResultSummarizePrompt},
 			{"role": "user", "content": content},
@@ -475,12 +455,12 @@ func (c *Compressor) summarizeContent(ctx context.Context, content string) (stri
 		return "", fmt.Errorf("compress: marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.compressChatURL(), bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cctx.ChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return "", fmt.Errorf("compress: create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Authorization", "Bearer "+cctx.APIKey)
 
 	start := time.Now()
 	resp, err := c.client.Do(req)
@@ -525,7 +505,7 @@ func (c *Compressor) summarizeContent(ctx context.Context, content string) (stri
 	// Best-effort usage metering; never fail the primary request on a record error.
 	if c.recordUsage != nil && chatResp.Usage != nil {
 		tu := parseUsageObject(chatResp.Usage)
-		c.recordUsage(compressModel, tu.PromptTokens, tu.CompletionTokens, time.Since(start))
+		c.recordUsage(cctx.Provider, cctx.Model, tu.PromptTokens, tu.CompletionTokens, time.Since(start))
 	}
 	return summary, nil
 }

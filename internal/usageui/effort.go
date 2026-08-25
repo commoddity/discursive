@@ -42,11 +42,31 @@ func (s *Server) handleReasoningEffort(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) providerActive(p config.Provider) bool {
+	switch p {
+	case config.ProviderMoonshot:
+		return s.health.HasMoonshotKey
+	case config.ProviderDeepSeek:
+		return s.health.HasDeepSeekKey
+	case config.ProviderZai:
+		return s.health.HasZaiKey
+	case config.ProviderThaura:
+		return s.health.HasThauraKey
+	case config.ProviderOpenRouter:
+		return s.health.HasOpenRouterKey
+	default:
+		return false
+	}
+}
+
 func (s *Server) writeReasoningEffort(w http.ResponseWriter) {
 	efforts := s.live.EffortMap()
 	byProvider := map[config.Provider]*ReasoningEffortProviderDTO{}
 	var order []config.Provider
 	for _, spec := range config.ReasoningEffortCatalog() {
+		if !s.providerActive(spec.Provider) {
+			continue
+		}
 		p, ok := byProvider[spec.Provider]
 		if !ok {
 			p = &ReasoningEffortProviderDTO{

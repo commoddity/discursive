@@ -466,13 +466,13 @@
     }
 
     #balances-summary {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(var(--bal-cols, 1), 1fr);
       gap: 6px;
     }
 
-    @media (max-width: 1100px) {
+    @media (max-width: 700px) {
       #balances-summary {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(min(2, var(--bal-cols, 1)), 1fr);
       }
     }
 
@@ -1422,13 +1422,7 @@
 <body>
   <div class="header">
     <img src="/static/discursive.png" alt="Discursive">
-    <div class="peak-indicator offpeak" id="peak-indicator" tabindex="0" role="status" aria-live="polite"
-         style="margin-left:auto">
-      <span class="peak-dot"></span>
-      <span id="peak-indicator-label">Off-peak</span>
-      <div class="peak-tooltip" id="peak-tooltip"></div>
-    </div>
-    <div class="providers" id="provider-indicators" style="margin-left:0"></div>
+    <div class="providers" id="provider-indicators" style="margin-left:auto"></div>
   </div>
 
   <div class="card" id="health-card">
@@ -1910,6 +1904,8 @@
       openrouter: {
         'deepseek/deepseek-v4-flash-0731': { cache_hit: 0.014, input: 0.065, output: 0.14 },
         'deepseek/deepseek-v4-pro-0813': { cache_hit: 0.022, input: 0.66, output: 1.98 },
+        'z-ai/glm-5.3': { cache_hit: 0.26, input: 1.40, output: 4.40 },
+        'z-ai/glm-4.7': { cache_hit: 0.11, input: 0.60, output: 2.20 },
       },
       zai: {
         // Credit-based pricing (credits per 1M tokens), from official Coding
@@ -2680,7 +2676,7 @@
         '</a></div>';
 
       if (!b || !b.configured) {
-        return wrap('<div class="label">' + label + '</div><div class="value" style="color:var(--text-muted);font-size:1.1rem">Not configured</div>');
+        return '';
       }
       if (b.error && b.available_usd == null && b.amount == null) {
         return wrap('<div class="label">' + label + '</div><div class="value bal-red" style="font-size:1.1rem">Error</div><div class="sub">' + escapeHtml(b.error) + '</div>');
@@ -2738,12 +2734,12 @@
         document.getElementById('balances-loading').style.display = 'none';
         document.getElementById('balances-error').style.display = 'none';
         const div = document.getElementById('balances-summary');
-        div.style.display = 'grid';
-        div.innerHTML =
-          renderBalanceStat('zai', data.zai) +
-          renderBalanceStat('deepseek', data.deepseek) +
-          renderBalanceStat('moonshot', data.moonshot) +
-          renderBalanceStat('openrouter', data.openrouter);
+        const order = ['zai', 'deepseek', 'moonshot', 'openrouter'];
+        const active = order.filter(id => data[id] && data[id].configured);
+        const cards = active.map(id => renderBalanceStat(id, data[id])).join('');
+        div.style.display = cards ? 'grid' : 'none';
+        div.style.setProperty('--bal-cols', String(active.length || 1));
+        div.innerHTML = cards;
         zaiBalance = data.zai;
         openrouterBalance = data.openrouter;
         applyBalancesVisibility();

@@ -34,6 +34,10 @@ func TestReasoningEffortGetAndPut(t *testing.T) {
 
 	srv := NewServer("127.0.0.1:0", store)
 	srv.SetLive(live)
+	srv.SetHealth(HealthInfo{
+		HasMoonshotKey: true,
+		HasDeepSeekKey: true,
+	})
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/reasoning-effort", srv.handleReasoningEffort)

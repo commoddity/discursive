@@ -1,6 +1,6 @@
 // Package vision describes image content parts for text models without native
-// vision by routing them through a vision-capable model (Z.AI glm-4.6v).
-// Contract: depends on config (Z.AI key + chat URL) + injectable http.Client.
+// vision by routing them through a provider-specific vision-capable model.
+// Contract: depends on config (provider catalog) + injectable http.Client.
 package vision
 
 import (
@@ -18,51 +18,42 @@ import (
 	"sync"
 	"time"
 
+	"github.com/commoddity/discursive/internal/config"
 	"golang.org/x/sync/singleflight"
 )
 
 const (
-	cacheTTL          = 10 * time.Minute
-	maxConcurrent     = 4
-	visionRequestPath = "/chat/completions"
+	cacheTTL      = 10 * time.Minute
+	maxConcurrent = 4
 )
 
-// visionPrompt is the instruction sent to glm-4.6v for each image.
+// visionPrompt is the instruction sent to the vision model for each image.
 const visionPrompt = "Describe this image in detail for a coding assistant. Capture any text, UI, error messages, diagrams, and layout. Be precise and concise."
 
-// ErrNoVisionKey indicates the caller tried to describe an image but the Z.AI
-// vision key is not configured. Callers fail fast (never silently strip).
-var ErrNoVisionKey = fmt.Errorf("image attached but the vision model (Z.AI glm-4.6v) requires a Z.AI API key which is not configured; run `discursive set --zai-key <key>` and restart the gateway")
+// ErrNoVisionKey indicates the caller tried to describe an image but no API key
+// is configured for the selected vision provider.
+var ErrNoVisionKey = fmt.Errorf("image attached but the vision model requires an API key which is not configured for this provider")
 
-// visionModel is the real Z.AI model id used for image description.
-const visionModel = "glm-4.6v"
+// UsageRecorder meters one successful vision call.
+type UsageRecorder func(provider config.Provider, model string, promptTokens, completionTokens uint64, latency time.Duration)
 
-// UsageRecorder meters one successful vision call. model is the real model id,
-// promptTokens/completionTokens come from the upstream usage block, latency is
-// the round-trip duration. Best-effort: implementers must not fail the vision
-// path on a recording error.
-type UsageRecorder func(model string, promptTokens, completionTokens uint64, latency time.Duration)
+// Request carries per-call vision upstream settings from the gateway proxy.
+type Request struct {
+	Provider config.Provider
+	Model    string
+	ChatURL  string
+	GetKey   func() (string, bool)
+}
 
-// Describer describes images via glm-4.6v and replaces image_url parts with
-// text descriptions inline.
+// Describer describes images and replaces image_url parts with text descriptions.
 type Describer struct {
-	client    *http.Client
-	chatURL   string
-	getZaiKey func() (string, bool)
-	record    UsageRecorder // optional best-effort usage meter; may be nil
-
-	cache   sync.Map  // sha256hash -> cacheEntry (short-lived in-memory)
-	persist descCache // durable hash -> description store; nil in tests
+	client  *http.Client
+	record  UsageRecorder
+	cache   sync.Map
+	persist descCache
 	sfg     singleflight.Group
-	descMu  sync.Mutex // guards descriptionCounter
-	counter int        // per-replace cycle image counter
-
-	// acquireSlot, when set, reserves a Z.AI plan-concurrency slot before each
-	// upstream vision call and returns a release func. Vision shares the same
-	// coding-plan concurrency budget as chat (glm-4.6v lives on the plan
-	// endpoint), so unslotted vision calls would over-subscribe the plan and
-	// cause 429 storms that stall chat turns.
-	acquireSlot func(ctx context.Context) func()
+	descMu  sync.Mutex
+	counter int
 }
 
 type cacheEntry struct {
@@ -70,21 +61,12 @@ type cacheEntry struct {
 	expiresAt time.Time
 }
 
-// NewDescriber creates a Describer. getZaiKey reuses the existing
-// AppSettings.GetZaiKey / LiveSettings.GetZaiKey pattern.
-func NewDescriber(client *http.Client, chatURL string, getZaiKey func() (string, bool)) *Describer {
-	return &Describer{
-		client:    client,
-		chatURL:   chatURL,
-		getZaiKey: getZaiKey,
-	}
+// NewDescriber creates a Describer.
+func NewDescriber(client *http.Client) *Describer {
+	return &Describer{client: client}
 }
 
-// SetPersistentCache installs a durable content-hash description store. When
-// set, an image that was described on a previous turn (or a previous process)
-// is resolved from the store without an upstream vision call, so a vision model
-// that is rate-limited no longer breaks later turns that only carry already
-// described images. Closing is the caller's responsibility.
+// SetPersistentCache installs a durable content-hash description store.
 func (d *Describer) SetPersistentCache(c descCache) {
 	if d != nil {
 		d.persist = c
@@ -92,24 +74,13 @@ func (d *Describer) SetPersistentCache(c descCache) {
 }
 
 // SetUsageRecorder installs a best-effort usage meter called after each
-// successful vision call. Passing nil disables metering (default). The
-// recorder must not fail the vision path.
+// successful vision call.
 func (d *Describer) SetUsageRecorder(r UsageRecorder) {
 	if d != nil {
 		d.record = r
 	}
 }
 
-// SetPlanSlotter installs a slot-acquire hook so vision calls share the
-// gateway's Z.AI plan-concurrency budget. The hook reserves a slot before each
-// upstream describe and returns a release func. Nil = unslotted (tests).
-func (d *Describer) SetPlanSlotter(acquire func(ctx context.Context) func()) {
-	if d != nil {
-		d.acquireSlot = acquire
-	}
-}
-
-// imageJob describes one image_url part found in the message history.
 type imageJob struct {
 	msgIdx  int
 	partIdx int
@@ -117,31 +88,16 @@ type imageJob struct {
 	imgURL  string
 }
 
-// imageResult is the per-image replacement outcome: a description on success
-// or an error on a failed vision call (which falls back to a placeholder).
 type imageResult struct {
 	desc string
 	err  error
 }
 
-// imageUnavailableNote is substituted for an image part when the vision model
-// cannot describe it (rate-limited, missing key, network, or upstream
-// rejection). The text model still receives a clear, honest placeholder instead
-// of the raw image, and the turn proceeds.
 const imageUnavailableNote = "[An image could not be described because the vision model is unavailable (e.g. rate-limited). It has been replaced with this note so the conversation can continue.]"
 
 // ReplaceImages scans messages for image parts and replaces each with a text
-// description from glm-4.6v. Applies to ALL providers (Moonshot/DeepSeek/Z.AI/
-// Thaura). Caches by content hash in memory (10 min TTL) and, when a durable
-// store is installed, persists descriptions so historical images are reused
-// without a vision call. Returns the count of image parts replaced.
-//
-// Contract: ReplaceImages is graceful. An image already described (historical)
-// is reused from cache with no vision call. A new image that cannot be
-// described (missing Z.AI key, rate limit, network, upstream rejection) is
-// replaced with a placeholder note rather than failing the whole request — a
-// rate-limited vision model never blocks subsequent prompts.
-func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int, error) {
+// description from the configured vision model for the request provider.
+func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any, req Request) (int, error) {
 	if d == nil {
 		return 0, nil
 	}
@@ -155,7 +111,6 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 	d.counter = 0
 	d.descMu.Unlock()
 
-	// Collect all image hashes across messages first.
 	var jobs []imageJob
 	for mi, raw := range msgs {
 		msg, ok := raw.(map[string]any)
@@ -164,8 +119,6 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 		}
 		parts, ok := msg["content"].([]any)
 		if !ok {
-			// Single content object (e.g. map with type == image_url in
-			// rare non-array content). Skip for now.
 			continue
 		}
 		for pi, part := range parts {
@@ -185,16 +138,12 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 		return 0, nil
 	}
 
-	// Resolve historical images from the durable/in-memory cache; only images
-	// with no cached description need a vision call (and only those hit the
-	// upstream provider). A rate-limited vision model therefore cannot fault
-	// already-described images.
 	keyMissing := false
 	results := make([]imageResult, len(jobs))
 	needsVision := false
 
-	if d.getZaiKey != nil {
-		if k, ok := d.getZaiKey(); !ok || k == "" {
+	if req.GetKey != nil {
+		if k, ok := req.GetKey(); !ok || k == "" {
 			keyMissing = true
 		}
 	} else {
@@ -217,8 +166,6 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 			}
 			d.cache.Delete(job.hash)
 		}
-		// No cached description: this image needs a vision call. If the key is
-		// missing, we will fall back to a placeholder below (never fail).
 		needsVision = true
 		if keyMissing {
 			results[i] = imageResult{err: ErrNoVisionKey}
@@ -228,21 +175,17 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 	if !needsVision {
 		return d.applyDescriptions(msgs, jobs, results), nil
 	}
-
-	// If the vision key is missing, no upstream call is possible; fall back to
-	// placeholder notes for every undescribed image and continue.
 	if keyMissing {
 		logDescriptionsSkipped(jobs, results)
 		return d.applyDescriptions(msgs, jobs, results), nil
 	}
 
-	// Limit concurrent vision calls.
 	sem := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
 
 	for i, job := range jobs {
 		if results[i].desc != "" {
-			continue // already served from cache
+			continue
 		}
 
 		wg.Add(1)
@@ -252,7 +195,7 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 			defer func() { <-sem }()
 
 			val, err, _ := d.sfg.Do(j.hash, func() (any, error) {
-				desc, err := d.describeImage(ctx, j.imgURL, j.hash)
+				desc, err := d.describeImage(ctx, j.imgURL, j.hash, req)
 				if err != nil {
 					return nil, err
 				}
@@ -271,15 +214,10 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any) (int
 	}
 	wg.Wait()
 
-	// Graceful fallback: any image that failed to describe is replaced with a
-	// placeholder note. The request always proceeds.
 	logDescriptionsSkipped(jobs, results)
 	return d.applyDescriptions(msgs, jobs, results), nil
 }
 
-// applyDescriptions replaces image parts inline with their text descriptions
-// (or a placeholder note on failure). It returns the number of image parts
-// replaced.
 func (d *Describer) applyDescriptions(msgs []any, jobs []imageJob, results []imageResult) int {
 	count := 0
 	for i, job := range jobs {
@@ -299,9 +237,6 @@ func (d *Describer) applyDescriptions(msgs []any, jobs []imageJob, results []ima
 	return count
 }
 
-// logDescriptionsSkipped logs (at WARN) one line per image that could not be
-// described, including its truncated content hash so the operator can tell
-// whether Cursor is resending the same image bytes across turns.
 func logDescriptionsSkipped(jobs []imageJob, results []imageResult) {
 	for i, job := range jobs {
 		if i < len(results) && results[i].desc != "" {
@@ -319,12 +254,9 @@ func logDescriptionsSkipped(jobs []imageJob, results []imageResult) {
 	}
 }
 
-// extractImageURL pulls the URL string from an image_url content part.
-// Returns "" if the part is not an image_url or missing url.
 func extractImageURL(part map[string]any) string {
 	typ := stringField(part, "type")
 	if typ != "image_url" {
-		// Also check the image_url field directly (some shapes omit type).
 		if _, ok := part["image_url"]; !ok {
 			return ""
 		}
@@ -336,9 +268,6 @@ func extractImageURL(part map[string]any) string {
 	return stringField(img, "url")
 }
 
-// hashImageURL returns a SHA-256 hash of the image content.
-// For data URLs the decoded bytes are hashed; for https URLs the URL string
-// is hashed (fetch happens upstream-side by glm-4.6v).
 func hashImageURL(url string) string {
 	b := sha256.Sum256(imageContentForHash(url))
 	return fmt.Sprintf("%x", b[:])
@@ -346,7 +275,6 @@ func hashImageURL(url string) string {
 
 func imageContentForHash(url string) []byte {
 	if strings.HasPrefix(url, "data:") {
-		// data:image/png;base64,<base64>
 		idx := strings.Index(url, ";base64,")
 		if idx >= 0 {
 			raw := url[idx+len(";base64,"):]
@@ -360,28 +288,21 @@ func imageContentForHash(url string) []byte {
 	return []byte(url)
 }
 
-func (d *Describer) describeImage(ctx context.Context, imgURL, hash string) (string, error) {
-	key, ok := d.getZaiKey()
-	if !ok || key == "" {
+func (d *Describer) describeImage(ctx context.Context, imgURL, hash string, req Request) (string, error) {
+	var key string
+	if req.GetKey != nil {
+		k, ok := req.GetKey()
+		if !ok || k == "" {
+			return "", ErrNoVisionKey
+		}
+		key = k
+	} else {
 		return "", ErrNoVisionKey
 	}
 
-	// Share the Z.AI plan-concurrency budget: block until a slot frees so a
-	// burst of images can't over-subscribe the plan and 429-stall chat turns.
-	if d.acquireSlot != nil {
-		release := d.acquireSlot(ctx)
-		defer release()
-		if err := ctx.Err(); err != nil {
-			return "", fmt.Errorf("vision: waiting for plan slot: %w", err)
-		}
-	}
-
 	reqBody := map[string]any{
-		"model":  visionModel,
+		"model":  req.Model,
 		"stream": false,
-		"thinking": map[string]any{
-			"type": "disabled",
-		},
 		"messages": []any{
 			map[string]any{
 				"role": "user",
@@ -398,21 +319,24 @@ func (d *Describer) describeImage(ctx context.Context, imgURL, hash string) (str
 			},
 		},
 	}
+	if req.Provider == config.ProviderZai {
+		reqBody["thinking"] = map[string]any{"type": "disabled"}
+	}
 
 	raw, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("vision: marshal: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.chatURL, bytes.NewReader(raw))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, req.ChatURL, bytes.NewReader(raw))
 	if err != nil {
 		return "", fmt.Errorf("vision: new request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+key)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+key)
 
 	start := time.Now()
-	resp, err := d.client.Do(req)
+	resp, err := d.client.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("vision: upstream request failed: %w", err)
 	}
@@ -425,9 +349,6 @@ func (d *Describer) describeImage(ctx context.Context, imgURL, hash string) (str
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg := extractUpstreamError(respBody)
-		// Truncate the hash so repeated diagnostics stay compact but still let
-		// us distinguish "same image resent" (same hash) from "new image" (new
-		// hash). This is the signal used to debug Cursor's image-history replay.
 		shortHash := hash
 		if len(shortHash) > 12 {
 			shortHash = shortHash[:12]
@@ -466,18 +387,16 @@ func (d *Describer) describeImage(ctx context.Context, imgURL, hash string) (str
 		return "", fmt.Errorf("vision: empty description")
 	}
 	slog.Info("vision_call_succeeded",
-		"model", visionModel,
+		"model", req.Model,
+		"provider", req.Provider,
 		"desc_len", len(desc),
 	)
-	// Best-effort usage metering; never fail the vision path on a record error.
 	if d.record != nil {
-		d.record(visionModel, completion.Usage.PromptTokens, completion.Usage.CompletionTokens, time.Since(start))
+		d.record(req.Provider, req.Model, completion.Usage.PromptTokens, completion.Usage.CompletionTokens, time.Since(start))
 	}
 	return desc, nil
 }
 
-// extractUpstreamError pulls an OpenAI-shaped error.message from an upstream
-// error body. Returns "" if none is present.
 func extractUpstreamError(body []byte) string {
 	var out struct {
 		Error struct {

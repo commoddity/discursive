@@ -216,8 +216,8 @@ func RunSetup(cmd *cobra.Command, portable func() bool, flags Flags, opts Opts) 
 	if err := config.ValidateTunnelSettings(s); err != nil {
 		return err
 	}
-	if !s.HasMoonshotKey() || !s.HasDeepSeekKey() {
-		return fmt.Errorf("both Moonshot and DeepSeek API keys are required")
+	if !s.HasChatProviderKey() {
+		return fmt.Errorf("at least one chat provider API key is required")
 	}
 	if err := config.Save(dataRoot, s); err != nil {
 		return err

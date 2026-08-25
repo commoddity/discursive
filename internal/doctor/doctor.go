@@ -71,27 +71,39 @@ func defaultHTTPGet(url string, timeout time.Duration) (int, error) {
 func RunAll(settings config.AppSettings, dataRoot string) Report {
 	var checks []Check
 
-	// 1. moonshot_key_present
+	// chat_provider_key_present — at least one upstream chat provider required.
+	checks = append(checks, Check{
+		Name: "chat_provider_key_present",
+		OK:   settings.HasChatProviderKey(),
+		Detail: func() string {
+			if settings.HasChatProviderKey() {
+				return ""
+			}
+			return "no chat provider API key saved (run discursive init and set at least one of Moonshot, DeepSeek, Z.AI, or Thaura)"
+		}(),
+	})
+
+	// moonshot_key_present — informational when missing.
 	checks = append(checks, Check{
 		Name: "moonshot_key_present",
-		OK:   settings.HasMoonshotKey(),
+		OK:   true,
 		Detail: func() string {
 			if settings.HasMoonshotKey() {
 				return ""
 			}
-			return "Moonshot/Kimi API key is not saved (run set --moonshot-key)"
+			return "optional: Moonshot/Kimi API key not saved (run set --moonshot-key to enable gpt-4o aliases)"
 		}(),
 	})
 
-	// 2. deepseek_key_present
+	// deepseek_key_present — informational when missing.
 	checks = append(checks, Check{
 		Name: "deepseek_key_present",
-		OK:   settings.HasDeepSeekKey(),
+		OK:   true,
 		Detail: func() string {
 			if settings.HasDeepSeekKey() {
 				return ""
 			}
-			return "DeepSeek API key is not saved (run set --deepseek-key)"
+			return "optional: DeepSeek API key not saved (run set --deepseek-key to enable o1/o3-mini aliases)"
 		}(),
 	})
 

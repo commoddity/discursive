@@ -57,7 +57,6 @@ func DefaultSettings() AppSettings {
 		AliasModel:      DefaultAliasModel,
 		TunnelMode:      DefaultTunnelMode,
 		ReasoningEffort: DefaultReasoningEffort(),
-		Verbosity:       DefaultVerbosity(),
 		ThinkingEnabled: DefaultThinkingEnabled(),
 	}
 }
@@ -100,8 +99,8 @@ func Load(dataRoot string) (AppSettings, error) {
 	// Migrate legacy single compression toggle → tool compression.
 	s.normalizeCompressionFlags()
 	s.ReasoningEffort = NormalizeReasoningEffortMap(s.ReasoningEffort)
-	s.Verbosity = NormalizeVerbosityMap(s.Verbosity)
 	s.ThinkingEnabled = NormalizeThinkingEnabledMap(s.ThinkingEnabled)
+	s.SnapDefaultModelIfNeeded()
 	if err := s.EnsureGatewayKey(); err != nil {
 		return AppSettings{}, err
 	}
@@ -214,9 +213,19 @@ func (s AppSettings) HasMoonshotKey() bool {
 	return s.MoonshotKeyEncrypted != nil && *s.MoonshotKeyEncrypted != ""
 }
 
+// ClearMoonshotKey removes the stored Moonshot API key.
+func (s *AppSettings) ClearMoonshotKey() {
+	s.MoonshotKeyEncrypted = nil
+}
+
 // HasDeepSeekKey reports whether an encrypted DeepSeek key is present.
 func (s AppSettings) HasDeepSeekKey() bool {
 	return s.DeepSeekKeyEncrypted != nil && *s.DeepSeekKeyEncrypted != ""
+}
+
+// ClearDeepSeekKey removes the stored DeepSeek API key.
+func (s *AppSettings) ClearDeepSeekKey() {
+	s.DeepSeekKeyEncrypted = nil
 }
 
 // SetThauraKey encrypts and stores the Thaura AI API key.
@@ -246,6 +255,11 @@ func (s AppSettings) HasThauraKey() bool {
 	return s.ThauraKeyEncrypted != nil && *s.ThauraKeyEncrypted != ""
 }
 
+// ClearThauraKey removes the stored Thaura API key.
+func (s *AppSettings) ClearThauraKey() {
+	s.ThauraKeyEncrypted = nil
+}
+
 // SetZaiKey encrypts and stores the Z.AI API key.
 func (s *AppSettings) SetZaiKey(dataRoot, plaintext string) error {
 	enc, err := crypto.Protect(dataRoot, plaintext)
@@ -273,6 +287,11 @@ func (s AppSettings) HasZaiKey() bool {
 	return s.ZaiKeyEncrypted != nil && *s.ZaiKeyEncrypted != ""
 }
 
+// ClearZaiKey removes the stored Z.AI API key.
+func (s *AppSettings) ClearZaiKey() {
+	s.ZaiKeyEncrypted = nil
+}
+
 // SetOpenRouterKey encrypts and stores the OpenRouter API key.
 func (s *AppSettings) SetOpenRouterKey(dataRoot, plaintext string) error {
 	enc, err := crypto.Protect(dataRoot, plaintext)
@@ -298,6 +317,11 @@ func (s *AppSettings) GetOpenRouterKey(dataRoot string) (*string, error) {
 // HasOpenRouterKey reports whether an encrypted OpenRouter key is present.
 func (s AppSettings) HasOpenRouterKey() bool {
 	return s.OpenRouterKeyEncrypted != nil && *s.OpenRouterKeyEncrypted != ""
+}
+
+// ClearOpenRouterKey removes the stored OpenRouter API key.
+func (s *AppSettings) ClearOpenRouterKey() {
+	s.OpenRouterKeyEncrypted = nil
 }
 
 // SetTunnelToken encrypts and stores the Cloudflare tunnel token.

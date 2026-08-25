@@ -1,60 +1,6 @@
 package gateway
 
-import (
-	"testing"
-	"time"
-)
-
-// laneClock returns a fixed clock after the DeepSeek peak-pricing cutover.
-func laneClock(hour int) func() time.Time {
-	return func() time.Time {
-		return time.Date(2026, time.August, 18, hour, 0, 0, 0, time.UTC)
-	}
-}
-
-func TestSelectDowngradeLane(t *testing.T) {
-	peak := laneClock(8)     // 08:00 UTC = DeepSeek peak window
-	offpeak := laneClock(12) // 12:00 UTC = off-peak
-	_, _ = peak, offpeak
-
-	fillLane := func(s *Server, n int) {
-		for i := 0; i < n; i++ {
-			s.glm47Lane <- struct{}{}
-		}
-	}
-
-	tests := []struct {
-		name     string
-		inFlight int
-		want     string
-	}{
-		{"lane free stays glm-4.7", 0, "glm-4.7"},
-		{"full lane overflows to real deepseek flash", glm47LaneCap, "deepseek-v4-flash"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &Server{glm47Lane: make(chan struct{}, glm47LaneCap)}
-			fillLane(s, tt.inFlight)
-			got, release := s.selectDowngradeLane("req_test")
-			defer release()
-			if got != tt.want {
-				t.Fatalf("got %q, want %q", got, tt.want)
-			}
-		})
-	}
-
-	t.Run("release frees the lane slot", func(t *testing.T) {
-		s := &Server{glm47Lane: make(chan struct{}, glm47LaneCap)}
-		_, release := s.selectDowngradeLane("req_test")
-		if len(s.glm47Lane) != 1 {
-			t.Fatalf("lane should hold 1 slot after acquire, holds %d", len(s.glm47Lane))
-		}
-		release()
-		if len(s.glm47Lane) != 0 {
-			t.Fatalf("lane should be empty after release, holds %d", len(s.glm47Lane))
-		}
-	})
-}
+import "testing"
 
 func TestInjectZaiLanguageDirective(t *testing.T) {
 	tests := []struct {

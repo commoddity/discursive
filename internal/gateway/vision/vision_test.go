@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func stubGLM46vServer(t *testing.T, body map[string]any) (*httptest.Server, *atomic.Int64) {
@@ -24,6 +26,10 @@ func stubGLM46vServer(t *testing.T, body map[string]any) (*httptest.Server, *ato
 
 func stubZaiKey() func() (string, bool) {
 	return func() (string, bool) { return "zai-test-key", true }
+}
+
+func visionReq(srv *httptest.Server, keyFn func() (string, bool)) Request {
+	return Request{Provider: config.ProviderZai, Model: config.ModelZaiGLM46v, ChatURL: srv.URL + "/chat/completions", GetKey: keyFn}
 }
 
 func stubNoZaiKey() func() (string, bool) {
@@ -64,16 +70,12 @@ func TestReplaceImagesDescriptions(t *testing.T) {
 			},
 		},
 	})
-	d := &Describer{
-		client:    srv.Client(),
-		chatURL:   srv.URL + visionRequestPath,
-		getZaiKey: stubZaiKey(),
-	}
+	d := &Describer{client: srv.Client()}
 
 	body := sampleChatBodyWithImages(
 		standardImageURLPart("data:image/png;base64,iVBORw0KGgo="),
 	)
-	n, err := d.ReplaceImages(t.Context(), body)
+	n, err := d.ReplaceImages(t.Context(), body, visionReq(srv, stubZaiKey()))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -111,18 +113,14 @@ func TestReplaceImagesCacheHit(t *testing.T) {
 			},
 		},
 	})
-	d := &Describer{
-		client:    srv.Client(),
-		chatURL:   srv.URL + visionRequestPath,
-		getZaiKey: stubZaiKey(),
-	}
+	d := &Describer{client: srv.Client()}
 
 	// Two identical images — second should hit cache.
 	body := sampleChatBodyWithImages(
 		standardImageURLPart("https://example.com/img.png"),
 		standardImageURLPart("https://example.com/img.png"),
 	)
-	n, err := d.ReplaceImages(t.Context(), body)
+	n, err := d.ReplaceImages(t.Context(), body, visionReq(srv, stubZaiKey()))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -140,16 +138,12 @@ func TestReplaceImagesUpstreamErrorFallsBack(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":{"message":"Insufficient balance. Please recharge."}}`))
 	}))
 	t.Cleanup(srv.Close)
-	d := &Describer{
-		client:    srv.Client(),
-		chatURL:   srv.URL + visionRequestPath,
-		getZaiKey: stubZaiKey(),
-	}
+	d := &Describer{client: srv.Client()}
 
 	body := sampleChatBodyWithImages(
 		standardImageURLPart("data:image/png;base64,abc123"),
 	)
-	n, err := d.ReplaceImages(t.Context(), body)
+	n, err := d.ReplaceImages(t.Context(), body, visionReq(srv, stubZaiKey()))
 	if err != nil {
 		t.Fatalf("expected graceful fallback (no error), got: %v", err)
 	}
@@ -171,11 +165,7 @@ func TestReplaceImagesUpstreamErrorFallsBack(t *testing.T) {
 }
 
 func TestReplaceImagesNoImages(t *testing.T) {
-	d := &Describer{
-		client:    &http.Client{},
-		chatURL:   "http://unused",
-		getZaiKey: stubZaiKey(),
-	}
+	d := &Describer{client: &http.Client{}}
 
 	body := map[string]any{
 		"model": "o3-mini",
@@ -186,7 +176,7 @@ func TestReplaceImagesNoImages(t *testing.T) {
 			},
 		},
 	}
-	n, err := d.ReplaceImages(t.Context(), body)
+	n, err := d.ReplaceImages(t.Context(), body, Request{})
 	if err != nil {
 		t.Fatalf("unexpected error for no images: %v", err)
 	}
@@ -208,17 +198,13 @@ func TestReplaceImagesAppliesToAllProviders(t *testing.T) {
 					},
 				},
 			})
-			d := &Describer{
-				client:    srv.Client(),
-				chatURL:   srv.URL + visionRequestPath,
-				getZaiKey: stubZaiKey(),
-			}
+			d := &Describer{client: srv.Client()}
 
 			body := sampleChatBodyWithImages(
 				standardImageURLPart("https://example.com/img.png"),
 			)
 			// provider param removed — the describer no longer gates on provider.
-			n, err := d.ReplaceImages(t.Context(), body)
+			n, err := d.ReplaceImages(t.Context(), body, visionReq(srv, stubZaiKey()))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -245,7 +231,7 @@ func TestReplaceImagesNilDescriber(t *testing.T) {
 	body := sampleChatBodyWithImages(
 		standardImageURLPart("https://example.com/img.png"),
 	)
-	n, err := d.ReplaceImages(t.Context(), body)
+	n, err := d.ReplaceImages(t.Context(), body, Request{})
 	if n != 0 {
 		t.Fatalf("expected 0 images described for nil describer, got %d", n)
 	}
@@ -255,16 +241,12 @@ func TestReplaceImagesNilDescriber(t *testing.T) {
 }
 
 func TestReplaceImagesNoKey(t *testing.T) {
-	d := &Describer{
-		client:    &http.Client{},
-		chatURL:   "http://unused",
-		getZaiKey: stubNoZaiKey(),
-	}
+	d := &Describer{client: &http.Client{}}
 
 	body := sampleChatBodyWithImages(
 		standardImageURLPart("https://example.com/img.png"),
 	)
-	n, err := d.ReplaceImages(t.Context(), body)
+	n, err := d.ReplaceImages(t.Context(), body, Request{GetKey: stubNoZaiKey()})
 	if err != nil {
 		t.Fatalf("expected graceful fallback (no error) without key, got: %v", err)
 	}
@@ -302,15 +284,10 @@ func TestReplaceImagesReusesPersistentCache(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = persist.Close() })
 
-	d := &Describer{
-		client:    srv.Client(),
-		chatURL:   srv.URL + visionRequestPath,
-		getZaiKey: stubZaiKey(),
-		persist:   persist,
-	}
+	d := &Describer{client: srv.Client(), persist: persist}
 
 	first := sampleChatBodyWithImages(standardImageURLPart("https://example.com/historical.png"))
-	if n, err := d.ReplaceImages(t.Context(), first); err != nil || n != 1 {
+	if n, err := d.ReplaceImages(t.Context(), first, visionReq(srv, stubZaiKey())); err != nil || n != 1 {
 		t.Fatalf("first turn: n=%d err=%v", n, err)
 	}
 	if count.Load() != 1 {
@@ -321,7 +298,7 @@ func TestReplaceImagesReusesPersistentCache(t *testing.T) {
 	d.cache = sync.Map{}
 
 	second := sampleChatBodyWithImages(standardImageURLPart("https://example.com/historical.png"))
-	if n, err := d.ReplaceImages(t.Context(), second); err != nil || n != 1 {
+	if n, err := d.ReplaceImages(t.Context(), second, visionReq(srv, stubZaiKey())); err != nil || n != 1 {
 		t.Fatalf("second turn: n=%d err=%v", n, err)
 	}
 	if count.Load() != 1 {
@@ -358,17 +335,12 @@ func TestReplaceImagesNewImageFallsBackGracefully(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = persist.Close() })
 
-	d := &Describer{
-		client:    srv.Client(),
-		chatURL:   srv.URL + visionRequestPath,
-		getZaiKey: stubZaiKey(),
-		persist:   persist,
-	}
+	d := &Describer{client: srv.Client(), persist: persist}
 
 	// A new, undescribed image against a rate-limited model falls back to a
 	// placeholder instead of failing.
 	newBody := sampleChatBodyWithImages(standardImageURLPart("https://example.com/new.png"))
-	if n, err := d.ReplaceImages(t.Context(), newBody); n != 1 || err != nil {
+	if n, err := d.ReplaceImages(t.Context(), newBody, visionReq(srv, stubZaiKey())); n != 1 || err != nil {
 		t.Fatalf("expected graceful fallback for new image, got n=%d err=%v", n, err)
 	}
 	msgs := newBody["messages"].([]any)
@@ -384,7 +356,7 @@ func TestReplaceImagesNewImageFallsBackGracefully(t *testing.T) {
 		t.Fatalf("persist.Put: %v", err)
 	}
 	histBody := sampleChatBodyWithImages(standardImageURLPart("https://example.com/old.png"))
-	if n, err := d.ReplaceImages(t.Context(), histBody); n != 1 || err != nil {
+	if n, err := d.ReplaceImages(t.Context(), histBody, visionReq(srv, stubZaiKey())); n != 1 || err != nil {
 		t.Fatalf("historical image must reuse cache, got n=%d err=%v", n, err)
 	}
 	histParts := histBody["messages"].([]any)[0].(map[string]any)["content"].([]any)

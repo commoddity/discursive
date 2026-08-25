@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+
+	"github.com/commoddity/discursive/internal/config"
 )
 
 // SubAgentRouter classifies every chat-completion request and, when the
@@ -44,15 +46,6 @@ const (
 type SubAgentRouterConfig struct {
 	// Enabled gates the entire feature. When false, ClassifyAndOverride is a no-op.
 	Enabled bool
-
-	// PickDowngradeModel is invoked when a downgrade would be applied. It
-	// receives the candidate override model (defaultFlashModel) and the
-	// request id for logging, and returns the model to actually use. Use it
-	// to steer downgrades into a capacity-aware lane (e.g. glm-4.7 while
-	// slots are free, overflow to another model otherwise). Nil = use the
-	// candidate as-is. The returned release func must be called when the
-	// request completes (non-nil only when a lane slot was taken).
-	PickDowngradeModel func(candidate, requestID string) (model string, release func())
 }
 
 // ClassifierResult contains the classification outcome for logging.
@@ -65,17 +58,8 @@ type ClassifierResult struct {
 	OverrideModel     string       `json:"override_model,omitempty"`
 	OverrideApplied   bool         `json:"override_applied"`
 	OverrideReason    string       `json:"override_reason,omitempty"`
-	ReleaseLaneSlot   func()       `json:"-"` // frees the downgrade lane slot when set
 	ClassificationAge string       `json:"classification_age,omitempty"`
 }
-
-// defaultFlashModel is the single downgrade target for all cheap-class traffic.
-// HARD RULE: downgrades land on the real DeepSeek flash model; OpenRouter is
-// only ever used during peak hours (see peakguard / fallbackTargetFor).
-const defaultFlashModel = "deepseek-v4-flash"
-
-// defaultProModel is the big-model DeepSeek target the router may pick.
-const defaultProModel = "deepseek-v4-pro"
 
 // SubAgentRouter performs request classification and optional model override.
 type SubAgentRouter struct {
@@ -140,33 +124,24 @@ func (r *SubAgentRouter) ClassifyAndOverride(body map[string]any, requestID stri
 		return result
 	}
 
-	// Cheap-class traffic always downgrades to the real DeepSeek flash target
-	// (never OpenRouter; peak reroute below substitutes when DeepSeek is in peak).
-	override := defaultFlashModel
-
-	// Capacity-aware lane selection: let the server steer glm-4.7 downgrades
-	// between the plan lane and an overflow model.
-	var release func()
-	if r.cfg.PickDowngradeModel != nil {
-		chosen, rel := r.cfg.PickDowngradeModel(override, requestID)
-		if chosen != "" {
-			override = chosen
-			release = rel
-		}
+	// Downgrade within the original provider's catalog small model.
+	provider, ok := config.ProviderForModel(result.OriginalModel)
+	if !ok {
+		return result
+	}
+	override := config.SmallModelFor(provider)
+	if override == "" {
+		return result
 	}
 
 	// No-op if the resolved override equals the current model.
 	if override == result.OriginalModel {
-		if release != nil {
-			release()
-		}
 		return result
 	}
 
 	result.OverrideModel = override
 	result.OverrideApplied = true
 	result.OverrideReason = string(result.RequestClass) + " downgrade (" + result.OriginalModel + " → " + override + ")"
-	result.ReleaseLaneSlot = release
 	body["model"] = override
 	slog.Info("subagent_router: model_overridden",
 		"request_id", requestID,

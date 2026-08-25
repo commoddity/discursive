@@ -208,7 +208,7 @@ func TestModelsListContent(t *testing.T) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Object != "list" || len(payload.Data) != 15 {
+	if payload.Object != "list" || len(payload.Data) != 8 {
 		t.Fatalf("payload: %+v", payload)
 	}
 	ids := map[string]bool{}
@@ -218,7 +218,7 @@ func TestModelsListContent(t *testing.T) {
 		}
 		ids[m.ID] = true
 	}
-	for _, want := range []string{"gpt-4o", "o3-mini", "gpt-5-nano", "gpt-4.1-turbo", "gpt-4.1"} {
+	for _, want := range []string{"gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "kimi-k3", "kimi-k2.7-code", "deepseek-v4-pro", "deepseek-v4-flash"} {
 		if !ids[want] {
 			t.Fatalf("missing id %s", want)
 		}
@@ -312,11 +312,11 @@ func TestMissingDeepSeekKeyNoMoonshotFallback(t *testing.T) {
 		"model":    "o1",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
-	if res.StatusCode != http.StatusBadGateway {
+	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status %d body %s", res.StatusCode, body)
 	}
-	if !strings.Contains(string(body), "API key not configured") {
-		t.Fatalf("expected key error: %s", body)
+	if !strings.Contains(string(body), "not configured") {
+		t.Fatalf("expected inactive provider error: %s", body)
 	}
 	if env.upCalls.Load() != 0 {
 		t.Fatalf("upstream calls %d", env.upCalls.Load())
@@ -361,11 +361,11 @@ func TestMissingZaiKeyNoFallback(t *testing.T) {
 		"model":    "gpt-4.1",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
-	if res.StatusCode != http.StatusBadGateway {
+	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status %d body %s", res.StatusCode, body)
 	}
-	if !strings.Contains(string(body), "API key not configured") {
-		t.Fatalf("expected key error: %s", body)
+	if !strings.Contains(string(body), "not configured") {
+		t.Fatalf("expected inactive provider error: %s", body)
 	}
 	if env.upCalls.Load() != 0 {
 		t.Fatalf("upstream calls %d", env.upCalls.Load())

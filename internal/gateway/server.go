@@ -9,9 +9,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
@@ -45,24 +43,20 @@ type ServerConfig struct {
 
 // Server is the loopback gateway HTTP server.
 type Server struct {
-	cfg             ServerConfig
-	mux             *http.ServeMux
-	httpSrv         *http.Server
-	client          *http.Client
-	store           *usage.Store
-	agg             *usage.Aggregator
-	sessionID       string
-	settings        *config.AppSettings
-	live            *config.LiveSettings
-	vision          *vision.Describer
-	visionCache     interface{ Close() error } // durable image-description cache; nil in tests
-	router          *SubAgentRouter
-	compressor      *Compressor
-	verbosity       *verbosity.Controller
-	zaiSem          chan struct{}    // limits concurrent Z.AI requests (plan concurrency)
-	glm47Lane       chan struct{}    // glm-4.7 downgrade lane (cap = plan concurrency limit)
-	glm47LaneInUse  atomic.Int64     // concurrent in-flight requests using the glm-4.7 lane
-	stickyFallbacks *stickyFallbacks // per-model sticky fallback after lane overflow
+	cfg         ServerConfig
+	mux         *http.ServeMux
+	httpSrv     *http.Server
+	client      *http.Client
+	store       *usage.Store
+	agg         *usage.Aggregator
+	sessionID   string
+	settings    *config.AppSettings
+	live        *config.LiveSettings
+	vision      *vision.Describer
+	visionCache interface{ Close() error } // durable image-description cache; nil in tests
+	router      *SubAgentRouter
+	compressor  *Compressor
+	verbosity   *verbosity.Controller
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -104,40 +98,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		settings:  cfg.Settings,
 		live:      cfg.Live,
 	}
-	// Wire vision describer when Z.AI settings are available (graceful nil
-	// when unset — images just fall through to existing strip behavior).
-	// Use the coding-plan endpoint (not on-demand) since the user's Z.AI key
-	// is a GLM Coding Plan key and glm-4.6v is available on that plan.
-	visionURL, _ := config.ChatCompletionsURL(config.ProviderZai)
-	if cfg.VisionChatURLOverride != "" {
-		visionURL = cfg.VisionChatURLOverride
-	}
-	zaiKeyFn := func() (string, bool) {
-		k, err := s.settings.GetZaiKey(s.cfg.DataRoot)
-		if err != nil || k == nil || *k == "" {
-			return "", false
-		}
-		return *k, true
-	}
-	s.vision = vision.NewDescriber(s.client, visionURL, zaiKeyFn)
-	// Vision calls hit the same Z.AI coding-plan endpoint, so they must share
-	// the plan-concurrency budget with chat: block on a zaiSem slot before each
-	// describe (with a correct no-op release when the ctx expired unacquired).
-	s.vision.SetPlanSlotter(func(ctx context.Context) func() {
-		if s.zaiSem == nil {
-			return func() {}
-		}
-		select {
-		case s.zaiSem <- struct{}{}:
-			return func() { <-s.zaiSem }
-		case <-ctx.Done():
-			return func() {}
-		}
-	})
-	// Install a durable description cache so historical images (resent by
-	// Cursor on every turn) are resolved without re-invoking the vision model.
-	// This keeps a rate-limited vision provider from breaking later turns that
-	// only carry already-described images.
+	s.vision = vision.NewDescriber(s.client)
 	visionCache, err := vision.NewPersistentCache(filepath.Join(cfg.DataRoot, "usage"))
 	if err != nil {
 		_ = store.Close()
@@ -145,80 +106,36 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	}
 	s.vision.SetPersistentCache(visionCache)
 	s.visionCache = visionCache
-	// Best-effort usage metering for vision calls: they use real LLM tokens but
-	// were previously unrecorded. Meter into a dedicated sentinel session so the
-	// cost accrues without polluting the active chat session grouping.
-	s.vision.SetUsageRecorder(func(model string, promptTokens, completionTokens uint64, latency time.Duration) {
-		s.recordAuxUsage(auxVisionSession, config.ProviderZai, model, auxVisionRequestID, latency, tokenUsage{
+	s.vision.SetUsageRecorder(func(provider config.Provider, model string, promptTokens, completionTokens uint64, latency time.Duration) {
+		s.recordAuxUsage(auxVisionSession, provider, model, auxVisionRequestID, latency, tokenUsage{
 			PromptTokens:     promptTokens,
 			CompletionTokens: completionTokens,
 		})
 	})
 	s.router = NewSubAgentRouter(SubAgentRouterConfig{
 		Enabled: cfg.SubAgentRouterEnabled,
-		// Lane selection for glm-4.7 downgrades: first N concurrent requests
-		// stay on glm-4.7 (plan concurrency limit), overflow goes elsewhere.
-		PickDowngradeModel: func(candidate, requestID string) (string, func()) {
-			// Router downgrades now always target OpenRouter DeepSeek flash,
-			// never glm-4.7. The glm-4.7 lane is only for direct glm-4.7
-			// main-chat concurrency.
-			if candidate != "glm-4.7" {
-				return candidate, nil
-			}
-			return s.selectDowngradeLane(requestID)
-		},
 	})
 
-	// Z.AI concurrency limiter: glm-4.7 plan concurrency is 2; the semaphore
-	// blocks excess Z.AI traffic until a slot frees (instead of letting it
-	// hit upstream and eat a guaranteed 429 + retry cycle).
-	s.zaiSem = make(chan struct{}, glm47LaneCap)
-	// glm-4.7 downgrade lane: downgrade selection is non-blocking — overflow
-	// is delegated to another lane (see selectDowngradeLane) instead of queueing.
-	s.glm47Lane = make(chan struct{}, glm47LaneCap)
-	s.stickyFallbacks = newStickyFallbacks()
-
-	// Always allocate the compressor and verbosity controller so they can be
-	// enabled/disabled at runtime from the usage dashboard without a restart.
-	// Per-request gates (compressionEnabled / verbosityEnabled) read the live
-	// setting; when disabled they short-circuit before any work is done, so the
-	// always-allocated structs add zero hot-path cost.
-	// Compression worker targets the real DeepSeek flash endpoint. HARD RULE:
-	// OpenRouter is peak-only; a background summarizer never needs it, so it
-	// always runs direct.
-	compressURL, _ := config.ChatCompletionsURL(config.ProviderDeepSeek)
-	// Strip /chat/completions suffix — Compressor.ChatURL expects the base URL.
-	flashBase := strings.TrimSuffix(compressURL, "/chat/completions")
-	flashKeyFn := func() (string, bool) {
-		k, err := s.settings.GetDeepSeekKey(s.cfg.DataRoot)
-		if err != nil || k == nil || *k == "" {
-			return "", false
-		}
-		return *k, true
-	}
 	s.compressor = NewCompressor(CompressorConfig{
-		Enabled:   true,
-		ChatURL:   flashBase,
-		GetAPIKey: flashKeyFn,
-		// Best-effort usage metering for summarizer calls: they use real LLM
-		// tokens but were previously unrecorded. Meter into a dedicated
-		// sentinel session so the cost accrues without polluting the active
-		// chat session grouping.
-		RecordUsage: func(model string, promptTokens, completionTokens uint64, latency time.Duration) {
-			s.recordAuxUsage(auxCompressSession, config.ProviderDeepSeek, model, auxCompressRequestID, latency, tokenUsage{
+		Enabled: true,
+		RecordUsage: func(provider config.Provider, model string, promptTokens, completionTokens uint64, latency time.Duration) {
+			s.recordAuxUsage(auxCompressSession, provider, model, auxCompressRequestID, latency, tokenUsage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
 			})
 		},
 	}, s.client)
 
-	// Verbosity controller holds the per-model verbosity config (terseness
-	// directive, token cap) for every model that supports it. Whether a model's
-	// controls are actually applied is decided per-request by
-	// verbosityEnabledFor, which reads the live per-model toggles. Verbosity
-	// only coerces the model via the request — response content is never edited.
 	s.verbosity = verbosity.NewController(verbosity.VerbosityConfig{
 		Models: map[string]verbosity.ModelConfig{
+			"kimi-k3": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              proVerbosityMaxTokens,
+			},
+			"kimi-k2.7-code": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              flashVerbosityMaxTokens,
+			},
 			"deepseek-v4-flash": {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              flashVerbosityMaxTokens,
@@ -227,11 +144,11 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              proVerbosityMaxTokens,
 			},
-			"deepseek/deepseek-v4-flash-0731": {
+			config.ModelOpenRouterDeepSeekV4Flash: {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              flashVerbosityMaxTokens,
 			},
-			"deepseek/deepseek-v4-pro-0813": {
+			config.ModelOpenRouterDeepSeekV4Pro: {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              proVerbosityMaxTokens,
 			},
@@ -239,8 +156,6 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              glmVerbosityMaxTokens,
 			},
-			// glm-5.3[1m] normalizes to glm-5.3 — registered under both ids so
-			// the controller lookup hits regardless of suffix presence.
 			"glm-5.3": {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              glmMaxVerbosityMaxTokens,
@@ -248,6 +163,18 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 			"glm-5.3[1m]": {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              glmMaxVerbosityMaxTokens,
+			},
+			config.ModelOpenRouterZaiGLM53: {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              glmMaxVerbosityMaxTokens,
+			},
+			config.ModelOpenRouterZaiGLM47: {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              glmVerbosityMaxTokens,
+			},
+			"thaura": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              proVerbosityMaxTokens,
 			},
 		},
 	})
@@ -266,20 +193,6 @@ func (s *Server) toolCompressionEnabled() bool {
 		return true
 	}
 	return s.settings != nil && s.settings.ToolCompressionEnabled
-}
-
-// verbosityEnabledFor reports whether output-verbosity controls are on for a
-// real model id. It reads the live per-model map when present, falling back to
-// the persisted settings map. Flash defaults to on; other models default per
-// the catalog.
-func (s *Server) verbosityEnabledFor(model string) bool {
-	if s.live != nil {
-		return s.live.VerbosityFor(model)
-	}
-	if s.settings != nil {
-		return config.VerbosityFor(s.settings.Verbosity, model)
-	}
-	return false
 }
 
 func (s *Server) routes() {
@@ -315,7 +228,6 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", s.cfg.ListenAddr, err)
 	}
-	// Refuse non-loopback binds if somehow misconfigured.
 	if tcp, ok := ln.Addr().(*net.TCPAddr); ok && tcp.IP != nil && !tcp.IP.IsLoopback() {
 		_ = ln.Close()
 		return fmt.Errorf("refusing non-loopback listen addr %s", s.cfg.ListenAddr)
@@ -422,6 +334,35 @@ func (s *Server) upstreamKey(provider config.Provider) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported model")
 	}
+}
+
+func (s *Server) compressContext(provider config.Provider, at time.Time) (CompressContext, error) {
+	spec, ok := config.ProviderSpecFor(provider)
+	if !ok {
+		return CompressContext{}, fmt.Errorf("unknown provider %q", provider)
+	}
+	model := spec.SmallModel
+	routeProvider := provider
+	if spec.HasPeak && peakNow(model, at) && s.settings != nil && s.settings.HasOpenRouterKey() {
+		if twin, ok := config.OpenRouterTwinFor(model); ok {
+			model = twin
+			routeProvider = config.ProviderOpenRouter
+		}
+	}
+	chatURL, err := s.chatURL(routeProvider, model)
+	if err != nil {
+		return CompressContext{}, err
+	}
+	key, err := s.upstreamKey(routeProvider)
+	if err != nil {
+		return CompressContext{}, err
+	}
+	return CompressContext{
+		Provider: routeProvider,
+		Model:    model,
+		ChatURL:  chatURL,
+		APIKey:   key,
+	}, nil
 }
 
 func newSessionID() string {

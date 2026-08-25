@@ -93,7 +93,7 @@ func HealthURLFromPublicBase(publicBase string) (string, error) {
 // NeedsSetup reports whether start should run interactive setup before serving.
 // Requires both upstream API keys plus tunnel settings valid for the current mode.
 func NeedsSetup(s AppSettings) bool {
-	if !s.HasMoonshotKey() || !s.HasDeepSeekKey() {
+	if !s.HasChatProviderKey() {
 		return true
 	}
 	return ValidateTunnelSettings(s) != nil

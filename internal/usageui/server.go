@@ -101,7 +101,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/spend", s.handleSpend)
 	mux.HandleFunc("/api/reasoning-effort", s.handleReasoningEffort)
 	mux.HandleFunc("/api/settings", s.handleSettings)
-	mux.HandleFunc("/api/verbosity", s.handleVerbosity)
 	mux.HandleFunc("/api/thinking-enabled", s.handleThinkingEnabled)
 	mux.HandleFunc("/api/zai-flat-fee", s.handleZaiFlatFee)
 

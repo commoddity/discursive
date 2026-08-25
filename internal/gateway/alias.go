@@ -88,12 +88,10 @@ func ResolveModel(requested string) (Route, error) {
 		return Route{config.ProviderZai, "glm-5.3", PolicyZai}, nil
 	case "glm-4.7":
 		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil
-	case "or-flash":
-		// Internal-only alias for subagents; maps to OpenRouter DeepSeek flash.
-		return Route{config.ProviderOpenRouter, openRouterFlash, PolicyDeepSeek}, nil
-	case openRouterFlash, openRouterPro:
-		// OpenRouter upstream ids resolve to themselves.
+	case config.ModelOpenRouterDeepSeekV4Flash, config.ModelOpenRouterDeepSeekV4Pro:
 		return Route{config.ProviderOpenRouter, requested, PolicyDeepSeek}, nil
+	case config.ModelOpenRouterZaiGLM53, config.ModelOpenRouterZaiGLM47:
+		return Route{config.ProviderOpenRouter, requested, PolicyZai}, nil
 	default:
 		return Route{}, fmt.Errorf("unknown model alias %q", requested)
 	}

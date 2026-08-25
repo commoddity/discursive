@@ -51,9 +51,6 @@ func TestProxyDeepSeekImagesDescribedByVision(t *testing.T) {
 	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
 		t.Fatal(err)
 	}
-	if err := settings.SetZaiKey(dataRoot, "sk-zai"); err != nil {
-		t.Fatal(err)
-	}
 	if err := config.Save(dataRoot, settings); err != nil {
 		t.Fatal(err)
 	}
@@ -172,19 +169,21 @@ func TestProxyDeepSeekImagesDescribedByVision(t *testing.T) {
 	for i := range events {
 		switch events[i].Provider {
 		case config.ProviderDeepSeek:
-			chatEvent = &events[i]
-		case config.ProviderZai:
-			visionEvent = &events[i]
+			if events[i].SessionID == "vision-worker" {
+				visionEvent = &events[i]
+			} else {
+				chatEvent = &events[i]
+			}
 		}
 	}
 	if chatEvent == nil {
 		t.Fatalf("expected a deepseek chat usage event, got %+v", events)
 	}
 	if visionEvent == nil {
-		t.Fatalf("expected a zai vision usage event, got %+v", events)
+		t.Fatalf("expected a deepseek vision usage event, got %+v", events)
 	}
-	if visionEvent.Model != "glm-4.6v" {
-		t.Fatalf("vision usage event model = %q, want glm-4.6v", visionEvent.Model)
+	if visionEvent.Model != config.ModelDeepSeekV4FlashVisionExp {
+		t.Fatalf("vision usage event model = %q, want %s", visionEvent.Model, config.ModelDeepSeekV4FlashVisionExp)
 	}
 	if visionEvent.SessionID != "vision-worker" {
 		t.Fatalf("vision usage event session = %q, want vision-worker", visionEvent.SessionID)
@@ -365,31 +364,20 @@ func TestProxyImageWithoutVisionKeyFallsBack(t *testing.T) {
 	}
 }
 
-// TestProxy_SubAgentRouterProviderSwitch verifies that when the subagent router
-// downgrades a model to a model from a DIFFERENT provider, the gateway
-// re-resolves the upstream provider so the request is sent to the correct
-// endpoint. Regression for the "modelCode: does not exist" cross-provider
-// bug (e.g. gpt-4o→kimi-k3 downgraded to deepseek-v4-flash must reach the
-// DeepSeek endpoint, not the Moonshot endpoint).
-func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
+// TestProxy_SubAgentRouterSameProviderDowngrade verifies that when the subagent
+// router downgrades within the same provider, the request stays on that
+// provider's small model (kimi-k3 → kimi-k2.7-code on Moonshot).
+func TestProxy_SubAgentRouterSameProviderDowngrade(t *testing.T) {
+	var moonshotModel string
 	var moonshotCalled atomic.Int32
 	moonshotUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		moonshotCalled.Add(1)
-		t.Log("moonshot upstream hit (should not happen for downgraded request)")
-		_ = json.NewEncoder(w).Encode(mockCompletion("kimi-k3"))
-	}))
-	t.Cleanup(moonshotUp.Close)
-
-	var zaiModel string
-	var zaiCalled atomic.Int32
-	zaiUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		zaiCalled.Add(1)
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		zaiModel, _ = body["model"].(string)
-		_ = json.NewEncoder(w).Encode(mockCompletion(zaiModel))
+		moonshotModel, _ = body["model"].(string)
+		_ = json.NewEncoder(w).Encode(mockCompletion(moonshotModel))
 	}))
-	t.Cleanup(zaiUp.Close)
+	t.Cleanup(moonshotUp.Close)
 
 	dataRoot := t.TempDir()
 	settings := config.DefaultSettings()
@@ -399,53 +387,19 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 	if err := settings.SetMoonshotKey(dataRoot, "sk-ms"); err != nil {
 		t.Fatal(err)
 	}
-	if err := settings.SetZaiKey(dataRoot, "sk-zai"); err != nil {
-		t.Fatal(err)
-	}
-	if err := settings.SetOpenRouterKey(dataRoot, "sk-or"); err != nil {
-		t.Fatal(err)
-	}
-	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
-		t.Fatal(err)
-	}
 	if err := config.Save(dataRoot, settings); err != nil {
 		t.Fatal(err)
 	}
-
-	var orCalled atomic.Int32
-	var orModel string
-	orUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orCalled.Add(1)
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		orModel, _ = body["model"].(string)
-		_ = json.NewEncoder(w).Encode(mockCompletion(orModel))
-	}))
-	t.Cleanup(orUp.Close)
-
-	var dsCalled atomic.Int32
-	var dsModel string
-	dsUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		dsCalled.Add(1)
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		dsModel, _ = body["model"].(string)
-		_ = json.NewEncoder(w).Encode(mockCompletion(dsModel))
-	}))
-	t.Cleanup(dsUp.Close)
 
 	srv, err := gateway.NewServer(gateway.ServerConfig{
 		ListenAddr:            "127.0.0.1:0",
 		GatewayKey:            settings.GatewayKey,
 		DataRoot:              dataRoot,
 		Settings:              &settings,
-		HTTPClient:            orUp.Client(),
+		HTTPClient:            moonshotUp.Client(),
 		SubAgentRouterEnabled: true,
 		ChatURLOverride: map[config.Provider]string{
-			config.ProviderMoonshot:   moonshotUp.URL + "/moonshot/chat/completions",
-			config.ProviderZai:        zaiUp.URL + "/zai/chat/completions",
-			config.ProviderOpenRouter: orUp.URL + "/openrouter/chat/completions",
-			config.ProviderDeepSeek:   dsUp.URL + "/deepseek/chat/completions",
+			config.ProviderMoonshot: moonshotUp.URL + "/moonshot/chat/completions",
 		},
 	})
 	if err != nil {
@@ -457,10 +411,6 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 
 	env := &testEnv{srv: srv, ts: ts, gatewayKey: settings.GatewayKey, dataRoot: dataRoot}
 
-	// gpt-4o resolves to kimi-k3 (Moonshot). It's a short, simple lookup —
-	// classified SimpleLookup → downgraded to defaultFlashModel
-	// (deepseek-v4-flash). Off-peak the request must reach the direct
-	// DeepSeek upstream (OpenRouter is peak-only), with the overridden model.
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
 		"model": "gpt-4o",
 		"messages": []any{
@@ -470,20 +420,10 @@ func TestProxy_SubAgentRouterProviderSwitch(t *testing.T) {
 	if res.StatusCode != 200 {
 		t.Fatalf("status %d body %s", res.StatusCode, body)
 	}
-
-	if zaiCalled.Load() != 0 {
-		t.Fatalf("Z.AI upstream was called %d times for a downgraded request, it must not be", zaiCalled.Load())
+	if moonshotCalled.Load() != 1 {
+		t.Fatalf("expected Moonshot upstream exactly once, got %d", moonshotCalled.Load())
 	}
-	if moonshotCalled.Load() != 0 {
-		t.Fatalf("Moonshot upstream was called %d times for a downgraded request, it must not be", moonshotCalled.Load())
-	}
-	if orCalled.Load() != 0 {
-		t.Fatalf("OpenRouter upstream was called %d times off-peak, it must not be", orCalled.Load())
-	}
-	if dsCalled.Load() != 1 {
-		t.Fatalf("expected DeepSeek upstream to be called exactly once, got %d", dsCalled.Load())
-	}
-	if dsModel != "deepseek-v4-flash" {
-		t.Fatalf("expected overridden model sent to DeepSeek, got %q", dsModel)
+	if moonshotModel != config.ModelKimiK27 {
+		t.Fatalf("expected downgraded model %q, got %q", config.ModelKimiK27, moonshotModel)
 	}
 }

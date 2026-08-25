@@ -20,48 +20,16 @@ func forcePeak() bool {
 	return os.Getenv(EnvForcePeak) != ""
 }
 
-// openRouterFlash is the small-model target for all OpenRouter fallback traffic.
-const openRouterFlash = "deepseek/deepseek-v4-flash-0731"
-
-// openRouterPro is the big-model target for peak reroutes of non-downgraded
-// requests that originally asked for a big model.
-const openRouterPro = "deepseek/deepseek-v4-pro-0813"
-
-// openRouterBigModels is the set of requested real model ids that should be
-// rerouted to openRouterPro during peak hours. Everything else goes to flash.
-var openRouterBigModels = map[string]bool{
-	"deepseek-v4-pro": true,
-	"glm-5.3":         true,
-	"kimi-k3":         true,
-}
-
-// openRouterModelFor maps any requested real model id to the appropriate
-// OpenRouter DeepSeek target: big models → pro, everything else → flash.
-func openRouterModelFor(requestedModel string) string {
-	if openRouterBigModels[requestedModel] {
-		return openRouterPro
-	}
-	return openRouterFlash
-}
-
 // isZaiModel reports whether a real model id is served by Z.AI.
 func isZaiModel(model string) bool {
-	switch model {
-	case "glm-5.3", "glm-5.2", "glm-5-turbo", "glm-4.7", "glm-4.6v":
-		return true
-	default:
-		return false
-	}
+	p, ok := config.ProviderForModel(model)
+	return ok && p == config.ProviderZai
 }
 
 // isDeepSeekModel reports whether a real model id is served by DeepSeek.
 func isDeepSeekModel(model string) bool {
-	switch model {
-	case "deepseek-v4-pro", "deepseek-v4-flash":
-		return true
-	default:
-		return false
-	}
+	p, ok := config.ProviderForModel(model)
+	return ok && p == config.ProviderDeepSeek
 }
 
 // peakNow reports whether model is in peak billing for its provider at at.
@@ -71,8 +39,11 @@ func isDeepSeekModel(model string) bool {
 // When EnvForcePeak is set, any peak-eligible model (DeepSeek, Z.AI) is
 // treated as in peak for testing.
 func peakNow(model string, at time.Time) bool {
-	if forcePeak() && (isZaiModel(model) || isDeepSeekModel(model)) {
-		return true
+	if forcePeak() {
+		spec, ok := config.ProviderSpecFor(providerForPeak(model))
+		if ok && spec.HasPeak {
+			return true
+		}
 	}
 	switch {
 	case isZaiModel(model):
@@ -84,48 +55,76 @@ func peakNow(model string, at time.Time) bool {
 	}
 }
 
-// openRouterTargets maps real DeepSeek model ids to their OpenRouter
-// equivalents. This is the ONLY sanctioned OpenRouter substitution table;
-// OpenRouter ids appear at runtime exclusively through it (peak-gated).
-var openRouterTargets = map[string]string{
-	"deepseek-v4-flash": openRouterFlash,
-	"deepseek-v4-pro":   openRouterPro,
-}
-
-// openRouterRealFor returns the real DeepSeek model for an OpenRouter id ("" if unknown).
-func openRouterRealFor(id string) string {
-	for real, or := range openRouterTargets {
-		if or == id {
-			return real
-		}
+func providerForPeak(model string) config.Provider {
+	if _, p, ok := config.OpenRouterRealFor(model); ok {
+		return p
+	}
+	if p, ok := config.ProviderForModel(model); ok {
+		return p
 	}
 	return ""
+}
+
+// openRouterModelFor maps a requested real model id to the appropriate
+// OpenRouter twin for its provider during peak hours.
+func openRouterModelFor(requestedModel string) string {
+	provider, ok := config.ProviderForModel(requestedModel)
+	if !ok {
+		return requestedModel
+	}
+	spec, ok := config.ProviderSpecFor(provider)
+	if !ok || !spec.HasPeak {
+		return requestedModel
+	}
+	target := spec.SmallModel
+	if config.IsBigModel(provider, requestedModel) {
+		target = spec.BigModel
+	}
+	if twin, ok := config.OpenRouterTwinFor(target); ok {
+		return twin
+	}
+	return requestedModel
 }
 
 // isPeakAllowedOpenRouter enforces the hard rule at send time: OpenRouter may
 // only be used when the equivalent real provider is in peak billing (or peak
 // is forced via DISCURSIVE_FORCE_PEAK). It returns the corrected model — the
-// input when usage is allowed, or the real DeepSeek model when it is not —
-// logging loudly on correction.
+// input when usage is allowed, or the real model when it is not — logging
+// loudly on correction.
 func (s *Server) isPeakAllowedOpenRouter(model, requestID string) string {
-	if openRouterRealFor(model) == "" {
-		return model // not an OpenRouter id
+	real, provider, ok := config.OpenRouterRealFor(model)
+	if !ok {
+		return model
 	}
-	if peakNow("deepseek-v4-flash", time.Now()) {
-		return model // DeepSeek is in peak (or forced): OpenRouter allowed
+	spec, ok := config.ProviderSpecFor(provider)
+	if !ok || !spec.HasPeak {
+		return model
 	}
-	real := openRouterRealFor(model)
+	var probe string
+	if config.IsBigModel(provider, real) {
+		probe = spec.BigModel
+	} else {
+		probe = spec.SmallModel
+	}
+	if peakNow(probe, time.Now()) {
+		return model
+	}
 	slog.Error("openrouter_guard: off-peak OpenRouter usage blocked, rerouting to real provider",
-		"request_id", requestID, "model", model, "corrected", real)
+		"request_id", requestID, "model", model, "corrected", real, "provider", provider)
 	return real
 }
 
-// applyPeakReroute reroutes non-downgraded traffic to OpenRouter DeepSeek models
-// when the requested model's provider is in peak hours and an OpenRouter key is
-// configured. Big requested models become OR pro; small models become OR flash.
-// It returns the (possibly unchanged) model and whether a reroute happened.
+// applyPeakReroute reroutes non-downgraded traffic to OpenRouter twins when
+// the requested model's provider is in peak hours and an OpenRouter key is
+// configured. Moonshot and Thaura never peak. It returns the (possibly
+// unchanged) model and whether a reroute happened.
 func (s *Server) applyPeakReroute(model, requestID string, at time.Time) (string, bool) {
-	if !peakNow(model, at) {
+	provider, ok := config.ProviderForModel(model)
+	if !ok {
+		return model, false
+	}
+	spec, ok := config.ProviderSpecFor(provider)
+	if !ok || !spec.HasPeak || !peakNow(model, at) {
 		return model, false
 	}
 	if s.settings == nil || !s.settings.HasOpenRouterKey() {

@@ -821,9 +821,9 @@ func TestSanitizeRequest_OpenRouterSort(t *testing.T) {
 		wantSort     string
 		wantProvider config.Provider
 	}{
-		{name: "or-flash default", model: "or-flash", sort: "", wantSort: "throughput", wantProvider: config.ProviderOpenRouter},
-		{name: "or-flash custom", model: "or-flash", sort: "latency", wantSort: "latency", wantProvider: config.ProviderOpenRouter},
-		{name: "or-flash disabled", model: "or-flash", sort: "disabled", wantSort: "disabled", wantProvider: config.ProviderOpenRouter},
+		{name: "openrouter deepseek flash default", model: config.ModelOpenRouterDeepSeekV4Flash, sort: "", wantSort: "throughput", wantProvider: config.ProviderOpenRouter},
+		{name: "openrouter deepseek flash custom", model: config.ModelOpenRouterDeepSeekV4Flash, sort: "latency", wantSort: "latency", wantProvider: config.ProviderOpenRouter},
+		{name: "openrouter deepseek flash disabled", model: config.ModelOpenRouterDeepSeekV4Flash, sort: "disabled", wantSort: "disabled", wantProvider: config.ProviderOpenRouter},
 		{name: "deepseek not affected", model: "o3-mini", sort: "throughput", wantSort: "", wantProvider: config.ProviderDeepSeek},
 	}
 	for _, tt := range tests {

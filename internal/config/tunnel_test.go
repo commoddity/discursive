@@ -143,12 +143,12 @@ func TestNeedsSetup(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "quick_missing_deepseek",
+			name: "quick_moonshot_only_ok",
 			s: AppSettings{
 				TunnelMode:           TunnelModeQuick,
 				MoonshotKeyEncrypted: enc,
 			},
-			want: true,
+			want: false,
 		},
 	}
 	for _, tt := range tests {

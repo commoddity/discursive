@@ -18,6 +18,9 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	listed := ListAdvertisedModels()
 	data := make([]map[string]any, 0, len(listed))
 	for _, m := range listed {
+		if s.settings != nil && !s.settings.IsProviderActive(m.Provider) {
+			continue
+		}
 		data = append(data, map[string]any{
 			"id":       m.ID,
 			"object":   "model",

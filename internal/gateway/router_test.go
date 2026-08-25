@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"testing"
+
+	"github.com/commoddity/discursive/internal/config"
 )
 
 func TestSubAgentRouter_SubagentDetection(t *testing.T) {
@@ -637,14 +639,19 @@ func TestSubAgentRouter_ModelPreservedForMainAgent(t *testing.T) {
 	}
 }
 
-func TestSubAgentRouter_UnknownProviderDefaultFallback(t *testing.T) {
-	// Models not in the override map fall back to the default flash model
-	// (OpenRouter deepseek-v4-flash-0731) when classification triggers a downgrade.
-	models := []string{"kimi-k3", "kimi-k2.7-code", "thaura"}
-	for _, model := range models {
-		t.Run(model, func(t *testing.T) {
+func TestSubAgentRouter_ProviderSmallModelFallback(t *testing.T) {
+	tests := []struct {
+		model     string
+		wantSmall string
+	}{
+		{"kimi-k3", config.ModelKimiK27},
+		{"kimi-k2.7-code", config.ModelKimiK27},
+		{"thaura", "thaura"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
 			body := map[string]any{
-				"model": model,
+				"model": tt.model,
 				"messages": []any{
 					map[string]any{"role": "system", "content": "short"},
 					map[string]any{"role": "user", "content": "search for tests"},
@@ -655,21 +662,23 @@ func TestSubAgentRouter_UnknownProviderDefaultFallback(t *testing.T) {
 			}
 			r := NewSubAgentRouter(SubAgentRouterConfig{Enabled: true})
 			result := r.ClassifyAndOverride(body, "req_test")
-			if !result.OverrideApplied {
-				t.Errorf("%q should be overridden (not in map → fallback default), class=%q",
-					model, result.RequestClass)
+			if tt.model == tt.wantSmall {
+				if result.OverrideApplied {
+					t.Fatalf("%q should be a no-op downgrade to same model", tt.model)
+				}
+				return
 			}
-			if result.OverrideModel != defaultFlashModel {
-				t.Errorf("%q override model = %q, want default %q",
-					model, result.OverrideModel, defaultFlashModel)
+			if !result.OverrideApplied {
+				t.Errorf("%q should be overridden, class=%q", tt.model, result.RequestClass)
+			}
+			if result.OverrideModel != tt.wantSmall {
+				t.Errorf("%q override model = %q, want %q", tt.model, result.OverrideModel, tt.wantSmall)
 			}
 		})
 	}
 }
 
-func TestSubAgentRouter_Glm53ToFlashViaDefault(t *testing.T) {
-	// glm-5.3 is not a cheap target, so cheap-class traffic resolves to the
-	// universal default (defaultFlashModel = deepseek/deepseek-v4-flash-0731).
+func TestSubAgentRouter_Glm53ToGlm47(t *testing.T) {
 	body := map[string]any{
 		"model": "glm-5.3",
 		"messages": []any{
@@ -680,10 +689,10 @@ func TestSubAgentRouter_Glm53ToFlashViaDefault(t *testing.T) {
 	r := NewSubAgentRouter(SubAgentRouterConfig{Enabled: true})
 	result := r.ClassifyAndOverride(body, "req_test")
 	if !result.OverrideApplied {
-		t.Errorf("glm-5.3 should be overridden (not in map → default), got class=%q", result.RequestClass)
+		t.Errorf("glm-5.3 should be overridden to glm-4.7, got class=%q", result.RequestClass)
 	}
-	if stringField(body, "model") != defaultFlashModel {
-		t.Errorf("expected default %q, got %q", defaultFlashModel, stringField(body, "model"))
+	if stringField(body, "model") != config.ModelZaiGLM47 {
+		t.Errorf("expected %q, got %q", config.ModelZaiGLM47, stringField(body, "model"))
 	}
 }
 

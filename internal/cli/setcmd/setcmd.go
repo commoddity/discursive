@@ -13,20 +13,23 @@ import (
 	"github.com/commoddity/discursive/internal/gateway"
 )
 
+type setOptions struct {
+	moonshotKey   string
+	deepseekKey   string
+	thauraKey     string
+	zaiKey        string
+	openRouterKey string
+	tunnelToken   string
+	publicURL     string
+	rotateGateway bool
+	showKey       bool
+	model         string
+	clear         []string
+}
+
 // NewCmd returns the set subcommand.
 func NewCmd(portable func() bool) *cobra.Command {
-	var (
-		moonshotKey   string
-		deepseekKey   string
-		thauraKey     string
-		zaiKey        string
-		openRouterKey string
-		tunnelToken   string
-		publicURL     string
-		gatewayKey    bool
-		showKey       bool
-		model         string
-	)
+	var opts setOptions
 
 	cmd := &cobra.Command{
 		Use:   "set",
@@ -36,8 +39,13 @@ func NewCmd(portable func() bool) *cobra.Command {
   # Set upstream API keys
   discursive set --moonshot-key sk-xxx --deepseek-key sk-yyy
 
-  # Optional OpenRouter key (peak-hour DeepSeek fallback)
+  # Remove a stored API key (provider becomes inactive)
+  discursive set --clear moonshot
+  discursive set --clear deepseek --clear zai
+
+  # Optional OpenRouter key (peak-hour fallback)
   discursive set --openrouter-key sk-or-xxx
+  discursive set --clear openrouter
 
   # Tunnel configuration
   discursive set --tunnel-token <token> --public-url https://my-host/v1
@@ -51,29 +59,33 @@ func NewCmd(portable func() bool) *cobra.Command {
 Omitting flags leaves the corresponding setting unchanged.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
-			return runSet(portable, moonshotKey, deepseekKey, thauraKey, zaiKey, openRouterKey, tunnelToken, publicURL, gatewayKey, showKey, model)
+			return runSet(portable, opts)
 		},
 	}
 
-	cmd.Flags().StringVar(&moonshotKey, "moonshot-key", "", "Moonshot/Kimi API key")
-	cmd.Flags().StringVar(&deepseekKey, "deepseek-key", "", "DeepSeek API key")
-	cmd.Flags().StringVar(&thauraKey, "thaura-key", "", "Thaura AI API key")
-	cmd.Flags().StringVar(&zaiKey, "zai-key", "", "Z.AI API key (coding plan)")
-	cmd.Flags().StringVar(&openRouterKey, "openrouter-key", "", "OpenRouter API key (optional peak-hour DeepSeek fallback)")
-	cmd.Flags().StringVar(&tunnelToken, "tunnel-token", "", "Cloudflare tunnel token")
-	cmd.Flags().StringVar(&publicURL, "public-url", "", "public HTTPS base URL (https://<host>/v1)")
-	cmd.Flags().BoolVar(&gatewayKey, "rotate-gateway-key", false, "generate a new gateway API key")
-	cmd.Flags().BoolVar(&showKey, "show-key", false, "print the full gateway API key (default: masked)")
-	cmd.Flags().StringVar(&model, "model", "", "alias or real model id")
+	cmd.Flags().StringVar(&opts.moonshotKey, "moonshot-key", "", "Moonshot/Kimi API key")
+	cmd.Flags().StringVar(&opts.deepseekKey, "deepseek-key", "", "DeepSeek API key")
+	cmd.Flags().StringVar(&opts.thauraKey, "thaura-key", "", "Thaura AI API key")
+	cmd.Flags().StringVar(&opts.zaiKey, "zai-key", "", "Z.AI API key (coding plan)")
+	cmd.Flags().StringVar(&opts.openRouterKey, "openrouter-key", "", "OpenRouter API key (optional peak-hour fallback)")
+	cmd.Flags().StringVar(&opts.tunnelToken, "tunnel-token", "", "Cloudflare tunnel token")
+	cmd.Flags().StringVar(&opts.publicURL, "public-url", "", "public HTTPS base URL (https://<host>/v1)")
+	cmd.Flags().BoolVar(&opts.rotateGateway, "rotate-gateway-key", false, "generate a new gateway API key")
+	cmd.Flags().BoolVar(&opts.showKey, "show-key", false, "print the full gateway API key (default: masked)")
+	cmd.Flags().StringVar(&opts.model, "model", "", "alias or real model id")
+	cmd.Flags().StringArrayVar(&opts.clear, "clear", nil, "remove stored API key for provider (moonshot, deepseek, zai, thaura, openrouter); repeat flag for multiple")
 
 	_ = cmd.RegisterFlagCompletionFunc("model", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return util.CompleteModelIDs(toComplete), cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = cmd.RegisterFlagCompletionFunc("clear", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"moonshot", "deepseek", "zai", "thaura", "openrouter"}, cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd
 }
 
-func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, openRouterKey, tunnelToken, publicURL string, rotateGateway, showKey bool, modelID string) error {
+func runSet(portable func() bool, opts setOptions) error {
 	util.SetupLogger()
 
 	dataRoot, err := util.ResolveDataRoot(portable())
@@ -87,8 +99,8 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 
 	anySet := false
 
-	if moonshotKey != "" {
-		plain := strings.TrimSpace(moonshotKey)
+	if opts.moonshotKey != "" {
+		plain := strings.TrimSpace(opts.moonshotKey)
 		if plain == "" {
 			return fmt.Errorf("empty moonshot key")
 		}
@@ -102,8 +114,8 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 		anySet = true
 	}
 
-	if deepseekKey != "" {
-		plain := strings.TrimSpace(deepseekKey)
+	if opts.deepseekKey != "" {
+		plain := strings.TrimSpace(opts.deepseekKey)
 		if plain == "" {
 			return fmt.Errorf("empty deepseek key")
 		}
@@ -117,8 +129,8 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 		anySet = true
 	}
 
-	if thauraKey != "" {
-		plain := strings.TrimSpace(thauraKey)
+	if opts.thauraKey != "" {
+		plain := strings.TrimSpace(opts.thauraKey)
 		if plain == "" {
 			return fmt.Errorf("empty thaura key")
 		}
@@ -132,8 +144,8 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 		anySet = true
 	}
 
-	if zaiKey != "" {
-		plain := strings.TrimSpace(zaiKey)
+	if opts.zaiKey != "" {
+		plain := strings.TrimSpace(opts.zaiKey)
 		if plain == "" {
 			return fmt.Errorf("empty zai key")
 		}
@@ -147,8 +159,8 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 		anySet = true
 	}
 
-	if openRouterKey != "" {
-		plain := strings.TrimSpace(openRouterKey)
+	if opts.openRouterKey != "" {
+		plain := strings.TrimSpace(opts.openRouterKey)
 		if plain == "" {
 			return fmt.Errorf("empty openrouter key")
 		}
@@ -162,8 +174,21 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 		anySet = true
 	}
 
-	if tunnelToken != "" {
-		plain := strings.TrimSpace(tunnelToken)
+	clearProviders, err := normalizeClearFlags(opts.clear)
+	if err != nil {
+		return err
+	}
+	keyMutation := opts.moonshotKey != "" || opts.deepseekKey != "" || opts.thauraKey != "" ||
+		opts.zaiKey != "" || opts.openRouterKey != "" || len(clearProviders) > 0
+	if err := applyClearFlags(&s, clearProviders, opts); err != nil {
+		return err
+	}
+	if len(clearProviders) > 0 {
+		anySet = true
+	}
+
+	if opts.tunnelToken != "" {
+		plain := strings.TrimSpace(opts.tunnelToken)
 		if plain == "" {
 			return fmt.Errorf("empty tunnel token")
 		}
@@ -174,22 +199,25 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 		anySet = true
 	}
 
-	if publicURL != "" {
-		norm, err := config.NormalizePublicBaseURL(publicURL)
+	if opts.publicURL != "" {
+		norm, err := config.NormalizePublicBaseURL(opts.publicURL)
 		if err != nil {
 			return fmt.Errorf("invalid public base URL: %w", err)
 		}
 		s.PublicBaseURL = norm
 		anySet = true
-	} else if tunnelToken != "" && s.PublicBaseURL == "" {
+	} else if opts.tunnelToken != "" && s.PublicBaseURL == "" {
 		return fmt.Errorf("--public-url required when setting --tunnel-token")
 	}
 
-	if modelID != "" {
-		requested := strings.TrimSpace(modelID)
+	if opts.model != "" {
+		requested := strings.TrimSpace(opts.model)
 		route, err := gateway.ResolveModel(requested)
 		if err != nil {
 			return err
+		}
+		if !s.IsProviderActive(route.Provider) {
+			return fmt.Errorf("cannot set model %q: provider %q has no API key configured", requested, route.Provider)
 		}
 		s.AliasModel = requested
 		s.RealModel = route.RealModel
@@ -201,7 +229,7 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 		anySet = true
 	}
 
-	if rotateGateway {
+	if opts.rotateGateway {
 		if err := s.RotateGatewayKey(); err != nil {
 			return fmt.Errorf("rotate gateway key: %w", err)
 		}
@@ -212,20 +240,26 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 			"has_zai_key", s.HasZaiKey(),
 			"has_openrouter_key", s.HasOpenRouterKey(),
 		}
-		attrs = append(attrs, util.GatewayKeyLogAttrs(s.GatewayKey, showKey)...)
+		attrs = append(attrs, util.GatewayKeyLogAttrs(s.GatewayKey, opts.showKey)...)
 		slog.Info("rotated gateway key", attrs...)
 		anySet = true
 	}
 
 	if !anySet {
-		return fmt.Errorf("no flags provided; use --moonshot-key, --deepseek-key, --thaura-key, --zai-key, --openrouter-key, --tunnel-token, --public-url, --rotate-gateway-key, or --model")
+		return fmt.Errorf("no flags provided; use --moonshot-key, --deepseek-key, --thaura-key, --zai-key, --openrouter-key, --clear, --tunnel-token, --public-url, --rotate-gateway-key, or --model")
 	}
+
+	if keyMutation && !s.HasChatProviderKey() {
+		return fmt.Errorf("at least one chat provider key is required (moonshot, deepseek, zai, or thaura)")
+	}
+
+	s.SnapDefaultModelIfNeeded()
 
 	if err := config.Save(dataRoot, s); err != nil {
 		return err
 	}
 
-	if tunnelToken != "" || publicURL != "" {
+	if opts.tunnelToken != "" || opts.publicURL != "" {
 		slog.Info("saved tunnel config",
 			"has_tunnel_token", s.HasTunnelToken(),
 			"public_url", s.PublicBaseURL,
@@ -234,4 +268,58 @@ func runSet(portable func() bool, moonshotKey, deepseekKey, thauraKey, zaiKey, o
 	}
 
 	return nil
+}
+
+func normalizeClearFlags(raw []string) ([]config.Provider, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	seen := make(map[config.Provider]struct{})
+	var out []config.Provider
+	for _, item := range raw {
+		for _, part := range strings.Split(item, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			p, err := config.ParseClearProvider(part)
+			if err != nil {
+				return nil, err
+			}
+			if _, ok := seen[p]; ok {
+				continue
+			}
+			seen[p] = struct{}{}
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+func applyClearFlags(s *config.AppSettings, providers []config.Provider, opts setOptions) error {
+	for _, p := range providers {
+		if conflictsWithSet(p, opts) {
+			return fmt.Errorf("cannot --clear %s in the same command as setting its key", p)
+		}
+		s.ClearProviderKey(p)
+		slog.Info("cleared upstream key", "provider", string(p))
+	}
+	return nil
+}
+
+func conflictsWithSet(p config.Provider, opts setOptions) bool {
+	switch p {
+	case config.ProviderMoonshot:
+		return opts.moonshotKey != ""
+	case config.ProviderDeepSeek:
+		return opts.deepseekKey != ""
+	case config.ProviderZai:
+		return opts.zaiKey != ""
+	case config.ProviderThaura:
+		return opts.thauraKey != ""
+	case config.ProviderOpenRouter:
+		return opts.openRouterKey != ""
+	default:
+		return false
+	}
 }

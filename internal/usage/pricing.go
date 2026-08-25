@@ -61,15 +61,17 @@ type deepseekRates struct {
 // Retained because pricing is per-request: events recorded before the cutover
 // must keep estimating at legacy rates, not the new card.
 var deepseekPricing = map[string]deepseekRates{
-	"deepseek-v4-flash": {0.0028, 0.14, 0.28},
-	"deepseek-v4-pro":   {0.003625, 0.435, 0.87},
+	"deepseek-v4-flash":            {0.0028, 0.14, 0.28},
+	"deepseek-v4-flash-vision-exp": {0.0028, 0.14, 0.28}, // vision worker; same card as flash until published separately
+	"deepseek-v4-pro":              {0.003625, 0.435, 0.87},
 }
 
 // deepseekPricingOffPeak is the new off-peak card (2026-08-16 16:00 UTC onward).
 // Peak = 2x off-peak on every billing item.
 var deepseekPricingOffPeak = map[string]deepseekRates{
-	"deepseek-v4-flash": {0.007, 0.22, 0.66},
-	"deepseek-v4-pro":   {0.022, 0.66, 1.98},
+	"deepseek-v4-flash":            {0.007, 0.22, 0.66},
+	"deepseek-v4-flash-vision-exp": {0.007, 0.22, 0.66},
+	"deepseek-v4-pro":              {0.022, 0.66, 1.98},
 }
 
 // DeepSeekPeakCutover is when the new peak/off-peak card takes effect.
@@ -164,6 +166,8 @@ type openrouterRates struct {
 var openrouterPricing = map[string]openrouterRates{
 	"deepseek/deepseek-v4-flash-0731": {0.014, 0.065, 0.14},
 	"deepseek/deepseek-v4-pro-0813":   {0.022, 0.66, 1.98},
+	config.ModelOpenRouterZaiGLM53:    {0.26, 1.40, 4.40}, // verified 2026-08 openrouter.ai/z-ai/glm-5.3
+	config.ModelOpenRouterZaiGLM47:    {0.11, 0.60, 2.20}, // verified 2026-08 openrouter.ai/z-ai/glm-4.7
 }
 
 // zaiCreditsPerMTok holds official Coding Plan credit multipliers per 10k

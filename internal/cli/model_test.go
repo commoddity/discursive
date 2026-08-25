@@ -13,6 +13,24 @@ func TestSetModelPersists(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
+	dataRoot, err := config.DataRoot(config.ResolveOpts{Home: home})
+	if err != nil {
+		t.Fatalf("data root: %v", err)
+	}
+	s, err := config.Load(dataRoot)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := s.SetMoonshotKey(dataRoot, "sk-moonshot-model-persist"); err != nil {
+		t.Fatalf("set moonshot: %v", err)
+	}
+	if err := s.SetDeepSeekKey(dataRoot, "sk-deepseek-model-persist"); err != nil {
+		t.Fatalf("set deepseek: %v", err)
+	}
+	if err := config.Save(dataRoot, s); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
 	tests := []struct {
 		name      string
 		requested string

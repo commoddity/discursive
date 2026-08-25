@@ -51,8 +51,8 @@ func runStart(cmd *cobra.Command, opts Options, tunnelFlag, publicURLFlag, logLe
 	if err := config.ValidateTunnelSettings(settings); err != nil {
 		return err
 	}
-	if !settings.HasMoonshotKey() || !settings.HasDeepSeekKey() {
-		return fmt.Errorf("setup required: both Moonshot and DeepSeek API keys must be saved (run discursive init)")
+	if !settings.HasChatProviderKey() {
+		return fmt.Errorf("setup required: at least one chat provider API key must be saved (run discursive init)")
 	}
 	if err := config.Save(dataRoot, settings); err != nil {
 		return err

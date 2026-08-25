@@ -39,6 +39,9 @@ func (s *Server) writeThinkingEnabled(w http.ResponseWriter) {
 	thinking := s.live.ThinkingEnabledMap()
 	out := ThinkingResponse{Models: make([]ThinkingModelDTO, 0, len(config.ThinkingEnabledCatalog()))}
 	for _, spec := range config.ThinkingEnabledCatalog() {
+		if !s.providerActive(spec.Provider) {
+			continue
+		}
 		out.Models = append(out.Models, ThinkingModelDTO{
 			ID:       spec.Model,
 			Label:    spec.Label,

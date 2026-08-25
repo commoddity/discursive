@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/gateway/vision"
 )
 
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -37,13 +37,37 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	restoreClientStream(sanitized.Body, wantsStream)
 
-	// Describe images via glm-4.6v for ALL providers before the text model
-	// sees them. Graceful: historical images are reused from the durable
-	// cache, and any image the vision model cannot describe (rate-limited,
-	// missing key, network, rejection) is replaced with a placeholder note so
-	// the turn proceeds. ReplaceImages no longer returns a fatal error for an
-	// image it cannot describe; the error branch below is defensive only.
-	if _, err := s.vision.ReplaceImages(r.Context(), sanitized.Body); err != nil {
+	if s.settings != nil && !s.settings.IsProviderActive(sanitized.Provider) {
+		logRequest(requestID, "status", http.StatusBadRequest, "error", "provider inactive", "provider", string(sanitized.Provider), "model", sanitized.Model)
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("provider %q is not configured (no API key)", sanitized.Provider), "invalid_request_error")
+		return
+	}
+
+	visionModel := config.VisionModelFor(sanitized.Provider)
+	var visionURL string
+	if s.cfg.VisionChatURLOverride != "" {
+		visionURL = s.cfg.VisionChatURLOverride
+	} else {
+		var vErr error
+		visionURL, vErr = s.chatURL(sanitized.Provider, visionModel)
+		if vErr != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", vErr.Error(), "provider", string(sanitized.Provider), "model", visionModel)
+			writeJSONError(w, http.StatusBadGateway, vErr.Error(), "upstream_error")
+			return
+		}
+	}
+	if _, err := s.vision.ReplaceImages(r.Context(), sanitized.Body, vision.Request{
+		Provider: sanitized.Provider,
+		Model:    visionModel,
+		ChatURL:  visionURL,
+		GetKey: func() (string, bool) {
+			k, kerr := s.upstreamKey(sanitized.Provider)
+			if kerr != nil || k == "" {
+				return "", false
+			}
+			return k, true
+		},
+	}); err != nil {
 		logRequest(requestID, "status", http.StatusBadRequest, "error", "vision", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
 		writeJSONError(w, http.StatusBadRequest, err.Error(), "vision_error")
 		return
@@ -51,13 +75,18 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// Tool-result compression.
 	if s.compressor != nil && s.toolCompressionEnabled() {
-		stats, err := s.compressor.Compress(r.Context(), sanitized.Body)
-		if err != nil {
-			slog.Warn("compress: failed, sending original", "request_id", requestID, "err", err)
-		} else if stats.ToolResultsCompressed > 0 {
-			slog.Info("compress: tool_results", "request_id", requestID,
-				"compressed", stats.ToolResultsCompressed,
-				"chars_before", stats.CharsBefore, "chars_after", stats.CharsAfter)
+		cctx, cerr := s.compressContext(sanitized.Provider, time.Now())
+		if cerr != nil {
+			slog.Warn("compress: skipped, no context", "request_id", requestID, "err", cerr)
+		} else {
+			stats, err := s.compressor.Compress(r.Context(), sanitized.Body, cctx)
+			if err != nil {
+				slog.Warn("compress: failed, sending original", "request_id", requestID, "err", err)
+			} else if stats.ToolResultsCompressed > 0 {
+				slog.Info("compress: tool_results", "request_id", requestID,
+					"compressed", stats.ToolResultsCompressed,
+					"chars_before", stats.CharsBefore, "chars_after", stats.CharsAfter)
+			}
 		}
 	}
 
@@ -67,22 +96,16 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Classify request for subagent-like cheap work and optionally downgrade
 	// to a cheaper model (e.g. simple lookups, code search → flash).
 	routerResult := s.router.ClassifyAndOverride(sanitized.Body, requestID)
-	if routerResult.ReleaseLaneSlot != nil {
-		defer routerResult.ReleaseLaneSlot()
-	}
 	if routerResult.OverrideApplied {
 		sanitized.Model = routerResult.OverrideModel
-		// The override may map to a different provider. Re-resolve the
-		// provider from the overridden model so the request is sent to the
-		// correct upstream. If the override model is unknown, fall back to a
-		// best-effort client error — we must not send a model to the wrong
-		// provider's endpoint.
+		sanitized.Body["model"] = routerResult.OverrideModel
 		if route, err := ResolveModel(routerResult.OverrideModel); err != nil {
 			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("override model %q not resolvable: %v", routerResult.OverrideModel, err), "provider", string(sanitized.Provider), "model", routerResult.OverrideModel)
 			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("override model %q not resolvable: %v", routerResult.OverrideModel, err), "upstream_error")
 			return
 		} else {
 			sanitized.Provider = route.Provider
+			sanitized.Policy = route.Policy
 		}
 	}
 
@@ -125,7 +148,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// deepseek-v4-pro downgraded to deepseek-v4-flash for subagent-like work
 	// still gets flash's verbosity controls). Configuration only exists for
 	// models we target.
-	if s.verbosity != nil && s.verbosityEnabledFor(sanitized.Model) {
+	if s.verbosity != nil {
 		s.verbosity.ApplyRequest(sanitized.Body, sanitized.Model)
 	}
 
@@ -134,34 +157,6 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// after routing so it keys on the FINAL provider.
 	if sanitized.Provider == config.ProviderZai {
 		s.injectZaiLanguageDirective(sanitized.Body)
-	}
-
-	// Reserve a Z.AI plan slot (or overflow to a fast lane) BEFORE resolving
-	// the key/URL, because the overflow decision can change the provider and
-	// endpoint. Doing this after key/URL resolution would send the overflowed
-	// model to the wrong upstream.
-	var releaseZaiSlot func()
-	if sanitized.Provider == config.ProviderZai {
-		chosen, release, ok := s.acquireZaiLaneOrOverflow(sanitized.Model, requestID, nil)
-		if !ok {
-			logRequest(requestID, "status", http.StatusBadGateway, "error", "zai lane: request cancelled while waiting for slot", "model", sanitized.Model)
-			writeJSONError(w, http.StatusBadGateway, "request cancelled while waiting for zai slot", "upstream_error")
-			return
-		}
-		releaseZaiSlot = release
-		defer releaseZaiSlot()
-		if chosen != sanitized.Model {
-			slog.Info("zai_lane: direct request overflow", "request_id", requestID, "from", sanitized.Model, "to", chosen)
-			sanitized.Model = chosen
-			sanitized.Body["model"] = chosen
-			if route, rerr := ResolveModel(chosen); rerr == nil {
-				sanitized.Provider = route.Provider
-				sanitized.Policy = route.Policy
-				cfg := s.sanitizeConfig()
-				applyThinkingPolicy(sanitized.Body, route, cfg)
-				applyOpenRouterSort(sanitized.Body, route, cfg.OpenRouterSort)
-			}
-		}
 	}
 
 	// HARD RULE guard at send time: OpenRouter may only be used while the
@@ -245,46 +240,6 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logRequest(requestID, "status", http.StatusBadGateway, "error", "failed reading upstream body", "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort)
 		writeJSONError(w, http.StatusBadGateway, "failed reading upstream body", "upstream_error")
-		return
-	}
-
-	// Z.AI quota-exhaustion fallback: when the plan rejects the request
-	// (429 code 1305/1113), retry once on the fallback lane — OpenRouter
-	// DeepSeek flash if an OpenRouter key is configured, otherwise direct
-	// DeepSeek flash.
-	if sanitized.Provider == config.ProviderZai && isZaiQuotaError(resp.StatusCode, respBody) {
-		fbModel := s.applyFallback(requestID)
-		fbBody := cloneMapDeep(sanitized.Body)
-		fbBody["model"] = fbModel
-		fbRoute, rerr := ResolveModel(fbModel)
-		if rerr != nil {
-			logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback model not resolvable: %v", rerr), "provider", string(sanitized.Provider), "model", fbModel, "effort", effort)
-			s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
-			return
-		}
-		cfg := s.sanitizeConfig()
-		applyThinkingPolicy(fbBody, fbRoute, cfg)
-		applyOpenRouterSort(fbBody, fbRoute, cfg.OpenRouterSort)
-		u, uerr := s.chatURL(fbRoute.Provider, fbModel)
-		if uerr != nil {
-			logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback url: %v", uerr), "provider", string(fbRoute.Provider), "model", fbModel, "effort", effort)
-			s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
-			return
-		}
-		k, kerr := s.upstreamKey(fbRoute.Provider)
-		if kerr != nil {
-			logRequest(requestID, "status", resp.StatusCode, "error", fmt.Sprintf("fallback key: %v", kerr), "model", fbModel, "effort", effort)
-			s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
-			return
-		}
-		logRequest(requestID, "fallback", fbModel, "from", sanitized.Model, "provider", string(sanitized.Provider))
-		resp2, ferr := s.doUpstream(r, u, k, fbBody)
-		if ferr != nil {
-			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("fallback request failed: %v", ferr), "model", fbModel, "effort", effort)
-			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("upstream request failed: %v", ferr), "upstream_error")
-			return
-		}
-		s.finishUpstream(w, resp2, wantsStream, fbRoute.Provider, fbModel, effort, requestID, started)
 		return
 	}
 
@@ -486,54 +441,3 @@ func (s *Server) doUpstreamWithRetry(r *http.Request, url, apiKey string, body m
 	}
 	return nil, fmt.Errorf("retry exhausted for %s", model)
 }
-
-// acquireZaiLaneOrOverflow reserves a Z.AI plan slot for a direct (non-
-// downgraded) request, or overflows to the fallback lane when both slots are
-// busy. Unlike the router downgrade path (which never blocks), direct requests
-// get a short grace wait — the user explicitly picked this model, so we give a
-// slot a chance to free before rerouting.
-//
-// Sticky fallback: once a model overflows, subsequent requests for that model
-// go straight to the fallback (no grace wait) until the lane has been free for
-// zaiStickyFreeStreak consecutive requests. This avoids flip-flopping between
-// upstreams (cold prompt cache on both) and keeps quality consistent within a
-// turn sequence.
-// Returns (chosenModel, release, ok); ok=false means the wait context expired.
-func (s *Server) acquireZaiLaneOrOverflow(model, requestID string, nowUTC func() time.Time) (string, func(), bool) {
-	if s.zaiSem == nil {
-		return model, func() {}, true
-	}
-	// Sticky: stay on the fallback unless the lane probe lifts stickiness.
-	if s.stickyFallbacks.sticky(model) {
-		if !s.stickyLaneProbe(model, requestID) {
-			fbModel := s.applyFallbackWithModel(model, requestID)
-			return fbModel, func() {}, true
-		}
-		// Stickiness lifted: fall through and take a slot normally.
-	}
-	// Non-blocking first try.
-	select {
-	case s.zaiSem <- struct{}{}:
-		return model, func() { <-s.zaiSem }, true
-	default:
-	}
-	// Short grace wait — slot may free momentarily.
-	ctx, cancel := context.WithTimeout(context.Background(), zaiSlotGraceWait)
-	defer cancel()
-	select {
-	case s.zaiSem <- struct{}{}:
-		slog.Info("zai_lane: slot freed within grace wait", "request_id", requestID, "model", model)
-		return model, func() { <-s.zaiSem }, true
-	case <-ctx.Done():
-	}
-	// Overflow: preserve "big" model choice for direct requests; pin sticky.
-	s.stickyFallbacks.markOverflowed(model)
-	fbModel := s.applyFallbackWithModel(model, requestID)
-	return fbModel, func() {}, true
-}
-
-// zaiSlotGraceWait is how long a direct Z.AI request waits for a plan slot
-// before overflowing to the fallback lane. Short enough that a queued request
-// is rerouted before the user notices a stall; long enough to absorb bursty
-// double-submits (main chat + one subagent finishing).
-const zaiSlotGraceWait = 2 * time.Second

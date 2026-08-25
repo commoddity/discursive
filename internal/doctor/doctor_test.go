@@ -14,7 +14,7 @@ import (
 	"github.com/commoddity/discursive/internal/crypto"
 )
 
-func TestRunAll_MoonshotKeyMissing(t *testing.T) {
+func TestRunAll_MoonshotKeyMissingInformational(t *testing.T) {
 	s := config.DefaultSettings()
 	if err := s.EnsureGatewayKey(); err != nil {
 		t.Fatal(err)
@@ -42,12 +42,15 @@ func TestRunAll_MoonshotKeyMissing(t *testing.T) {
 
 	report := RunAll(s, t.TempDir())
 	check := findCheck(report, "moonshot_key_present")
-	if check.OK {
-		t.Fatal("expected moonshot_key_present to fail without key")
+	if !check.OK {
+		t.Fatal("expected moonshot_key_present to be informational (OK) without key")
+	}
+	if check.Detail == "" {
+		t.Fatal("expected informational detail when moonshot key missing")
 	}
 }
 
-func TestRunAll_DeepSeekKeyMissing(t *testing.T) {
+func TestRunAll_DeepSeekKeyMissingInformational(t *testing.T) {
 	s := config.DefaultSettings()
 	if err := s.EnsureGatewayKey(); err != nil {
 		t.Fatal(err)
@@ -74,8 +77,11 @@ func TestRunAll_DeepSeekKeyMissing(t *testing.T) {
 
 	report := RunAll(s, t.TempDir())
 	check := findCheck(report, "deepseek_key_present")
-	if check.OK {
-		t.Fatal("expected deepseek_key_present to fail without key")
+	if !check.OK {
+		t.Fatal("expected deepseek_key_present to be informational (OK) without key")
+	}
+	if check.Detail == "" {
+		t.Fatal("expected informational detail when deepseek key missing")
 	}
 }
 
