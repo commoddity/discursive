@@ -139,11 +139,35 @@ OpenRouter hosts DeepSeek models and is used only as an internal peak-hour fallb
 
 ## Symptoms & fixes
 
+### `Z.AI bars dwarf dollar-billed providers on Spend charts`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| Z.AI segments are 5–10× taller than DeepSeek/Moonshot for comparable usage; tooltip shows thousands of credits next to cents of USD | Raw credits or PAYG USD/MTok ($1.40/$4.40) used as bar height. Coding Plan is a flat subscription — PAYG rates are not what the plan costs. | Bar height = `credits × (plan_fee_usd / monthly_credit_quota)`. Pro plan: `$64/mo ÷ (60_000 credits/week × 52/12)`. Use `zaiUsdPerCredit()` in `index.html`; tooltips still show raw credits. Hard spend totals (`/api/spend`) still exclude Z.AI. |
+
+### `Model Controls 404 after API removal`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| Dashboard Model Controls card shows `Error: 404 Not Found` | Go handler removed but `index.html` still `fetch`es the old route (e.g. `/api/verbosity` after terseness went always-on) | Grep `index.html` for every `/api/*` route; remove dead fetches/toggles when deleting usageui handlers. Match surviving routes in `server.go` mux. |
+
+### `Peak indicator missing but JS still present`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| Header peak badge gone; `renderPeakIndicator()` no-ops or throws | HTML `#peak-indicator` removed during UI refactor while CSS/JS kept | Restore header markup (`#peak-indicator`, `#peak-indicator-label`, `#peak-tooltip`) beside `#provider-indicators`. JS/CSS need no change if intact. |
+
+### `Provider balance cards ignore peak/off-peak routing`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | ---- |
+| OpenRouter balance visible off-peak; no visual cue which providers are active for routing | Balance grid renders all configured providers equally | Peak active (`deepseekIsPeak \|\| zaiIsPeak`): green glow on OpenRouter/Moonshot/Thaura; show OpenRouter card. Off-peak: hide OpenRouter card; blue glow on Z.AI/DeepSeek. Reload balances on peak transition (`_lastPeakFallback` in `renderPeakIndicator`). |
+
 ### `Z.AI context suffix breaks catalog lookups`
 
 | Symptom | Cause | Fix |
 | ------- | ----- | ---- |
-| `glm-5.3[1m]` resolves to unknown model in reasoning-effort or verbosity catalogs, or effort normalization fails | The `[1m]` long-context suffix is part of the real model ID but catalog entries are keyed by the base model (`glm-5.3`). Lookups miss the entry. | Strip `[1m]` (and future suffixes) before catalog lookups. `TrimZaiContextSuffix()` in `config/verbosity.go` and applied in `applyThinkingPolicy()`, `EffortForModel()`, `NormalizeReasoningEffort()`, `VerbosityFor()`, `LiveSettings.VerbosityFor()`. |
+| `glm-5.3[1m]` resolves to unknown model in reasoning-effort catalogs, or effort normalization fails | The `[1m]` long-context suffix is part of the real model ID but catalog entries are keyed by the base model (`glm-5.3`). Lookups miss the entry. | Strip `[1m]` (and future suffixes) before catalog lookups via `zaiModelKey()` / `TrimZaiContextSuffix()` in config. |
 
 ### `Chart.js tick callback breaks chart`
 

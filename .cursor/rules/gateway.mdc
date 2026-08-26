@@ -67,20 +67,19 @@ and pricing row.
 || `gpt-4.1`       | zai      | `glm-4.7`         | Budget workhorse; thinking on/off ||
 || `gpt-4-turbo`   | zai      | `glm-5.3[1m]`    | **Compat alias** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
 
-> **Peak-hour fallback (always on, HARD RULE: OpenRouter is peak-only).**
-> During DeepSeek peak hours (01:00–04:00, 06:00–10:00 UTC) or Z.AI peak
-> hours (Mon–Fri 06:00–10:00 UTC) the gateway redirects the matching model to
-> an OpenRouter DeepSeek model: big models (`deepseek-v4-pro`, `glm-5.3`,
-> `kimi-k3`) → `deepseek/deepseek-v4-pro-0813`, everything else →
-> `deepseek/deepseek-v4-flash-0731`. **Outside peak hours OpenRouter is never
-> used**: subagent/router downgrades, lane-full overflows, Z.AI 429-quota
-> fallbacks, and the compression worker use the real models
-> `deepseek-v4-flash`/`deepseek-v4-pro` (see `fallbackTargetFor` in
-> `internal/gateway/fallback.go` and the send-time guard
-> `isPeakAllowedOpenRouter` in `peakguard.go`; `DISCURSIVE_FORCE_PEAK` simulates
-> peak for testing). No OpenRouter key? Peak traffic falls through to the
-> direct provider and pays peak rates. Logs `peak_reroute` at INFO with
-> from/to + request_id. This applies to non-downgraded traffic only.
+> **Peak-hour OpenRouter reroute (always on, HARD RULE: OpenRouter is peak-only).**
+> During DeepSeek peak (01:00–04:00, 06:00–10:00 UTC Beijing weekdays) or Z.AI
+> peak (Mon–Fri 06:00–10:00 UTC) `applyPeakReroute` (`peakguard.go`) swaps to
+> each provider's OpenRouter twin from `config.OpenRouterTwinFor` (`providers.go`):
+> DeepSeek flash/pro → `deepseek/deepseek-v4-flash-0731` /
+> `deepseek/deepseek-v4-pro-0813`; Z.AI glm-5.3/glm-4.7 → `z-ai/glm-5.3` /
+> `z-ai/glm-4.7`. Moonshot/Thaura never peak. **Outside peak hours OpenRouter is
+> never used.** Subagent/router downgrades use the **same provider's small model**
+> (`config.SmallModelFor`) — never cross-provider. Send-time guard:
+> `isPeakAllowedOpenRouter`; `DISCURSIVE_FORCE_PEAK` simulates peak. No OR key?
+> Peak traffic falls through to the direct provider and pays peak rates. Logs
+> `peak_reroute` at INFO with from/to + request_id. Applies to non-downgraded
+> traffic only.
 
 Set the alias manually in Cursor Settings → Models. The gateway maps it and
 picks the right base URL + API key. No auto-application to Cursor's state.vscdb
@@ -112,36 +111,27 @@ Behavioral checklist: refer to provider-specific rules (`.cursor/rules/kimi.mdc`
 `.cursor/rules/deepseek.mdc`, `.cursor/rules/thaura.mdc`, `.cursor/rules/zai.mdc`) for
 model-specific quirks.
 
-## Quota-exhaustion fallback
+## Hard routing (no cross-provider fallback)
+
+> **2026-08 refactor.** The gateway never switches providers on the same request
+> path. Peak reroute is an OpenRouter **transport swap** to the same model's OR
+> twin only. Subagent router: `config.SmallModelFor(provider)`. Compressor and
+> vision use the request provider's small/vision models; OR twin on peak for the
+> compressor when that provider peaks.
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| Z.AI plan returns 429 (code 1305 "overloaded" / 1113 "insufficient balance") for `glm-5.3`/`glm-4.7` | Coding plan quota exhausted or service rejecting plan traffic. | Detect 429 + code in `isZaiQuotaError()`, retry once via `fallbackTargetFor`: real `deepseek-v4-flash` (direct) off-peak, OpenRouter flash only during DeepSeek peak with an OR key. Implemented in `internal/gateway/fallback.go`. ||
+|| Z.AI returns HTTP 429 (overloaded / insufficient balance) for `glm-5.3`/`glm-4.7` | Plan concurrency or quota blip; no cross-provider escape hatch. | `doUpstreamWithRetry()` in `proxy.go`: up to **3** retries with exponential backoff (250ms → 500ms → 1s). Return 429 to Cursor after retries exhaust. ||
+|| GLM turns slow when many concurrent subagents hit Z.AI | Coding-plan concurrency ~2 upstream; requests queue or 429. | No gateway overflow to other providers. Subagent router downgrades within Z.AI to `glm-4.7`. Reduce parallel Z.AI load; expect 429 retries. ||
 
-## Concurrency limiter (Z.AI)
+### Historical — pre-2026-08 semaphore overflow (superseded)
 
-|| Symptom | Cause | Fix ||
+|| Symptom | Cause | Fix (historical) ||
 || ------- | ----- | ---- ||
-|| Z.AI returns 429 "service overloaded" intermittently under heavy subagent load | Concurrent Z.AI requests exceed plan capacity (concurrency limits, not just token quota) | Hold all coding-plan traffic to ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2); direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow to real `deepseek-v4-flash`/`v4-pro` — OpenRouter only during peak, via `fallbackTargetFor`), router downgrades stay non-blocking via `selectDowngradeLane`. Retry once on 429 with 1s delay. ||
-
-> **Shared plan-budget model (2026-08).** All Z.AI **coding-plan** traffic is bound
-> by ONE semaphore (`zaiSem`, cap = `glm47LaneCap` = 2). Chat and vision share it.
-> Direct glm-4.7/glm-5.3 requests use `acquireZaiLaneOrOverflow` — a ~2s grace wait
-> for a slot, then **overflow** to real DeepSeek flash/pro (`fallbackTargetFor`;
-> OpenRouter equivalents only during DeepSeek peak) instead of queueing 20-45s.
-> Router downgrades stay non-blocking via `selectDowngradeLane`. Never queue on
-> glm-4.7 when a fast lane exists — queueing is the effective slowdown users feel.
-
-|| Symptom | Cause | Fix ||
-|| ------- | ----- | ---- ||
-|| Direct glm-4.7 request hangs 20-45s when the plan's 2 slots are busy (main chat + parallel subagents) | `acquireZaiSlot` blocked the goroutine indefinitely instead of overflowing | Use `acquireZaiLaneOrOverflow` (2s grace, then overflow). No `zaiSlotGraceWait`==0 call sites (2s const). ||
-|| Cancelled request drains a slot it never took, shrinking effective capacity | `acquireZaiSlot` returned a releasing closure even when `ctx.Done()` fired pre-acquire | Release closure must be a no-op when the slot was never acquired ||
-
-### `Vision bypasses the plan concurrency budget`
-
-|| Symptom | Cause | Fix ||
-|| ------- | ----- | ---- ||
-|| glm-4.6v describe calls 429/stall chat turns while the plan is saturated | Vision described images on the same coding-plan endpoint with its own `maxConcurrent` semaphore, invisible to the chat budget | Wire `s.vision.SetPlanSlotter` to block on the same `zaiSem` before each describe. One budget, one endpoint. ||
+|| Z.AI 429 under heavy load | `zaiSem` overflow to DeepSeek | **Removed.** Hard routing + `doUpstreamWithRetry` replaced `zaiSem`/`acquireZaiLaneOrOverflow`/`selectDowngradeLane`. ||
+|| glm-4.6v starved chat budget | Separate vision semaphore | Vision now uses `config.VisionModelFor(provider)` per provider; no shared `zaiSem`. ||
+|| Direct glm-4.7 hung 20-45s when plan slots busy | `acquireZaiSlot` blocked instead of overflowing | **Removed with semaphore model.** ||
+|| Cannot verify lane overflow | No `glm47LaneInUse` counter | **Removed with semaphore.** Use `peak_reroute` + `subagent_router` logs instead. ||
 
 <!-- last-verified: 2026-08 -->
 
@@ -157,7 +147,7 @@ model-specific quirks.
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| Z.AI request fails with 429 or 502, succeeds on immediate retry | Transient capacity issue or brief upstream hiccup. | Replace direct `doUpstream()` call with `doUpstreamWithRetry()` for Z.AI requests: on 429 (codes 1305/1113), retry once after 1s delay. Single retry avoids infinite loops while catching blips. ||
+|| Z.AI request fails with HTTP 429, succeeds on retry | Transient plan/concurrency blip. | `doUpstreamWithRetry()` for all Z.AI chat: on HTTP 429, retry up to **3** times with exponential backoff (250ms → 500ms → 1s). Return the 429 to Cursor only after retries exhaust. Non-Z.AI providers call `doUpstream()` directly. ||
 
 ## Tool-result compression tuning
 
@@ -169,52 +159,47 @@ model-specific quirks.
 
 ## No context-size gate for router downgrades
 
-All cheap-class subagent/router downgrades target the real `deepseek-v4-flash` (via `defaultFlashModel`, OpenRouter equivalent only during peak) which has 1M context and fast cached prefill; there is no performance-based reason to skip downgrades based on context size, unlike the old glm-4.7 lane model.
+Cheap-class subagent/router downgrades use `config.SmallModelFor(provider)` within
+the same provider (e.g. DeepSeek pro → flash, Z.AI glm-5.3 → glm-4.7, Moonshot
+kimi-k3 → kimi-k2.7-code). Small models have large context; there is no
+performance-based skip based on context size.
 
 <!-- last-verified: 2026-08 -->
 
-## Lane state visibility
+## Subagent router classification
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| Cannot verify whether glm-4.7 downgrade lane overflow is firing correctly or if requests are unnecessarily waiting for slots | Channel doesn't expose current buffer depth; no visibility into in-flight count | Add `atomic.Int64` counter `glm47LaneInUse` alongside semaphore; log `in_use`/`capacity` on every routing decision in `selectDowngradeLane` ||
+|| Large planning/data-model prompt downgraded to provider small model; logs show `request_class: simple_lookup` | `isSummarization()` substring-matched `summarize` inside a path like `summarized-chats` (runs before `isComplexReasoning`) | Use word-boundary matching for single-token summarization keywords (`containsKeyword` in `router.go`). Phrase keywords (`capture the`, `summary of`) stay substring. Add regression test with `summarized-chats` path + `data model` goal. ||
 
 <!-- last-verified: 2026-08 -->
 
-## Verbose output control
+## Terseness (always on)
 
 - Purpose: coerce models to be terse (code-first, prose-light) during agentic loops.
-- Controlled per-model from the **Output Verbosity** dashboard card
-  (`GET/PUT /api/verbosity`); defaults: `deepseek-v4-flash` ON, `deepseek-v4-pro` OFF,
-  `glm-4.7` ON, `glm-5.3` OFF.
+- **Always on** — no dashboard toggle, no `GET/PUT /api/verbosity` (removed 2026-08).
+- Implemented in `internal/gateway/verbosity/`; applied in `proxy.go` after routing.
 - Three request-side mechanisms — **never edits response content**:
-  1. **Directive injection** — appends `flashTersenessDirective` (10 enumerated
-     mandatory constraints) to the last system/developer message
-  2. **Token cap** — lowers `max_tokens` to model-specific ceiling:
-     - `deepseek-v4-flash`: 4096
-     - `deepseek-v4-pro`: 8192
-     - `glm-4.7`: 8192
-     - `glm-5.3` / `glm-5.3[1m]`: 16384
-- Verbosity is applied **after** the subagent-router downgrade so the final
-  served model determines which controls fire
+  1. **Directive injection** — appends terseness directive to last system/developer message
+  2. **Token cap** — lowers `max_tokens` per model (`deepseek-v4-flash` 4096, `deepseek-v4-pro` 8192, `glm-4.7` 8192, `glm-5.3` 16384)
+- Terseness applies **after** subagent-router downgrade so the final served model determines caps
 
 ## Runtime settings (no restart)
 
 || Aspect | Detail ||
 || ------- | ------ ||
 || Compression runtime toggles | `GET/PUT /api/settings` in usage UI → applies immediately, no restart ||
-|| Config fields | `ToolCompressionEnabled bool`, `Verbosity map[string]bool`, `ThinkingEnabled map[string]bool` (in `AppSettings`/`LiveSettings`) ||
-|| Tool threshold | `toolResultMaxLen` (4000 chars) ||
+|| Config fields | `ToolCompressionEnabled bool`, `ThinkingEnabled map[string]bool` (in `AppSettings`/`LiveSettings`) ||
+|| Tool threshold | `toolResultMaxLen` (24000 chars); `compressMinTotalChars` (20000 aggregate gate) ||
 || Failure / key-missing | Soft failures (empty/not-shorter summary) truncate to `toolResultMaxLen`; hard errors fail-open with original body ||
 
 ## Global subagent model sizing (flash fleet)
 
 The live subagent fleet lives in `/.cursor/agents/` (10 files).
-All agents now use `model: or-flash` (gateway alias; resolves to real DeepSeek
-flash via `deepseek-v4-flash` during off-peak, OpenRouter flash during peak) so the high-volume
-flash fleet never competes with the main chat's glm-4.7 plan slots (2
-concurrent) — cached deepseek turns answer in ~2s vs 20-45s queued on GLM.
-The peak-only OpenRouter rule (see `openrouter.mdc`) governs all substitution.
+Flash agents use `model: or-flash` (gateway alias → DeepSeek flash off-peak,
+OpenRouter flash during DeepSeek peak). The **subagent router** downgrades
+within the request provider's small model (`config.SmallModelFor`); peak reroute
+applies separately via `applyPeakReroute` (see `openrouter.mdc`).
 
 || Agent | model: | Rationale ||
 || ----- | ------ | --------- ||

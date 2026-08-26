@@ -23,4 +23,10 @@ both without conditional paths.
 | ----- | ---- | ----- |
 | Tests pass locally (`go test`) but fail in CI with no obvious code change | OS-dependent paths, runtime.GOOS assumptions, or missing `GOFLAGS` for tag-filtered tests | Run `GOFLAGS="-tags=!live" go test ./...` to match CI; verify `config.DataRoot()` usage in all tests that set `HOME` |
 
+### `usageui API tests return empty provider lists`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| `TestReasoningEffortGetAndPut` fails with `providers: []` after adding `providerActive()` gate | Handler filters by `SetHealth()` key flags; test server never sets health | Call `srv.SetHealth(HealthInfo{HasMoonshotKey: true, HasDeepSeekKey: true, ...})` before exercising effort/thinking handlers. Mirror keys for providers under test. |
+
 <!-- last-verified: 2026-08 -->

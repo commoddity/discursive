@@ -174,26 +174,27 @@ Each incoming request is classified by its **content** — the last user message
 determines whether the task is cheap enough for a flash model:
 
 
-| Request type                                          | Action             | Model               |
-| ----------------------------------------------------- | ------------------ | ------------------- |
-| Simple lookup / explanation                           | downgrade to flash | `deepseek/deepseek-v4-flash-0731` |
-| Code search / exploration                             | downgrade to flash | `deepseek/deepseek-v4-flash-0731` |
-| Structured extraction (`json_object` / `json_schema`) | downgrade to flash | `deepseek/deepseek-v4-flash-0731` |
-| Automation / mechanical work (lint, git, scripts, PR) | downgrade to flash | `deepseek/deepseek-v4-flash-0731` |
-| Editing / refactoring                                 | keep model         | original model      |
-| Complex reasoning / architecture                      | keep model         | original model      |
-| Unknown / unclassified                                | keep model         | original model      |
+| Request type                                          | Action             | Downgrade target                          |
+| ----------------------------------------------------- | ------------------ | ----------------------------------------- |
+| Simple lookup / explanation                           | downgrade to small | same provider's small model               |
+| Code search / exploration                             | downgrade to small | same provider's small model               |
+| Structured extraction (`json_object` / `json_schema`) | downgrade to small | same provider's small model               |
+| Automation / mechanical work (lint, git, scripts, PR) | downgrade to small | same provider's small model               |
+| Editing / refactoring                                 | keep model         | original model                            |
+| Complex reasoning / architecture                      | keep model         | original model                            |
+| Unknown / unclassified                                | keep model         | original model                            |
 
-> **Downgrade target.** Flash downgrades land on `deepseek/deepseek-v4-flash-0731` (OpenRouter DeepSeek flash),
-> keeping cheap/subagent traffic on OpenRouter. `glm-5.3`/`kimi-k3`
-> downgrade to `deepseek/deepseek-v4-flash-0731` too; `deepseek-v4-pro` → `deepseek/deepseek-v4-flash-0731`.
+> **Downgrade target.** Downgrades use `config.SmallModelFor(provider)` — never
+> cross-provider. Examples: DeepSeek `deepseek-v4-pro` → `deepseek-v4-flash`;
+> Z.AI `glm-5.3` → `glm-4.7`; Moonshot `kimi-k3` → `kimi-k2.7-code`.
 >
-> **Peak-hour fallback (always on).** During DeepSeek peak hours
-> (01:00–04:00, 06:00–10:00 UTC) or Z.AI peak hours (Mon–Fri 06:00–10:00 UTC)
-> the gateway redirects the matching model to an OpenRouter DeepSeek model:
-> big models (`deepseek-v4-pro`, `glm-5.3`, `kimi-k3`) → `deepseek/deepseek-v4-pro-0813`,
-> everything else → `deepseek/deepseek-v4-flash-0731`. No OpenRouter key? Traffic
-> falls through to the direct provider and pays peak rates. Configure with
+> **Peak-hour OpenRouter reroute (always on).** During DeepSeek peak
+> (01:00–04:00, 06:00–10:00 UTC Beijing weekdays) or Z.AI peak (Mon–Fri
+> 06:00–10:00 UTC) the gateway swaps to each provider's OpenRouter twin:
+> DeepSeek flash/pro → `deepseek/deepseek-v4-flash-0731` /
+> `deepseek/deepseek-v4-pro-0813`; Z.AI glm-5.3/glm-4.7 → `z-ai/glm-5.3` /
+> `z-ai/glm-4.7`. Moonshot/Thaura never peak. No OpenRouter key? Traffic falls
+> through to the direct provider and pays peak rates. Configure with
 > `discursive set --openrouter-key`.
 
 
@@ -283,7 +284,7 @@ process or configuration.
 
 - **System health** - health checks & system uptime
 - **Reasoning effort** — per-model `low` / `high` / `max` (and DeepSeek `off`) saved to app settings
-- **Output verbosity** — per-model toggles (DeepSeek) that inject a terseness directive and cap output tokens to coerce terse replies (never trims responses)
+- **Terseness** — always-on directive + token caps per model (no dashboard toggle)
 - **Provider balances & monthly spend projection** — average daily spend, projected monthly total
 - **Month to date spending** — requests, tokens, and estimated cost (USD, EUR, CNY)
 - **Spend by period, model, and provider** — clear charts per time period, model, and provider
@@ -323,27 +324,14 @@ force thinking OFF regardless of the toggle; editing/complex-reasoning turns hon
 
 
 
-### Output Verbosity
+### Terseness (always on)
 
-DeepSeek models tend to emit verbose reasoning prose. The gateway can tighten
-that per-model from the **Output Verbosity** card at the Usage Dashboard
-(`http://127.0.0.1:4002`). When a model's toggle is on, the gateway applies
-two controls to that model's **requests**:
+The gateway injects a terseness directive and lowers `max_tokens` per model on
+every request (hardcoded in `server.go` — no dashboard toggle). Response
+content is never edited; streaming and non-streaming replies pass through
+byte-for-byte.
 
-1. **Terseness directive** — a numbered, authority-marked system prompt appendix
-  telling the model to lead with the solution and omit conversational filler.
-2. **Output-token cap** — a generous `max_tokens` ceiling (only ever lowers a
-  request's existing value).
-
-Verbosity only **coerces/prompts the model** to be less verbose. The gateway
-**never edits response content** — both streaming and non-streaming replies pass
-through byte-for-byte, so there is no trailing-`…` response trimming.
-
-Defaults: `deepseek-v4-flash` is **on**, `deepseek-v4-pro` is **off**. Changes
-apply to new requests immediately (no restart). The `--verbosity` CLI flag has
-been removed — verbosity is now managed entirely from the dashboard.
-
-### 🌙 Moonshot (Kimi) 
+### 🌙 Moonshot (Kimi)
 
 [Moonshot](https://platform.kimi.ai/) provides frontier models with long-context
 windows and native reasoning capabilities.
@@ -403,7 +391,7 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 | `glm-4.7`    | $0.12            | $0.46        | $1.60         | Budget execution; thinking on/off                                        |
 
 
-| `glm-4.6v`   | $0.03            | $0.12        | $0.27         | Vision worker — describes images for ALL providers (not user-selectable) |
+| `glm-4.6v`   | $0.03            | $0.12        | $0.27         | Z.AI vision worker (Z.AI-routed requests; not user-selectable) |
 
 > **PROVISIONAL — `glm-5.3` per-token rates.** Z.AI still lists GLM-5.2 as its
 > newest row and the GLM-5.3 docs say "The GLM-5.3 API is coming soon". The
@@ -412,17 +400,19 @@ thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
 > the pricing tests + `.cursor/rules/usage.mdc` and `zai.mdc` once Z.AI publishes
 > authoritative rates.
 
-### OpenRouter (peak fallback only)
+### OpenRouter (peak reroute only)
 
-OpenRouter hosts DeepSeek models and is used only as an internal peak-hour
-fallback. It is not a user-selectable provider: Cursor aliases still map to the
-direct providers above, and the gateway reroutes to OpenRouter upstream IDs when
-the direct provider is in peak pricing and an OpenRouter key is configured.
+OpenRouter hosts DeepSeek and Z.AI models and is used only as an internal
+peak-hour transport. Cursor aliases still map to direct providers; the gateway
+reroutes to OpenRouter upstream IDs when that provider is in peak pricing and an
+OpenRouter key is configured.
 
 | Upstream ID | Cache hit / MTok | Input / MTok | Output / MTok | Role |
 | --- | --- | --- | --- | --- |
-| `deepseek/deepseek-v4-flash-0731` | $0.014 | $0.065 | $0.14 | Peak fallback for small models |
-| `deepseek/deepseek-v4-pro-0813` | $0.022 | $0.66 | $1.98 | Peak fallback for big models |
+| `deepseek/deepseek-v4-flash-0731` | $0.014 | $0.065 | $0.14 | DeepSeek small peak twin |
+| `deepseek/deepseek-v4-pro-0813` | $0.022 | $0.66 | $1.98 | DeepSeek big peak twin |
+| `z-ai/glm-5.3` | $0.26 | $1.40 | $4.40 | Z.AI big peak twin |
+| `z-ai/glm-4.7` | $0.11 | $0.60 | $2.20 | Z.AI small peak twin |
 
 > **Flat list rates.** OpenRouter has no peak/off-peak pricing
 > (see [Why Use OpenRouter for DeepSeek](https://openrouter.ai/blog/insights/why-openrouter-for-deepseek/)),
@@ -439,18 +429,15 @@ the direct provider is in peak pricing and an OpenRouter key is configured.
 > 60,000 / weekly (6x Lite). `discursive usage` excludes Z.AI from MTD/Today
 > totals (flat-fee coding plan); the Z.AI subscription ($64/mo effective on Pro)
 > appears only in the month projection. The "Spend by Period"/"Spend by Model"
-> bar charts include Z.AI as token-based estimates for relative usage only — not
-> billed spend.
+> bar charts show Z.AI usage with subscription-implied visual height (credits ×
+> plan fee / monthly quota) for chart comparison — not billed spend.
 >
-> **Image routing:** any request (any provider) that contains image content is
-> intercepted by the gateway and each image is described by Z.AI `glm-4.6v`
-> (coding-plan endpoint) before the selected text model is called. A Z.AI API
-> key is therefore required to send images. Images that were already described
-> are reused from a durable cache, so later turns in the same chat do not
-> re-invoke the vision model. If the key is missing, or an image cannot be
-> described (e.g. the vision model is rate-limited), the image is replaced with
-> a placeholder note and the request proceeds to the text model — a rate-limited
-> vision model never blocks the conversation.
+> **Image routing:** requests with image content are intercepted; each image is
+> described by the **request provider's vision model** (Z.AI → `glm-4.6v`,
+> DeepSeek → `deepseek-v4-flash-vision-exp`, Moonshot → `kimi-k2.7-code`). That
+> provider's API key must be configured. Described images are cached by content
+> hash. On failure the image is replaced with a placeholder and the text request
+> proceeds.
 
 - Pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing)
 - API docs: [https://docs.z.ai/api-reference/introduction](https://docs.z.ai/api-reference/introduction)
@@ -542,7 +529,7 @@ internal/
   config/                 # App settings, paths, upstream URL helpers
   crypto/                 # Encrypt upstream keys + gateway key gen
   gateway/                # HTTP server, sanitizer, optimizer, proxy, auth
-    vision/               # Image description via glm-4.6v (content-hash cache, graceful fallback)
+    vision/               # Per-provider image description (content-hash cache, graceful fallback)
   tunnel/                 # cloudflared supervisor
   doctor/                 # Health checks
   usage/                  # Pricing tables, token/cost store, slog helpers
@@ -573,7 +560,7 @@ All output is JSON on stdout. Pipe through `jq` for readability.
 | `discursive usage purge`     | Delete usage events older than `--max-age` (Go duration, default `90d`; also `24h`, `7d`, `30d`…). `--dry-run` previews the count without deleting.                                                                                                                                                                                                                                   |
 | `discursive usage prune-snapshots` | Delete balance snapshots older than `--max-age` (default `90d`). Raw snapshot rows used to compute confirmed spend; no longer needed once a period is complete. `--dry-run` previews without deleting.                                                                                                                                     |
 | `discursive init`            | Run first-time setup: write config, generate the gateway key, store provider API keys. Auto-invoked by `start` when config is incomplete.                                                                                                                                                                                                                                            |
-| `discursive set`             | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--zai-key`, `--openrouter-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`. Combine several in one call. `--show-key` prints the full gateway key.                                                                                                                                             |
+| `discursive set`             | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--zai-key`, `--openrouter-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`, `--clear <provider>`. Combine several in one call. `--show-key` prints the full gateway key. |
 | `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (Cobra built-in). See [Shell Completion](#-shell-completion).                                                                                                                                                                                 |
 | `discursive version`         | Print version.                                                                                                                                                                                                                                                                                                                                                                         |
 

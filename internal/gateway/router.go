@@ -322,18 +322,55 @@ func hasStructuredOutput(body map[string]any) bool {
 // deterministic text-synthesis tasks that flash handles well.
 // Detects phrases like "capture the conversation into a summary",
 // "summarize this chat", "condense the following", etc.
+//
+// Single-token keywords use word-boundary matching so paths like
+// "summarized-chats" do not false-positive on "summarize".
 func isSummarization(lower string) bool {
-	summarizeKeywords := []string{
-		"summarize", "summarise", "summary of",
+	singleWordKeywords := []string{
+		"summarize", "summarise",
+	}
+	for _, kw := range singleWordKeywords {
+		if containsKeyword(lower, kw) {
+			return true
+		}
+	}
+	phraseKeywords := []string{
+		"summary of",
 		"capture the", "condense the", "condense this", "condense following",
 		"synthesize the", "synthesise the",
 	}
-	for _, kw := range summarizeKeywords {
+	for _, kw := range phraseKeywords {
 		if strings.Contains(lower, kw) {
 			return true
 		}
 	}
 	return false
+}
+
+// containsKeyword reports whether kw appears in s as its own token (not as a
+// substring of a longer word like "summarized" for kw "summarize").
+func containsKeyword(s, kw string) bool {
+	if kw == "" {
+		return false
+	}
+	idx := 0
+	for {
+		i := strings.Index(s[idx:], kw)
+		if i < 0 {
+			return false
+		}
+		i += idx
+		beforeOK := i == 0 || !isTokenChar(s[i-1])
+		afterOK := i+len(kw) >= len(s) || !isTokenChar(s[i+len(kw)])
+		if beforeOK && afterOK {
+			return true
+		}
+		idx = i + 1
+	}
+}
+
+func isTokenChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '_' || b == '-'
 }
 
 // isSimpleLookup returns true when the message looks like a quick lookup or

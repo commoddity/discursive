@@ -79,22 +79,19 @@ and defaults to `low` (cost-conscious, mirroring Kimi K3).
 || Coding plan | https://docs.z.ai/devpack/overview                  ||
 || Console     | https://z.ai/manage-apikey/billing                  ||
 
-## Plan concurrency (capacity model)
+## Plan concurrency (hard routing)
 
-`glm-4.7` (and the whole GLM Coding Plan) allows ~2 concurrent requests.
-The gateway enforces ONE shared budget (`zaiSem`, cap 2) across every
-coding-plan client — chat, router downgrades, and the `glm-4.6v` vision
-worker. When the budget is full:
+The GLM Coding Plan allows ~2 concurrent requests upstream. The gateway does
+**not** enforce a local semaphore or overflow to other providers (removed 2026-08).
 
-- **Direct glm-4.7/glm-5.3**: ~2s grace wait, then **overflow** to real
-  `deepseek-v4-flash`/`deepseek-v4-pro` via `acquireZaiLaneOrOverflow`
-  (`fallbackTargetFor`; OpenRouter equivalents only during DeepSeek peak).
-- **Router downgrades**: non-blocking, overflow immediately via
-  `selectDowngradeLane`.
-- **Vision**: blocks on `zaiSem` (chat yields first).
+- **Chat**: requests go to the resolved Z.AI model; HTTP 429 →
+  `doUpstreamWithRetry()` (3×, 250/500/1000ms backoff).
+- **Router downgrades**: within Z.AI only (`glm-5.3` → `glm-4.7`).
+- **Vision**: `config.VisionModelFor(ProviderZai)` → `glm-4.6v` for Z.AI-routed
+  requests; other providers use their own vision models.
 
-Never queue on glm-4.7 when a fast lane exists — queueing is the perceived
-slowness. Overflow policy lives in `internal/gateway/fallback.go`.
+Plan capacity is an upstream constraint — reduce parallel Z.AI load or accept
+429 retries; no cross-provider overflow.
 
 ## Color (usage UI)
 
@@ -128,6 +125,6 @@ Coding Plan tiers (2026-08): **Lite** = 2,000 / 5-hour, 10,000 / weekly;
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| GLM-4.7 (or glm-5.3) turns take 20-45s when the main chat + parallel subagents all use it | Coding-plan concurrency is ~2; excess requests **queue inside the gateway** (or 429 upstream) instead of overflowing to a fast model. A queued glm-4.7 request is far slower than a ~2s cached deepseek-v4-flash turn. | One shared `zaiSem` (cap 2) budgets ALL coding-plan traffic. Direct requests use `acquireZaiLaneOrOverflow` (2s grace, then overflow to real deepseek-v4-flash/pro; OpenRouter only during peak). Buy = don't queue: keep glm-4.7 for the 2 highest-value concurrent turns only. ||
+|| GLM-4.7 (or glm-5.3) turns take 20-45s when the main chat + parallel subagents all use it | Coding-plan concurrency ~2 upstream; requests queue or 429. | No gateway overflow. Subagent router downgrades within Z.AI to `glm-4.7`. Reduce parallel Z.AI load; `doUpstreamWithRetry` handles transient 429s. ||
 
 <!-- last-verified: 2026-08 -->

@@ -496,6 +496,18 @@ This is a read-only exploration task — do not modify any files.`},
 			wantOverride: "",
 		},
 		{
+			name: "complex reasoning: summarized-chats path must not trigger summarization downgrade",
+			body: map[string]any{
+				"model": "kimi-k3",
+				"messages": []any{
+					map[string]any{"role": "system", "content": longSystemPrompt},
+					map[string]any{"role": "user", "content": "Catch up on context:\n/home/pascal/.cursor/summarized-chats/unlearn-reader/2026-08-26T0954--f02-t04-sync-schema.md\n\nAnd everything in the plan so far:\n/home/pascal/local-code/unlearn-reader/planning/mvp\n\nWe are currently working on finishing F02 - T04.\n\nGOAL\n1. Design the data model such that it supports all of the above.\n2. Update the plan so that it aligns with the understanding that will result from the grilling session.\n\nBefore making any plan or data model changes run a full /grilling session.\n\nYOU MUST USE A LARGE AI MODEL - Kimi k3 which is aliased as gpt-4o"},
+				},
+			},
+			wantClass:    ClassComplexReasoning,
+			wantOverride: "",
+		},
+		{
 			name: "unknown: ambiguous message → keep model (conservative)",
 			body: map[string]any{
 				"model": "deepseek-v4-pro",

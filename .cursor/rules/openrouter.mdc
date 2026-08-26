@@ -6,52 +6,53 @@ alwaysApply: false
 
 # OpenRouter Rules
 
-OpenRouter is used **only** as an internal peak-hour fallback provider for DeepSeek models. It is not advertised as a user-selectable provider; Cursor aliases map to direct providers and the gateway reroutes to OpenRouter upstream IDs during peak hours.
+OpenRouter is used **only** as an internal peak-hour transport for DeepSeek and
+Z.AI models that have OpenRouter twins in `config.openRouterTwins`. Cursor
+aliases map to direct providers; the gateway reroutes to OR upstream IDs during
+that provider's peak hours when an OpenRouter key is configured.
 
 ## HARD RULE: OpenRouter is peak-only
 
-OpenRouter may **only** be used while the target provider (DeepSeek) is in peak
-billing (per-provider windows; `DISCURSIVE_FORCE_PEAK` counts as peak). At all
-other times every path — peak reroute, subagent/router downgrade, glm-4.7 lane
-overflow, Z.AI lane overflow, sticky fallback, Z.AI 429-quota fallback, and the
-compression worker — uses the **real** provider's real model:
+OpenRouter may **only** be used while the **equivalent real provider** is in peak
+billing (`peakNow` in `peakguard.go`; `DISCURSIVE_FORCE_PEAK` counts as peak).
+At all other times every path uses the real provider's real model:
 
-- Downgrades/overflows → `deepseek-v4-flash` (small) / `deepseek-v4-pro` (big)
-- The compressor always runs direct DeepSeek flash
-- Subagent router candidates are exactly `deepseek-v4-flash` / `deepseek-v4-pro`
+- Peak reroute → `applyPeakReroute` + `config.OpenRouterTwinFor` (same-model twin)
+- Subagent/router downgrades → `config.SmallModelFor(provider)` (never cross-provider)
+- Compressor → request provider's small model (OR twin during that provider's peak)
+- No sticky fallback, no Z.AI→DeepSeek overflow, no 429 cross-provider fallback
 
-Enforcement is threefold:
-1. Central mapping: `Server.fallbackTargetFor(model, requestID)` in
-   `internal/gateway/fallback.go` is the only path that substitutes OpenRouter
-   ids (gated on peak + OR key). All fallback callers go through it.
-2. Send-time guard: `Server.isPeakAllowedOpenRouter` in `peakguard.go` runs
-   just before key/URL resolution; off-peak OpenRouter models are corrected
-   back to the real DeepSeek model and logged at ERROR.
-3. Tests: `TestOpenRouterOnlyDuringPeak` asserts every fallback/override path
-   returns a non-OpenRouter model when peak is off, and that the guard
-   corrects OR ids off-peak and keeps them under `DISCURSIVE_FORCE_PEAK`.
+Enforcement:
+1. Peak mapping: `applyPeakReroute` / `openRouterModelFor` in `peakguard.go`;
+   twins in `config/providers.go` (`openRouterTwins`).
+2. Send-time guard: `isPeakAllowedOpenRouter` corrects off-peak OR ids back to
+   real models; logs at ERROR.
+3. Tests: `TestOpenRouterOnlyDuringPeak` in `peakguard_test.go`.
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| OpenRouter charged/used outside peak windows | A fallback/override path hardcoded an OR id (pre-0.7.2 behavior) | Route through `fallbackTargetFor`; never hardcode OR ids at call sites |
-| `openrouter_guard: off-peak OpenRouter usage blocked` in logs | A new path produced an OR model off-peak; the guard corrected it | Find the producer and route it through `fallbackTargetFor` |
+| OpenRouter charged outside peak | Hardcoded OR id at call site | Route peak swaps through `applyPeakReroute`/`OpenRouterTwinFor`; never hardcode OR ids |
+| `openrouter_guard: off-peak OpenRouter usage blocked` | Producer emitted OR model off-peak | Fix producer to use real model off-peak; guard is last line of defense |
 
 ## Models
 
-| Upstream id                        | Fallback target | Size class |
-| ---------------------------------- | --------------- | ---------- |
-| `deepseek/deepseek-v4-flash-0731`  | small/flash     | small      |
-| `deepseek/deepseek-v4-pro-0813`    | big/pro         | big        |
+| Upstream id | Real model | Provider |
+| --- | --- | --- |
+| `deepseek/deepseek-v4-flash-0731` | `deepseek-v4-flash` | DeepSeek |
+| `deepseek/deepseek-v4-pro-0813` | `deepseek-v4-pro` | DeepSeek |
+| `z-ai/glm-5.3` | `glm-5.3[1m]` | Z.AI |
+| `z-ai/glm-4.7` | `glm-4.7` | Z.AI |
 
-Peak reroute mapping (non-downgraded traffic only):
-- `deepseek-v4-pro`, `glm-5.3`, `kimi-k3` → `deepseek/deepseek-v4-pro-0813`
-- everything else (`deepseek-v4-flash`, `glm-4.7`, `kimi-k2.7-code`, `thaura`) → `deepseek/deepseek-v4-flash-0731`
+Peak reroute mapping (non-downgraded traffic only; big vs small via `config.IsBigModel`):
+- `deepseek-v4-pro` → `deepseek/deepseek-v4-pro-0813`
+- `deepseek-v4-flash` → `deepseek/deepseek-v4-flash-0731`
+- `glm-5.3` / `glm-5.3[1m]` → `z-ai/glm-5.3`
+- `glm-4.7` → `z-ai/glm-4.7`
+- Moonshot, Thaura: no peak reroute
 
-All subagent/router downgrades, lane-full overflows, and Z.AI 429-quota
-fallbacks go through `Server.fallbackTargetFor` (fallback.go): real DeepSeek
-flash/pro off-peak, OpenRouter equivalents only while DeepSeek is in peak and
-an OR key exists. The compression worker always runs direct
-`deepseek-v4-flash`.
+Subagent/router downgrades stay on the same provider's small model. OR is not used
+for downgrades off-peak; on peak, `applyPeakReroute` may swap the routed model to
+its OR twin if one exists.
 
 ## API key
 
@@ -72,6 +73,8 @@ rates apply year-round.
 | ---------------------------------- | --------- | ----- | ------ |
 | `deepseek/deepseek-v4-flash-0731`  | $0.014    | $0.065 | $0.14  |
 | `deepseek/deepseek-v4-pro-0813`    | $0.022    | $0.66  | $1.98  |
+| `z-ai/glm-5.3`                     | $0.26     | $1.40  | $4.40  |
+| `z-ai/glm-4.7`                     | $0.11     | $0.60  | $2.20  |
 
 Typical blended (OpenRouter weighted average) informational rates shown in dashboard/README:
 - flash: $0.0476 in / $0.384 out

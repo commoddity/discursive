@@ -320,6 +320,28 @@
       box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.18);
     }
 
+    #balances-summary .bal-stat-link.bal-peak-glow {
+      border-color: rgba(94, 205, 128, 0.35);
+      box-shadow: 0 0 14px rgba(94, 205, 128, 0.28), inset 0 0 0 1px rgba(94, 205, 128, 0.18);
+    }
+
+    #balances-summary .bal-stat-link.bal-peak-glow:hover {
+      border-color: rgba(94, 205, 128, 0.5);
+      background: rgba(94, 205, 128, 0.08);
+      box-shadow: 0 0 18px rgba(94, 205, 128, 0.38), inset 0 0 0 1px rgba(94, 205, 128, 0.28);
+    }
+
+    #balances-summary .bal-stat-link.bal-offpeak-glow {
+      border-color: rgba(96, 165, 250, 0.35);
+      box-shadow: 0 0 14px rgba(96, 165, 250, 0.28), inset 0 0 0 1px rgba(96, 165, 250, 0.18);
+    }
+
+    #balances-summary .bal-stat-link.bal-offpeak-glow:hover {
+      border-color: rgba(96, 165, 250, 0.5);
+      background: rgba(96, 165, 250, 0.08);
+      box-shadow: 0 0 18px rgba(96, 165, 250, 0.38), inset 0 0 0 1px rgba(96, 165, 250, 0.28);
+    }
+
     .bal-stat-link .value {
       text-decoration: none;
     }
@@ -1396,7 +1418,13 @@
 <body>
   <div class="header">
     <img src="/static/discursive.png" alt="Discursive">
-    <div class="providers" id="provider-indicators" style="margin-left:auto"></div>
+    <div class="peak-indicator offpeak" id="peak-indicator" tabindex="0" role="status" aria-live="polite"
+         style="margin-left:auto">
+      <span class="peak-dot"></span>
+      <span id="peak-indicator-label">Off-peak</span>
+      <div class="peak-tooltip" id="peak-tooltip"></div>
+    </div>
+    <div class="providers" id="provider-indicators" style="margin-left:0"></div>
   </div>
 
   <div class="card" id="health-card">
@@ -1884,20 +1912,33 @@
       zai: {
         // Credit-based pricing (credits per 1M tokens), from official Coding
         // Plan multipliers per 10k tokens (credits = tokens × multiplier / 10000):
-        // GLM-5.3: in 6.9 / cached 1.7 / out 24; GLM-5.2 (deprecated but returned):
-        //   same USD rates as GLM-5.3 ($1.40/$0.26/$4.40) → 140/26/440 credits/MTok;
-        // GLM-4.7: 4.6 / 1.2 / 16; GLM-4.6V (vision worker, per devpack overview):
-        //   1.2 / 0.3 / 2.7 → 12/3/27 credits/MTok.
+        // GLM-5.3: 6.9 / 1.7 / 24 → 690 / 170 / 2400 credits/MTok
+        // GLM-4.7: 4.6 / 1.2 / 16 → 460 / 120 / 1600
+        // GLM-4.6V: 1.2 / 0.3 / 2.7 → 120 / 30 / 270
         // Off-peak (outside Mon–Fri 14:00–18:00 SGT) bills at 50%; these are
         // the standard (peak) rates, so estimates run high off-peak.
         'glm-5.3': { cache_hit: 170, input: 690, output: 2400 },
-        'glm-5.2': { cache_hit: 26, input: 140, output: 440 },  // deprecated, same USD as GLM-5.3
+        'glm-5.2': { cache_hit: 170, input: 690, output: 2400 },
         'glm-4.7': { cache_hit: 120, input: 460, output: 1600 },
         'glm-4.7-flash': { cache_hit: 0, input: 0, output: 0 },  // Free
         'glm-4.7-flashx': { cache_hit: 10, input: 70, output: 400 },
-        'glm-4.6v': { cache_hit: 3, input: 12, output: 27 },      // vision worker only
+        'glm-4.6v': { cache_hit: 30, input: 120, output: 270 },
       }
     };
+
+    // Visual credits→USD for stacking Z.AI against dollar-billed providers.
+    // PAYG list rates ($1.40/$4.40 per MTok) make subscription usage look 6–7×
+    // DeepSeek; those are not what the plan costs. A credit is a credit:
+    // monthly fee ÷ monthly quota. Pro plan: $64/mo, 60,000 credits/week.
+    // Source: usage.ZaiFlatFeeUSD + GLM Coding Plan quota.
+    const ZAI_WEEKLY_CREDITS = 60000;
+    const ZAI_WEEKS_PER_MONTH = 52 / 12;
+    const ZAI_FLAT_FEE_USD_FALLBACK = 64;
+
+    function zaiUsdPerCredit() {
+      const fee = (zaiFlatFeeUsd && zaiFlatFeeUsd > 0) ? zaiFlatFeeUsd : ZAI_FLAT_FEE_USD_FALLBACK;
+      return fee / (ZAI_WEEKLY_CREDITS * ZAI_WEEKS_PER_MONTH);
+    }
 
     function pricingTooltip(provider) {
       const models = PRICING[provider];
@@ -2512,17 +2553,36 @@
       return Math.round(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
     }
 
+    function zaiModelKey(model) {
+      return (model || '').replace(/\[[0-9]+[mk]\]$/i, '');
+    }
+
     // Z.AI credits consumed by a by-day row, from token counts at the flat
-    // points-per-MTok rate card. Unknown models (e.g. glm-4.6v vision worker)
-    // return null rather than a misleading zero.
+    // points-per-MTok rate card. Unknown models return null rather than a
+    // misleading zero. These are peak (standard) rates; server zai_credits
+    // already applies the 50% off-peak factor per event.
     function zaiCredits(item) {
-      // By-day rows carry the real model id, which may include the long-context
-      // suffix (e.g. "glm-5.3[1m]"); strip it for rate-card lookup.
-      const p = PRICING.zai[item.model.replace(/\[[0-9]+[mk]\]$/i, '')] || PRICING.zai[item.model];
+      const p = PRICING.zai[zaiModelKey(item.model)] || PRICING.zai[item.model];
       if (!p) return null;
       const hit = item.cache_hit_tokens || 0;
       const miss = Math.max(0, (item.tokens_in || 0) - hit);
       return (hit / 1e6) * p.cache_hit + (miss / 1e6) * p.input + (item.tokens_out || 0) / 1e6 * p.output;
+    }
+
+    // Visual-only USD equivalent for stacking Z.AI against dollar-billed
+    // providers. Credits × (plan fee / monthly quota). Off-peak is already
+    // in the credit count. Not billed spend.
+    function zaiVisualUSD(item) {
+      if (!item) return 0;
+      const credits = (item.zai_credits != null && item.zai_credits > 0) ? item.zai_credits : zaiCredits(item);
+      if (credits == null || credits <= 0) return 0;
+      return credits * zaiUsdPerCredit();
+    }
+
+    function barValue(item) {
+      if (!item) return 0;
+      if (item.provider === 'zai') return zaiVisualUSD(item);
+      return +item.cost || +item.est_usd || 0;
     }
 
     function balanceToUSD(b) {
@@ -2572,6 +2632,22 @@
       applyBalancesVisibility();
     }
 
+    function isPeakFallbackActive(utcMs) {
+      return deepseekIsPeak(utcMs) || zaiIsPeak(utcMs);
+    }
+
+    function balancePeakGlowClass(provider) {
+      const peakActive = isPeakFallbackActive(Date.now());
+      if (peakActive) {
+        if (provider === 'openrouter' || provider === 'moonshot' || provider === 'thaura') {
+          return ' bal-peak-glow';
+        }
+      } else if (provider === 'zai' || provider === 'deepseek') {
+        return ' bal-offpeak-glow';
+      }
+      return '';
+    }
+
     function renderBalanceStat(provider, b) {
       const href = TOPUP_URLS[provider] || '#';
       const name = provider.charAt(0).toUpperCase() + provider.slice(1);
@@ -2583,8 +2659,9 @@
       const isTipProv = provider === 'moonshot' || provider === 'deepseek' || provider === 'openrouter'; // carriers with confirmed spend or balance
       const blurCls = getBalancesVisible() ? '' : ' gw-key-blur';
       const tipClass = isZai ? ' zai-hover' : (isTipProv ? ' bal-tip-hover' : '');
+      const glowClass = balancePeakGlowClass(provider);
       const wrap = (inner) =>
-        '<div class="stat"><a class="bal-stat-link' + tipClass + '" href="' + href + '" target="_blank" rel="noopener" data-provider="' + provider + '"' + (isZai || isTipProv ? '' : ' title="Top up ' + name + '"') + '>' +
+        '<div class="stat"><a class="bal-stat-link' + tipClass + glowClass + '" href="' + href + '" target="_blank" rel="noopener" data-provider="' + provider + '"' + (isZai || isTipProv ? '' : ' title="Top up ' + name + '"') + '>' +
         inner +
         '</a></div>';
 
@@ -2647,8 +2724,12 @@
         document.getElementById('balances-loading').style.display = 'none';
         document.getElementById('balances-error').style.display = 'none';
         const div = document.getElementById('balances-summary');
-        const order = ['zai', 'deepseek', 'moonshot', 'openrouter'];
-        const active = order.filter(id => data[id] && data[id].configured);
+        const peakActive = isPeakFallbackActive(Date.now());
+        const order = ['zai', 'deepseek', 'moonshot', 'thaura', 'openrouter'];
+        let active = order.filter(id => data[id] && data[id].configured);
+        if (!peakActive) {
+          active = active.filter(id => id !== 'openrouter');
+        }
         const cards = active.map(id => renderBalanceStat(id, data[id])).join('');
         div.style.display = cards ? 'grid' : 'none';
         div.style.setProperty('--bal-cols', String(active.length || 1));
@@ -3080,7 +3161,7 @@
             data: labels.map(b => {
               const items = bucketMap[b];
               const found = items.find(i => i.provider + '::' + i.model === key);
-              return found ? found.cost : 0;
+              return found ? barValue(found) : 0;
             }),
             backgroundColor: gradient,
             borderRadius: 0,
@@ -3132,13 +3213,14 @@
           }
         });
         document.getElementById('by-period-legend').style.display = 'none';
-        // Z.AI bar-graph rows are token-based estimates (relative usage cue),
-        // not billed spend; hard spend totals (MTD / /api/spend) exclude Z.AI
-        // and show the subscription only in the month projection.
+        // Z.AI bars are subscription-implied USD (plan fee ÷ monthly credits)
+        // so they stack to-scale with dollar-billed providers. Not billed —
+        // tooltips still show coding-plan credits. Hard spend totals exclude
+        // Z.AI (subscription shown in the month projection).
         const hasZaiRow = rows.some(r => r.provider === 'zai');
         document.getElementById('by-period-note').innerHTML = hasZaiRow
           ? '<div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-top:6px">' +
-            'Z.AI values are token-based estimates for relative usage, not billed spend. ' +
+            'Z.AI bars are a visual USD equivalent (plan fee ÷ credit quota, not billed). Tooltips show coding-plan credits. ' +
             'Hard spend totals exclude Z.AI (subscription shown in the month projection).</div>'
           : '';
       } catch (e) { /* chart stays empty */ }
@@ -3160,7 +3242,7 @@
 
           const i = tooltip.dataPoints[0].dataIndex;
           const label = tooltip.dataPoints[0].label;
-          const items = (bucketMap[label] || []).filter(it => +it.cost > 0);
+          const items = (bucketMap[label] || []).filter(it => barValue(it) > 0);
 
           // Group items by provider (only those with non-zero cost)
           const byProvider = {};
@@ -3186,7 +3268,15 @@
               '\u003cdiv style="width:80px;height:33px"\u003e\u003cimg src="' + logoSrc + '" style="width:80px;height:33px;object-fit:contain" alt="' + escapeHtml(prov) + '"\u003e\u003c/div\u003e' +
               '\u003c/div\u003e';
             for (const item of provItems) {
-              html += '\u003cdiv class="tt-row" style="padding-left:0"\u003e' + escapeHtml(item.model) + ': ' + (item.provider === 'zai' && item.zai_credits != null && item.zai_credits > 0 ? fmtCredits(item.zai_credits) + ' credits' : (item.provider === 'zai' && zaiCredits(item) != null ? fmtCredits(zaiCredits(item)) + ' credits' : fmtMoney(item.cost))) + '\u003c/div\u003e';
+              let line;
+              if (item.provider === 'zai') {
+                const credits = item.zai_credits != null && item.zai_credits > 0 ? item.zai_credits : zaiCredits(item);
+                line = escapeHtml(item.model) + ': ' + (credits != null ? fmtCredits(credits) + ' credits' : fmtMoney(barValue(item))) +
+                  ' <span style="color:var(--text-muted);font-weight:400">(~' + fmtMoney(barValue(item)) + ' visual)</span>';
+              } else {
+                line = escapeHtml(item.model) + ': ' + fmtMoney(item.cost);
+              }
+              html += '\u003cdiv class="tt-row" style="padding-left:0"\u003e' + line + '\u003c/div\u003e';
             }
           }
 
@@ -3257,16 +3347,19 @@
         const modelColors = hasData ? models.map(m => modelColor(m.provider, m.model)) : ['#8b949e'];
         const modelLight = hasData ? models.map(m => providerLight(m.provider)) : ['#c9d1d9'];
 
-        // Compute cache-hit vs cache-miss dollar split per model
+        // Compute cache-hit vs cache-miss dollar split per model.
+        // Z.AI uses subscription-implied USD (not billed) so bars compare to-scale.
         const missData = hasData ? models.map(m => {
+          const usd = m.provider === 'zai' ? zaiVisualUSD(m) : m.est_usd;
           const denom = m.cache_miss_tokens + m.cache_hit_tokens;
-          if (denom === 0) return m.est_usd;
-          return Number((m.est_usd * m.cache_miss_tokens / denom).toFixed(6));
+          if (denom === 0) return usd;
+          return Number((usd * m.cache_miss_tokens / denom).toFixed(6));
         }) : [0];
         const hitData = hasData ? models.map(m => {
+          const usd = m.provider === 'zai' ? zaiVisualUSD(m) : m.est_usd;
           const denom = m.cache_miss_tokens + m.cache_hit_tokens;
           if (denom === 0) return 0;
-          return Number((m.est_usd * m.cache_hit_tokens / denom).toFixed(6));
+          return Number((usd * m.cache_hit_tokens / denom).toFixed(6));
         }) : [0];
 
         const ctxModel = document.getElementById('chart-by-model').getContext('2d');
@@ -3296,11 +3389,11 @@
             }
           }
         });
-        // Z.AI rows are token-based estimates (relative usage cue), not billed.
+        // Z.AI bars are a visual USD equivalent (plan fee ÷ credit quota), not billed spend.
         const hasZaiModel = models.some(m => m.provider === 'zai');
         document.getElementById('by-model-note').innerHTML = hasZaiModel
           ? '<div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-top:6px">' +
-            'Z.AI values are token-based estimates for relative usage, not billed spend.</div>'
+            'Z.AI bars are a visual USD equivalent (plan fee ÷ credit quota, not billed).</div>'
           : '';
       } catch (e) { /* chart stays empty */ }
     }
@@ -3326,10 +3419,20 @@
         for (const b of buckets) {
           totals.moonshot += b.moonshot || 0;
           totals.deepseek += b.deepseek || 0;
-          totals.zai += b.zai || 0;
           totals.thaura += b.thaura || 0;
           totals.openrouter += b.openrouter || 0;
         }
+        // Z.AI: visual USD from credits × (plan fee / monthly quota).
+        try {
+          let modelUrl = '/api/by-day-model?since=' + encodeURIComponent(since) + '&bucket=' + bucket;
+          if (params.until) {
+            modelUrl += '&until=' + encodeURIComponent(params.until);
+          }
+          const zaiRows = await api(modelUrl);
+          for (const r of (zaiRows || [])) {
+            if (r.provider === 'zai') totals.zai += zaiVisualUSD(r);
+          }
+        } catch (_) { /* leave zai at 0 */ }
         const provs = order.filter(p => totals[p] > 0);
         const hasData = provs.length > 0;
 
@@ -3367,7 +3470,7 @@
         let noteHtml = '';
         if (hasData && (totals.zai > 0 || totals.thaura > 0 || totals.openrouter > 0)) {
           noteHtml = '<div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-top:6px">' +
-            'Includes est. USD (Z.AI + Thaura + OpenRouter). Moonshot/DeepSeek are billing-confirmed.</div>';
+            'Includes est. USD (Thaura + OpenRouter). Z.AI is a visual plan-credit equivalent, not billed. Moonshot/DeepSeek are billing-confirmed.</div>';
         }
         document.getElementById('by-provider-note').innerHTML = noteHtml;
       } catch (e) { /* chart stays empty */ }
@@ -3390,12 +3493,18 @@
           const prov = provs[i];
           const name = prov === 'openrouter' ? 'OpenRouter' : prov.charAt(0).toUpperCase() + prov.slice(1);
           const isConfirmed = prov === 'moonshot' || prov === 'deepseek';
+          const isZaiVisual = prov === 'zai';
           const val = totals[prov] || 0;
 
           let html = '';
           html += '<div class="tt-title">' + escapeHtml(name) + '</div>';
-          html += '<div class="tt-row">' + (isConfirmed ? 'Confirmed: ' : 'Est. USD: ') + fmtMoney(val) + '</div>';
-          if (!isConfirmed) html += '<div class="tt-row">token-estimated from usage</div>';
+          if (isZaiVisual) {
+            html += '<div class="tt-row">Visual USD: ' + fmtMoney(val) + '</div>';
+            html += '<div class="tt-row">plan-credit equivalent, not billed</div>';
+          } else {
+            html += '<div class="tt-row">' + (isConfirmed ? 'Confirmed: ' : 'Est. USD: ') + fmtMoney(val) + '</div>';
+            if (!isConfirmed) html += '<div class="tt-row">token-estimated from usage</div>';
+          }
 
           let el = document.getElementById('custom-tooltip');
           if (!el) {
@@ -3618,6 +3727,8 @@
 
     // --- Auto-refresh polling (paused when tab is hidden) ---
     let _pollTimer = null;
+    let _peakInterval = null;
+    let _lastPeakFallback = null;
     let _uptimeBase = 0;       // server-reported uptime at last sync
     let _uptimeLastSync = 0;   // Date.now() when we last synced
     let _uptimeInterval = null; // 1-second ticker
@@ -3803,7 +3914,11 @@
       const zNextLabel = zPeak ? 'Off-peak' : 'Peak';
       const zCountdown = fmtPeakDur(zBoundary - now) + ' (' + peakLocalTime(zBoundary) + ')';
 
-      const anyPeak = dsPeak || zPeak;
+      const anyPeak = isPeakFallbackActive(now);
+      if (_lastPeakFallback !== null && _lastPeakFallback !== anyPeak) {
+        loadBalances();
+      }
+      _lastPeakFallback = anyPeak;
       el.classList.toggle('peak', anyPeak);
       el.classList.toggle('offpeak', !anyPeak);
       label.textContent = anyPeak ? 'Peak' : 'Off-peak';

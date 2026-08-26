@@ -161,13 +161,11 @@ func TestVerbosityEnabled_StreamingToolCallsPassthrough(t *testing.T) {
 // TestVerbosityEnabled_DowngradedToFlashAppliesControls verifies that when a
 // request targeting deepseek-v4-pro (o1 alias) is downgraded by the subagent
 // router, the verbosity controls still apply to the FINALLY-served model.
-// This confirms verbosity runs AFTER model override — and that OpenRouter
-// DeepSeek flash now also carries verbosity config.
+// This confirms verbosity runs AFTER model override.
 func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 	// "What is..." (simple lookup) triggers a subagent-router downgrade from
-	// pro → the default flash model. defaultFlashModel is OpenRouter DeepSeek
-	// flash-0731, and verbosity covers it too, so the downgraded request DOES
-	// get the directive + token cap keyed on the final served model.
+	// pro → deepseek-v4-flash (same-provider small). No OpenRouter key here so
+	// peak reroute cannot swap the model — keeps this test time-independent.
 	var upstreamBody map[string]any
 	var upstreamModel string
 	upstream := func(w http.ResponseWriter, r *http.Request) {
@@ -185,9 +183,6 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
 		t.Fatal(err)
 	}
-	if err := settings.SetOpenRouterKey(dataRoot, "sk-or"); err != nil {
-		t.Fatal(err)
-	}
 	if err := config.Save(dataRoot, settings); err != nil {
 		t.Fatal(err)
 	}
@@ -203,8 +198,7 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 		HTTPClient:            up.Client(),
 		SubAgentRouterEnabled: true,
 		ChatURLOverride: map[config.Provider]string{
-			config.ProviderDeepSeek:   up.URL + "/deepseek/chat/completions",
-			config.ProviderOpenRouter: up.URL + "/openrouter/chat/completions",
+			config.ProviderDeepSeek: up.URL + "/deepseek/chat/completions",
 		},
 	})
 	if err != nil {
@@ -226,8 +220,7 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 		t.Fatalf("status %d: %s", res.StatusCode, body)
 	}
 
-	// The request must have been downgraded to the real DeepSeek flash model
-	// (OpenRouter is peak-only; this test runs off-peak).
+	// Downgraded to same-provider small; no OR key → no peak reroute swap.
 	if upstreamModel != "deepseek-v4-flash" {
 		t.Fatalf("expected downgrade to deepseek-v4-flash, got %q", upstreamModel)
 	}
