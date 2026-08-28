@@ -130,10 +130,11 @@ func (s *Server) recordAuxUsage(sessionID string, provider config.Provider, mode
 
 // sseUsageScanner extracts usage from streamed SSE chunks.
 type sseUsageScanner struct {
-	buf   strings.Builder
-	usage *tokenUsage
-	found bool
-	err   *modelNotAvailableError // set when SSE chunk contains an error
+	buf    strings.Builder
+	usage  *tokenUsage
+	found  bool
+	orHost string
+	err    *modelNotAvailableError // set when SSE chunk contains an error
 }
 
 type modelNotAvailableError struct {
@@ -172,6 +173,9 @@ func (sc *sseUsageScanner) consumeLine(line string) {
 		parsed := parseUsageObject(u)
 		sc.usage = &parsed
 		sc.found = true
+	}
+	if sc.orHost == "" {
+		sc.orHost = openRouterHostFromObject(obj)
 	}
 	if sc.err == nil {
 		sc.err = extractModelNotAvailableError(obj)

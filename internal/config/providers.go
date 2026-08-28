@@ -12,8 +12,8 @@ const ModelZaiGLM46v = "glm-4.6v"
 // ModelOpenRouterZaiGLM53 is the OpenRouter upstream id for glm-5.3 peak reroute.
 const ModelOpenRouterZaiGLM53 = "z-ai/glm-5.3"
 
-// ModelOpenRouterZaiGLM47 is the OpenRouter upstream id for glm-4.7 peak reroute.
-const ModelOpenRouterZaiGLM47 = "z-ai/glm-4.7"
+// ModelOpenRouterZaiGLM53Flash is the OpenRouter upstream id for glm-5.3-flash peak reroute.
+const ModelOpenRouterZaiGLM53Flash = "z-ai/glm-5.3-flash"
 
 // ProviderSpec is the canonical model catalog row for one chat provider.
 type ProviderSpec struct {
@@ -32,13 +32,13 @@ var providerCatalog = map[Provider]ProviderSpec{
 	},
 	ProviderDeepSeek: {
 		BigModel:    ModelDeepSeekV4Pro,
-		SmallModel:  ModelDeepSeekV4Flash,
+		SmallModel:  ModelDeepSeekV4FlashVisionExp,
 		VisionModel: ModelDeepSeekV4FlashVisionExp,
 		HasPeak:     true,
 	},
 	ProviderZai: {
 		BigModel:    ModelZaiGLM53,
-		SmallModel:  ModelZaiGLM47,
+		SmallModel:  ModelZaiGLM53Flash,
 		VisionModel: ModelZaiGLM46v,
 		HasPeak:     true,
 	},
@@ -52,10 +52,11 @@ var providerCatalog = map[Provider]ProviderSpec{
 
 // openRouterTwins maps real model ids to OpenRouter upstream ids for peak reroute.
 var openRouterTwins = map[string]string{
-	ModelDeepSeekV4Pro:   ModelOpenRouterDeepSeekV4Pro,
-	ModelDeepSeekV4Flash: ModelOpenRouterDeepSeekV4Flash,
-	ModelZaiGLM53:        ModelOpenRouterZaiGLM53,
-	ModelZaiGLM47:        ModelOpenRouterZaiGLM47,
+	ModelDeepSeekV4Pro:            ModelOpenRouterDeepSeekV4Pro,
+	ModelDeepSeekV4Flash:          ModelOpenRouterDeepSeekV4Flash, // legacy id
+	ModelDeepSeekV4FlashVisionExp: ModelOpenRouterDeepSeekV4Flash,
+	ModelZaiGLM53:                 ModelOpenRouterZaiGLM53,
+	ModelZaiGLM53Flash:            ModelOpenRouterZaiGLM53Flash,
 }
 
 // modelToProvider maps every known real or OpenRouter model id to its chat provider.
@@ -73,6 +74,9 @@ func init() {
 	for real, orID := range openRouterTwins {
 		modelToProvider[orID] = modelToProvider[real]
 	}
+	// Legacy ids still accepted by ResolveModel.
+	modelToProvider["glm-4.7"] = ProviderZai
+	modelToProvider[ModelDeepSeekV4Flash] = ProviderDeepSeek
 }
 
 // ProviderSpecFor returns the catalog row for provider.
@@ -124,6 +128,25 @@ func VisionModelFor(provider Provider) string {
 	return spec.VisionModel
 }
 
+// HasNativeVision reports whether the chat model accepts image_url natively,
+// so the gateway should skip the describer. Allowlisted by the id actually
+// sent upstream — OpenRouter's DeepSeek flash twin is text-only, so it is
+// not native even though it maps back to deepseek-v4-flash-vision-exp.
+func HasNativeVision(model string) bool {
+	model = strings.TrimSpace(model)
+	if base, ok := strings.CutSuffix(model, "[1m]"); ok {
+		model = base
+	}
+	switch model {
+	case ModelZaiGLM53Flash, ModelOpenRouterZaiGLM53Flash, "glm-4.7":
+		return true
+	case ModelDeepSeekV4FlashVisionExp:
+		return true
+	default:
+		return false
+	}
+}
+
 // OpenRouterTwinFor returns the OpenRouter upstream id for a real model id.
 func OpenRouterTwinFor(model string) (string, bool) {
 	if base, ok := strings.CutSuffix(model, "[1m]"); ok {
@@ -134,7 +157,16 @@ func OpenRouterTwinFor(model string) (string, bool) {
 }
 
 // OpenRouterRealFor maps an OpenRouter id back to the real model and provider.
+// Catalog big/small models win over legacy ids that share a twin
+// (e.g. deepseek-v4-flash and deepseek-v4-flash-vision-exp → same OR flash id).
 func OpenRouterRealFor(orID string) (string, Provider, bool) {
+	for p, spec := range providerCatalog {
+		for _, m := range []string{spec.BigModel, spec.SmallModel} {
+			if twin, ok := openRouterTwins[m]; ok && twin == orID {
+				return m, p, true
+			}
+		}
+	}
 	for real, twin := range openRouterTwins {
 		if twin == orID {
 			p, ok := modelToProvider[real]

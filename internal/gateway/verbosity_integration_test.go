@@ -221,8 +221,8 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 	}
 
 	// Downgraded to same-provider small; no OR key → no peak reroute swap.
-	if upstreamModel != "deepseek-v4-flash" {
-		t.Fatalf("expected downgrade to deepseek-v4-flash, got %q", upstreamModel)
+	if upstreamModel != "deepseek-v4-flash-vision-exp" {
+		t.Fatalf("expected downgrade to deepseek-v4-flash-vision-exp, got %q", upstreamModel)
 	}
 
 	// DeepSeek flash has verbosity config — the directive must be injected and

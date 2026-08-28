@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
+	"github.com/commoddity/discursive/internal/openrouter"
 )
 
 // KeySource supplies decrypted upstream API keys for balance checks.
@@ -43,6 +44,8 @@ type ProviderBalance struct {
 	// used to net out recharge increases when computing confirmed spend.
 	ToppedUp float64 `json:"topped_up,omitempty"`
 	Error    string  `json:"error,omitempty"`
+	// PeakUsable is true when OpenRouter has prepaid credits for peak reroute.
+	PeakUsable *bool `json:"peak_usable,omitempty"`
 	// Raw holds the upstream API response for tooltip details (OpenRouter only).
 	Raw map[string]any `json:"raw,omitempty"`
 }
@@ -451,46 +454,37 @@ func fetchZaiBalance(client *http.Client, getKey func() (string, bool)) Provider
 
 func fetchOpenRouterBalance(client *http.Client, getKey func() (string, bool)) ProviderBalance {
 	if getKey == nil {
-		return ProviderBalance{Configured: false}
+		return ProviderBalance{Configured: false, PeakUsable: boolPtr(false)}
 	}
 	key, ok := getKey()
 	if !ok || key == "" {
-		return ProviderBalance{Configured: false}
+		return ProviderBalance{Configured: false, PeakUsable: boolPtr(false)}
 	}
 
-	url := "https://openrouter.ai/api/v1/credits"
-	body, status, err := getJSON(client, url, key)
+	credits, err := openrouter.FetchCredits(client, key)
 	if err != nil {
-		return ProviderBalance{Configured: true, Error: err.Error()}
-	}
-	if status == http.StatusUnauthorized || status == http.StatusForbidden {
-		return ProviderBalance{Configured: true, Error: "unauthorized (credits may require a management key)"}
-	}
-	if status != http.StatusOK {
-		return ProviderBalance{Configured: true, Error: fmt.Sprintf("upstream status %d", status)}
+		errMsg := err.Error()
+		if errMsg == "unauthorized" {
+			errMsg = "unauthorized (credits may require a management key)"
+		}
+		return ProviderBalance{Configured: true, Error: errMsg, PeakUsable: boolPtr(false)}
 	}
 
-	var resp struct {
-		Data struct {
-			TotalCredits float64 `json:"total_credits"`
-			TotalUsage   float64 `json:"total_usage"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return ProviderBalance{Configured: true, Error: "invalid response"}
-	}
-
-	remaining := resp.Data.TotalCredits - resp.Data.TotalUsage
+	remaining := credits.Remaining
+	peakUsable := openrouter.PeakRerouteUsable(true, remaining, "")
 	return ProviderBalance{
 		Configured: true,
 		Amount:     &remaining,
 		Currency:   "USD",
+		PeakUsable: &peakUsable,
 		Raw: map[string]any{
-			"total_credits": resp.Data.TotalCredits,
-			"total_usage":   resp.Data.TotalUsage,
+			"total_credits": credits.TotalCredits,
+			"total_usage":   credits.TotalUsage,
 		},
 	}
 }
+
+func boolPtr(v bool) *bool { return &v }
 
 type zaiCreditLimit struct {
 	Type          string `json:"type"`

@@ -252,7 +252,7 @@ func TestLive_ChatCompletion_DeepSeek(t *testing.T) {
 		t.Fatalf("expected DEEPSEEK in content, got: %s", content)
 	}
 
-	verifyUsage(t, dataRoot, config.ProviderDeepSeek, "deepseek-v4-flash")
+	verifyUsage(t, dataRoot, config.ProviderDeepSeek, "deepseek-v4-flash-vision-exp")
 }
 
 // ---------------------------------------------------------------------------
@@ -333,7 +333,7 @@ func TestLive_ToolSchemaSanitized_DeepSeek(t *testing.T) {
 		t.Fatalf("status %d body %s", res.StatusCode, body)
 	}
 
-	verifyUsage(t, dataRoot, config.ProviderDeepSeek, "deepseek-v4-flash")
+	verifyUsage(t, dataRoot, config.ProviderDeepSeek, "deepseek-v4-flash-vision-exp")
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +509,7 @@ func TestLive_MCPToolNames_DeepSeek(t *testing.T) {
 		t.Fatalf("status %d body %s", res.StatusCode, body)
 	}
 
-	verifyUsage(t, dataRoot, config.ProviderDeepSeek, "deepseek-v4-flash")
+	verifyUsage(t, dataRoot, config.ProviderDeepSeek, "deepseek-v4-flash-vision-exp")
 }
 
 // ---------------------------------------------------------------------------

@@ -67,7 +67,7 @@ When a task spans multiple areas, read every applicable rule file before startin
   routes by **alias→provider→model** to **Moonshot Kimi** and/or **DeepSeek**,
   exposes a public HTTPS tunnel (Cursor cloud cannot hit localhost). Cursor is
   configured manually with the gateway API key (never upstream provider keys)
-- **Providers**: Moonshot (`kimi-k3`, `kimi-k2.7-code`), DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`), Thaura (`thaura`), Z.AI (`glm-5.3`, `glm-4.7`), and OpenRouter (`deepseek/deepseek-v4-flash-0731`, `deepseek/deepseek-v4-pro-0813`, `z-ai/glm-5.3`, `z-ai/glm-4.7`) as an internal peak-hour transport for DeepSeek and Z.AI. Switching is **setting the Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
+- **Providers**: Moonshot (`kimi-k3`, `kimi-k2.7-code`), DeepSeek (`deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`), Thaura (`thaura`), Z.AI (`glm-5.3`, `glm-5.3-flash`), and OpenRouter (`deepseek/deepseek-v4-flash-0731`, `deepseek/deepseek-v4-pro-0813`, `z-ai/glm-5.3`, `z-ai/glm-5.3-flash`) as an internal peak-hour transport for DeepSeek and Z.AI. Switching is **setting the Cursor alias** — see alias map in `gateway.mdc` / `cursor-settings.mdc`
 - **Runtime**: Go **1.26.5+**; host process — **not** Docker-primary, **not** Wails/Vue/Tauri
 - **CLI**: [Cobra](https://cobra.dev/) (`internal/cli/`); **no Viper** — config in `internal/config`
 - **Docs**: https://platform.kimi.ai/ · https://api-docs.deepseek.com/
@@ -79,7 +79,7 @@ internal/
   config/            # settings, paths, portable mode
   crypto/            # secrets + gateway key generation
   gateway/           # HTTP server, auth, sanitizer, responses adapter, optimizer
-  gateway/vision/    # image description worker (glm-4.6v); fail-fast image routing
+  gateway/vision/    # image description worker (glm-4.6v / flash-vision-exp); native passthrough for multimodal chat models
   tunnel/            # cloudflared named tunnel (default) + BYO URL mode
   usage/             # pricing table + per-session accounting
   usageui/           # embedded usage dashboard (HTTP server + static assets)

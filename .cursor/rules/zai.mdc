@@ -13,7 +13,8 @@ Z.AI (GLM) at **GLM Coding Plan** base URL `https://api.z.ai/api/coding/paas/v4`
 || Cursor alias    | Real model       | Description                                                         ||
 || --------------- | ---------------- | ------------------------------------------------------------------- ||
 || `gpt-4.1-turbo` | `glm-5.3[1m]`    | 1M context flagship; always thinks; reasoning_effort + prompt cache  ||
-|| `gpt-4.1`       | `glm-4.7`        | Budget workhorse; thinking on/off only                             ||
+|| `gpt-4.1`       | `glm-5.3-flash`  | Budget workhorse; 1M context; always thinks; ~3× cheaper than 5.3 ||
+|| (legacy)        | `glm-4.7`        | Accepted id; resolves upstream to `glm-5.3-flash`                   ||
 || (internal)      | `glm-4.6v`       | **Vision worker** only — describes images for ALL providers. Not user-selectable; not in `/v1/models`. Runs on the coding-plan endpoint. ||
 
 `glm-4.6v` has **no Cursor alias**. Invoked by `vision.Describer`; usage bills under `zai::glm-4.6v`.
@@ -26,35 +27,37 @@ Z.AI (GLM) at **GLM Coding Plan** base URL `https://api.z.ai/api/coding/paas/v4`
 
 ## Pricing (USD per 1M tokens)
 
-Source: https://docs.z.ai/guides/overview/pricing
+Source: https://docs.z.ai/guides/overview/pricing (promo rates for glm-5.3-flash until 2026-09-09 UTC+8)
 
-|| Model     | Cache hit | Cache miss | Output ||
-|| --------- | --------- | ---------- | ------ ||
-|| `glm-5.3` | $0.26     | $1.40      | $4.40  ||
-|| `glm-4.7` | $0.11     | $0.60      | $2.20  ||
+|| Model           | Cache hit | Cache miss | Output ||
+|| --------------- | --------- | ---------- | ------ ||
+|| `glm-5.3`       | $0.26     | $1.40      | $4.40  ||
+|| `glm-5.3-flash` | $0.015    | $0.075     | $0.25  ||
 
 > **GLM Coding Plan billing is points-based**, not per-token. The USD/MTok
-> table above converts multipliers (input 6.9, cached input 1.7, output 24 per 10k
-> tokens) at 1 USD = 10 points. Actual spend tracks plan credits; use this
-> table for estimation only. Peak/off-peak multipliers apply (off-peak = 50%).
+> table above converts multipliers (glm-5.3: input 6.9, cached 1.7, output 24;
+> glm-5.3-flash: input 2.3, cached 0.56, output 8 per 10k tokens) at 1 USD =
+> 10 points. Actual spend tracks plan credits; use this table for estimation
+> only. Peak/off-peak multipliers apply (off-peak = 50%).
 
 ## Sanitizer policy
 
-|| Model     | Parameter          | Action                                                                                                                                                             ||
-|| --------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ ||
-|| `glm-5.3` | `thinking`         | Always `{type: "enabled"}` — `disabled` is **not supported** and fails upstream                                                                                    ||
-|| `glm-5.3` | `reasoning_effort` | Always sent, `low`\|`high`\|`max`. Normalized via `normalizeZaiEffort()` → `off`/`none`/`minimal`↦`low`, `medium`↦`high`, `xhigh`↦`max`, `high`/`max` pass-through ||
-|| `glm-4.7` | `thinking`         | Set `{type: "enabled"\|"disabled"}` (toggle, live `ThinkingEnabled` map); no reasoning_effort support                                                              ||
-|| `glm-4.7` | `reasoning_effort` | Deleted                                                                                                                                                            ||
+|| Model           | Parameter          | Action                                                                                                                                                             ||
+|| --------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ ||
+|| `glm-5.3`       | `thinking`         | Always `{type: "enabled"}` — `disabled` is **not supported** and fails upstream                                                                                    ||
+|| `glm-5.3`       | `reasoning_effort` | Always sent, `low`\|`high`\|`max`. Normalized via `normalizeZaiEffort()` → `off`/`none`/`minimal`↦`low`, `medium`↦`high`, `xhigh`↦`max`, `high`/`max` pass-through ||
+|| `glm-5.3-flash` | `thinking`         | Same as glm-5.3 — always enabled                                                                                                                                   ||
+|| `glm-5.3-flash` | `reasoning_effort` | Same as glm-5.3                                                                                                                                                    ||
 
-The thinking-toggle set is a whitelist (`zaiThinkingToggle()`): `glm-4.7` only.
 Apply `PolicyZai` case in `applyThinkingPolicy()` and `stripUnsupportedParams()`.
+There is no Z.AI thinking on/off toggle (`ThinkingEnabledCatalog` is empty).
 
 ## Reasoning effort normalization (Z.AI-specific)
 
-`glm-5.3` always thinks — thinking cannot be disabled upstream, so the minimum
-effort level is `low`. The gateway normalizes effort via `normalizeZaiEffort()`
-to the values the catalog advertises (`low`, `high`, `max` are ever sent):
+`glm-5.3` and `glm-5.3-flash` always think — thinking cannot be disabled
+upstream, so the minimum effort level is `low`. The gateway normalizes effort
+via `normalizeZaiEffort()` to the values the catalog advertises (`low`, `high`,
+`max` are ever sent):
 
 || UI label    | Sent to Z.AI                                         ||
 || ----------- | ---------------------------------------------------- ||
@@ -64,9 +67,8 @@ to the values the catalog advertises (`low`, `high`, `max` are ever sent):
 || High        | `high`                                               ||
 || XHigh / Max | `max`                                                ||
 
-The `ReasoningEffortCatalog` entry for `glm-5.3` advertises: `low`, `high`, `max`
-and defaults to `low` (cost-conscious, mirroring Kimi K3).
-`glm-4.7` does not appear in the catalog (no effort selection).
+The `ReasoningEffortCatalog` entries for `glm-5.3` and `glm-5.3-flash` advertise:
+`low`, `high`, `max` and default to `low` (cost-conscious).
 
 ## Upstream config
 
@@ -81,17 +83,19 @@ and defaults to `low` (cost-conscious, mirroring Kimi K3).
 
 ## Plan concurrency (hard routing)
 
-The GLM Coding Plan allows ~2 concurrent requests upstream. The gateway does
-**not** enforce a local semaphore or overflow to other providers (removed 2026-08).
+Z.AI account concurrency (2026-08): `glm-5.3` = **11**; `glm-5.3-flash` = **50**.
+The gateway does **not** enforce a local semaphore or overflow to other providers.
 
 - **Chat**: requests go to the resolved Z.AI model; HTTP 429 →
   `doUpstreamWithRetry()` (3×, 250/500/1000ms backoff).
-- **Router downgrades**: within Z.AI only (`glm-5.3` → `glm-4.7`).
-- **Vision**: `config.VisionModelFor(ProviderZai)` → `glm-4.6v` for Z.AI-routed
-  requests; other providers use their own vision models.
+- **Router downgrades**: **none.** Cheap-class turns stay on the requested
+  Z.AI model (`glm-5.3` is never rewritten to `glm-5.3-flash`). Pick
+  `gpt-4.1` / `glm-5.3-flash` explicitly for the budget tier.
+- **Vision**: `glm-5.3-flash` (and its OpenRouter twin) keep `image_url` natively.
+  `glm-5.3` still uses `config.VisionModelFor(ProviderZai)` → `glm-4.6v`.
+  No local vision concurrency cap — `singleflight` dedupes identical images only.
 
-Plan capacity is an upstream constraint — reduce parallel Z.AI load or accept
-429 retries; no cross-provider overflow.
+Upstream concurrency is the limit; no cross-provider overflow.
 
 ## Color (usage UI)
 
@@ -121,10 +125,10 @@ Coding Plan tiers (2026-08): **Lite** = 2,000 / 5-hour, 10,000 / weekly;
 
 ## Symptoms & fixes
 
-### `GLM-4.7 feels extremely slow when used in more than one place`
+### `GLM feels extremely slow when used in more than one place`
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| GLM-4.7 (or glm-5.3) turns take 20-45s when the main chat + parallel subagents all use it | Coding-plan concurrency ~2 upstream; requests queue or 429. | No gateway overflow. Subagent router downgrades within Z.AI to `glm-4.7`. Reduce parallel Z.AI load; `doUpstreamWithRetry` handles transient 429s. ||
+|| glm-5.3 or glm-5.3-flash turns slow with many parallel subagents on the same model | Upstream concurrency (11 / 50) or quota; requests queue or 429. | No gateway overflow. Z.AI is never router-downgraded. Prefer `gpt-4.1` / flash for parallel subagents; `doUpstreamWithRetry` handles transient 429s. ||
 
 <!-- last-verified: 2026-08 -->

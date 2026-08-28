@@ -58,8 +58,7 @@ const (
 //
 //	POST https://api.z.ai/api/coding/paas/v4/chat/completions
 //
-// Z.AI uses thinking: {type: enabled|disabled} for glm-4.7 and
-// glm-5.3 always thinks (disabled is not supported): it supports
+// glm-5.3 and glm-5.3-flash always think (disabled is not supported):
 // reasoning_effort (low|high|max) with normalization: off/none/minimal → low,
 // medium → high, xhigh → max.
 //

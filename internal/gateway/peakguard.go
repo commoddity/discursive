@@ -115,9 +115,9 @@ func (s *Server) isPeakAllowedOpenRouter(model, requestID string) string {
 }
 
 // applyPeakReroute reroutes non-downgraded traffic to OpenRouter twins when
-// the requested model's provider is in peak hours and an OpenRouter key is
-// configured. Moonshot and Thaura never peak. It returns the (possibly
-// unchanged) model and whether a reroute happened.
+// the requested model's provider is in peak hours and OpenRouter is usable
+// (key configured with remaining prepaid balance). Moonshot and Thaura never
+// peak. It returns the (possibly unchanged) model and whether a reroute happened.
 func (s *Server) applyPeakReroute(model, requestID string, at time.Time) (string, bool) {
 	provider, ok := config.ProviderForModel(model)
 	if !ok {
@@ -127,7 +127,7 @@ func (s *Server) applyPeakReroute(model, requestID string, at time.Time) (string
 	if !ok || !spec.HasPeak || !peakNow(model, at) {
 		return model, false
 	}
-	if s.settings == nil || !s.settings.HasOpenRouterKey() {
+	if !s.openRouterPeakRerouteOK() {
 		return model, false
 	}
 	target := openRouterModelFor(model)

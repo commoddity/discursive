@@ -412,6 +412,90 @@ func TestCollectZaiCreditBuckets(t *testing.T) {
 
 func floatPtr(v float64) *float64 { return &v }
 
+func TestFetchOpenRouterBalance(t *testing.T) {
+	tests := []struct {
+		name       string
+		getKey     func() (string, bool)
+		body       string
+		status     int
+		wantConf   bool
+		wantPeak   *bool
+		wantAmt    *float64
+		wantErrSub string
+	}{
+		{
+			name:     "no key",
+			getKey:   func() (string, bool) { return "", false },
+			wantConf: false,
+			wantPeak: openRouterBoolPtr(false),
+		},
+		{
+			name:     "positive balance",
+			getKey:   func() (string, bool) { return "sk-or", true },
+			status:   200,
+			body:     `{"data":{"total_credits":10,"total_usage":3}}`,
+			wantConf: true,
+			wantPeak: openRouterBoolPtr(true),
+			wantAmt:  floatPtr(7),
+		},
+		{
+			name:     "zero balance",
+			getKey:   func() (string, bool) { return "sk-or", true },
+			status:   200,
+			body:     `{"data":{"total_credits":5,"total_usage":5}}`,
+			wantConf: true,
+			wantPeak: openRouterBoolPtr(false),
+			wantAmt:  floatPtr(0),
+		},
+		{
+			name:       "unauthorized",
+			getKey:     func() (string, bool) { return "sk-bad", true },
+			status:     401,
+			body:       `{}`,
+			wantConf:   true,
+			wantPeak:   openRouterBoolPtr(false),
+			wantErrSub: "unauthorized",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var client *http.Client
+			if tt.getKey != nil && tt.status != 0 {
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if !strings.HasSuffix(r.URL.Path, "/api/v1/credits") {
+						t.Errorf("unexpected path %s", r.URL.Path)
+					}
+					w.WriteHeader(tt.status)
+					_, _ = w.Write([]byte(tt.body))
+				}))
+				defer ts.Close()
+				client = &http.Client{Transport: rewriteHost(ts.URL)}
+			}
+
+			got := fetchOpenRouterBalance(client, tt.getKey)
+			if got.Configured != tt.wantConf {
+				t.Fatalf("configured=%v want %v", got.Configured, tt.wantConf)
+			}
+			if tt.wantPeak != nil {
+				if got.PeakUsable == nil || *got.PeakUsable != *tt.wantPeak {
+					t.Fatalf("peak_usable=%v want %v", got.PeakUsable, *tt.wantPeak)
+				}
+			}
+			if tt.wantErrSub != "" && !strings.Contains(got.Error, tt.wantErrSub) {
+				t.Fatalf("error=%q want substring %q", got.Error, tt.wantErrSub)
+			}
+			if tt.wantAmt != nil {
+				if got.Amount == nil || *got.Amount != *tt.wantAmt {
+					t.Fatalf("amount=%v want %v", got.Amount, *tt.wantAmt)
+				}
+			}
+		})
+	}
+}
+
+func openRouterBoolPtr(v bool) *bool { return &v }
+
 // rewriteHost redirects all outbound requests to the given base URL (httptest).
 type rewriteHost string
 

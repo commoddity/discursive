@@ -1,6 +1,6 @@
 ---
 description: OpenRouter provider (peak fallback, models, pricing, sanitizer policy)
-globs: "**/gateway/alias.go,**/gateway/sanitizer.go,**/config/urls.go,**/gateway/peakguard.go"
+globs: "**/gateway/alias.go,**/gateway/sanitizer.go,**/gateway/proxy.go,**/gateway/compress.go,**/config/urls.go,**/config/settings.go,**/gateway/peakguard.go"
 alwaysApply: false
 ---
 
@@ -38,16 +38,17 @@ Enforcement:
 
 | Upstream id | Real model | Provider |
 | --- | --- | --- |
-| `deepseek/deepseek-v4-flash-0731` | `deepseek-v4-flash` | DeepSeek |
+| `deepseek/deepseek-v4-flash-0731` | `deepseek-v4-flash-vision-exp` | DeepSeek |
 | `deepseek/deepseek-v4-pro-0813` | `deepseek-v4-pro` | DeepSeek |
-| `z-ai/glm-5.3` | `glm-5.3[1m]` | Z.AI |
-| `z-ai/glm-4.7` | `glm-4.7` | Z.AI |
+| `z-ai/glm-5.3` | `glm-5.3` | Z.AI |
+| `z-ai/glm-5.3-flash` | `glm-5.3-flash` | Z.AI |
 
 Peak reroute mapping (non-downgraded traffic only; big vs small via `config.IsBigModel`):
 - `deepseek-v4-pro` → `deepseek/deepseek-v4-pro-0813`
 - `deepseek-v4-flash` → `deepseek/deepseek-v4-flash-0731`
 - `glm-5.3` / `glm-5.3[1m]` → `z-ai/glm-5.3`
-- `glm-4.7` → `z-ai/glm-4.7`
+- `glm-5.3-flash` / legacy `glm-4.7` → `z-ai/glm-5.3-flash`
+- `deepseek-v4-flash-vision-exp` / legacy `deepseek-v4-flash` → `deepseek/deepseek-v4-flash-0731`
 - Moonshot, Thaura: no peak reroute
 
 Subagent/router downgrades stay on the same provider's small model. OR is not used
@@ -60,6 +61,7 @@ its OR twin if one exists.
 - Set via: `discursive set --openrouter-key <key>` or `--openrouter-key` flag on `init`
 - Retrieved via: `settings.GetOpenRouterKey(dataRoot)` in gateway/server.go
 - OpenRouter is optional — if no key is configured, peak traffic falls through to the direct provider (pay peak), zero downtime
+- Peak reroute also requires **usable credits** (`openRouterPeakRerouteOK`: key present + `GET /credits` remaining > 0, 60s cache). Missing key or $0 → direct provider during peak; UI `peak_usable: false` greys the OR card (see `usage.mdc`)
 
 ## Pricing (USD per 1M tokens)
 
@@ -74,7 +76,7 @@ rates apply year-round.
 | `deepseek/deepseek-v4-flash-0731`  | $0.014    | $0.065 | $0.14  |
 | `deepseek/deepseek-v4-pro-0813`    | $0.022    | $0.66  | $1.98  |
 | `z-ai/glm-5.3`                     | $0.26     | $1.40  | $4.40  |
-| `z-ai/glm-4.7`                     | $0.11     | $0.60  | $2.20  |
+| `z-ai/glm-5.3-flash`               | $0.015    | $0.075 | $0.25  |
 
 Typical blended (OpenRouter weighted average) informational rates shown in dashboard/README:
 - flash: $0.0476 in / $0.384 out
@@ -89,6 +91,31 @@ Reuse `PolicyDeepSeek` for OpenRouter traffic — pass the `thinking` object thr
 | Item        | Value                          |
 | ----------- | ------------------------------ |
 | Default URL | `https://openrouter.ai/api/v1` |
+
+## Provider routing (peak OpenRouter requests)
+
+Injected on every OpenRouter-bound chat/completions call (including the
+compressor when it peak-reroutes to an OR twin). Default **sort stays
+`throughput`**; latency cap + ignore list push slow hosts to the back without
+switching the sort key.
+
+| Knob | Env | Default | Effect |
+| ---- | --- | ------- | ------ |
+| Sticky session | (gateway session id) | process `sess_*` | Body `session_id` + header `X-Session-Id` from turn 1 so OpenRouter reuses the same host (warm KV cache). Sessions expire after ~10 min idle on OpenRouter's side. |
+| `provider.sort` | `DISCURSIVE_OPENROUTER_SORT` | `throughput` | Existing sort hint. Unset defaults to throughput; `none` / `off` / empty omits sort. |
+| `provider.preferred_max_latency` | `DISCURSIVE_OPENROUTER_MAX_LATENCY_P90` | `2.5` (seconds, p90) | Soft preference — 15s hosts fall back in ranking. `0` or `off` omits the field. |
+| `provider.ignore` | `DISCURSIVE_OPENROUTER_IGNORE` | `wafer,morph,venice` | Skip known-slow / flaky GLM Flash hosts. `none` / `off` / empty env value disables. |
+
+`gateway_request` logs `latency_ms` and `or_host` (from `X-OpenRouter-Provider`
+when present, else SSE/`openrouter_metadata` selected provider). Requests also
+send `X-OpenRouter-Metadata: enabled` so the JSON/SSE path can name the host
+when the header is absent.
+
+### `OpenRouter host lottery / 15–60s GLM Flash turns`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Peak GLM Flash / DeepSeek turns hit 15–60s TTFB; next turn may be fast or equally slow; cache hits do not stick | OpenRouter load-balances across hosts (Wafer ~15s p50) unless `session_id` is set from turn 1; `sort: throughput` alone does not exclude slow endpoints | Keep default throughput sort; send sticky `session_id`; set `preferred_max_latency.p90`; ignore `wafer,morph,venice`; confirm `or_host` on `gateway_request` |
 
 ## Credits endpoint
 

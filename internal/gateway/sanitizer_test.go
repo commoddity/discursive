@@ -314,7 +314,7 @@ func TestSanitizeRequest_DeepSeekPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Model != "deepseek-v4-flash" {
+	if res.Model != config.ModelDeepSeekV4FlashVisionExp {
 		t.Fatalf("model: %s", res.Model)
 	}
 }
@@ -346,7 +346,7 @@ func TestSanitizeRequest_PassesImagesForDeepSeekZai(t *testing.T) {
 				},
 			},
 			check: func(t *testing.T, res SanitizeResult) {
-				if res.Provider != config.ProviderDeepSeek || res.Model != "deepseek-v4-flash" {
+				if res.Provider != config.ProviderDeepSeek || res.Model != config.ModelDeepSeekV4FlashVisionExp {
 					t.Fatalf("route: %s/%s", res.Provider, res.Model)
 				}
 				// No system warning should be prepended (sanitizer no longer strips).
@@ -637,60 +637,47 @@ func TestSanitizeRequest_ZaiEffortFromConfig(t *testing.T) {
 	}
 }
 
-func TestSanitizeRequest_ZaiGLM47Thinking(t *testing.T) {
-	// glm-4.7 uses thinking type only, no reasoning_effort
+func TestSanitizeRequest_ZaiGLM53FlashThinking(t *testing.T) {
 	cfg := testConfig()
-	cfg.EffortByModel = map[string]string{config.ModelZaiGLM53: "off"}
+	cfg.EffortByModel = map[string]string{config.ModelZaiGLM53Flash: "off"}
 
-	// default = off
 	body := map[string]any{
-		"model":    "glm-4.7",
+		"model":    "gpt-4.1",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}
 	res, err := SanitizeRequest(body, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if res.Model != config.ModelZaiGLM53Flash {
+		t.Fatalf("model %q want %s", res.Model, config.ModelZaiGLM53Flash)
+	}
 	thinking, ok := res.Body["thinking"].(map[string]any)
-	if !ok || thinking["type"] != "disabled" {
+	if !ok || thinking["type"] != "enabled" {
 		t.Fatalf("thinking: %v", res.Body["thinking"])
 	}
-	if _, has := res.Body["reasoning_effort"]; has {
-		t.Fatal("reasoning_effort should be absent for glm-4.7")
+	if got, _ := res.Body["reasoning_effort"].(string); got != "low" {
+		t.Fatalf("reasoning_effort: %v want low", res.Body["reasoning_effort"])
 	}
 }
 
-// TestSanitizeRequest_ZaiGLM47FamilyThinkingToggle covers the thinking on/off
-// toggle for glm-4.7 (thinking type, no reasoning_effort), driven by the
-// per-model ThinkingEnabledByModel map. flash/flashx resolve to glm-4.7
-// (not plan-supported), so only glm-4.7 is sanitized as a distinct model.
-func TestSanitizeRequest_ZaiGLM47FamilyThinkingToggle(t *testing.T) {
-	models := []string{config.ModelZaiGLM47}
-	for _, model := range models {
-		t.Run(model, func(t *testing.T) {
-			for _, enable := range []bool{false, true} {
-				cfg := testConfig()
-				cfg.ThinkingEnabledByModel = map[string]bool{model: enable}
-				res, err := SanitizeRequest(map[string]any{
-					"model":    model,
-					"messages": []any{map[string]any{"role": "user", "content": "hi"}},
-				}, cfg)
-				if err != nil {
-					t.Fatalf("SanitizeRequest: %v", err)
-				}
-				want := "disabled"
-				if enable {
-					want = "enabled"
-				}
-				thinking, ok := res.Body["thinking"].(map[string]any)
-				if !ok || thinking["type"] != want {
-					t.Fatalf("enable=%v thinking: %v", enable, res.Body["thinking"])
-				}
-				if _, has := res.Body["reasoning_effort"]; has {
-					t.Fatalf("reasoning_effort should be absent for %s", model)
-				}
-			}
-		})
+func TestSanitizeRequest_LegacyGLM47ResolvesToFlash(t *testing.T) {
+	res, err := SanitizeRequest(map[string]any{
+		"model":    "glm-4.7",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Model != config.ModelZaiGLM53Flash {
+		t.Fatalf("model %q want %s", res.Model, config.ModelZaiGLM53Flash)
+	}
+	thinking, ok := res.Body["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "enabled" {
+		t.Fatalf("thinking: %v", res.Body["thinking"])
+	}
+	if _, has := res.Body["reasoning_effort"]; !has {
+		t.Fatal("reasoning_effort should be set for glm-5.3-flash")
 	}
 }
 

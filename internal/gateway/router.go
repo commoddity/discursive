@@ -20,10 +20,13 @@ import (
 // it is content-based "what does this turn ask for?" classification.
 //
 // Routing decisions:
-//   - Simple lookup / explanation → downgrade to flash.
-//   - Code search / exploration → downgrade to flash.
-//   - Structured extraction / json_object → downgrade to flash.
-//   - Automation / workflows → downgrade to flash.
+//   - Simple lookup / explanation → downgrade to the provider small model.
+//   - Code search / exploration → downgrade to the provider small model.
+//   - Structured extraction / json_object → downgrade to the provider small model.
+//   - Automation / workflows → downgrade to the provider small model.
+//   - Z.AI (glm-5.3 / glm-5.3-flash / OpenRouter twins) → never downgrade.
+//     All Z.AI chat models share a 1M context window; downgrading would not
+//     save context headroom. Explicit legacy `glm-4.7` resolves to glm-5.3-flash.
 //   - Editing / refactoring → keep model.
 //   - Complex reasoning / architecture → keep model.
 //   - Unclassified / unknown → keep model (conservative default).
@@ -129,6 +132,10 @@ func (r *SubAgentRouter) ClassifyAndOverride(body map[string]any, requestID stri
 	if !ok {
 		return result
 	}
+	// Z.AI models share 1M context — never downgrade within provider.
+	if provider == config.ProviderZai {
+		return result
+	}
 	override := config.SmallModelFor(provider)
 	if override == "" {
 		return result
@@ -165,19 +172,6 @@ func shouldDowngrade(c RequestClass) bool {
 		return true
 	case ClassEditing, ClassComplexReasoning, ClassUnknown:
 		return false
-	default:
-		return false
-	}
-}
-
-// thinkingClass returns true when a request class benefits from thinking being
-// enabled (hard reasoning / real code edits). Downgrade-safe mechanical
-// classes and unknown return false so the thinking-effort coupling can keep
-// cheap turns fast.
-func thinkingClass(c RequestClass) bool {
-	switch c {
-	case ClassEditing, ClassComplexReasoning:
-		return true
 	default:
 		return false
 	}

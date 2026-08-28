@@ -16,8 +16,10 @@ type SanitizeConfig struct {
 	MaxTokensCap               int
 	ThinkingDisabled           bool              // retained for tests/compat; K2 uses EffortByModel off|on
 	EffortByModel              map[string]string // real model id → effort (from app settings)
-	ThinkingEnabledByModel     map[string]bool   // real model id → thinking on/off (GLM-4.7 family)
-	OpenRouterSort             string            // provider.sort value for OpenRouter; empty disables
+	ThinkingEnabledByModel     map[string]bool   // legacy; unused (Z.AI always thinks)
+	OpenRouterSort             string            // provider.sort; empty omits sort
+	OpenRouterIgnore           []string          // provider.ignore slugs
+	OpenRouterMaxLatencyP90    float64           // preferred_max_latency.p90; 0 omits
 }
 
 // DefaultSanitizeConfig returns product defaults.
@@ -31,6 +33,8 @@ func DefaultSanitizeConfig() SanitizeConfig {
 		EffortByModel:              config.DefaultReasoningEffort(),
 		ThinkingEnabledByModel:     config.DefaultThinkingEnabled(),
 		OpenRouterSort:             config.OpenRouterSort(),
+		OpenRouterIgnore:           config.OpenRouterIgnore(),
+		OpenRouterMaxLatencyP90:    config.OpenRouterMaxLatencyP90(),
 	}
 }
 
@@ -71,13 +75,12 @@ func SanitizeRequest(body map[string]any, cfg SanitizeConfig) (SanitizeResult, e
 	}
 
 	// Images are no longer stripped by the sanitizer for any provider.
-	// The vision describer (called after sanitization) handles image_url parts
-	// for zai + deepseek by describing them via glm-4.6v. Moonshot models
-	// handle images natively.
+	// Native-vision models (glm-5.3-flash) keep image_url. Other routes go
+	// through the glm-4.6v describer after sanitization.
 	const stripImages = false
 
 	applyThinkingPolicy(body, route, cfg)
-	applyOpenRouterSort(body, route, cfg.OpenRouterSort)
+	applyOpenRouterRouting(body, route, cfg)
 
 	if cfg.ForceNonStreaming {
 		body["stream"] = false
@@ -160,50 +163,55 @@ func applyThinkingPolicy(body map[string]any, route Route, cfg SanitizeConfig) {
 		delete(body, "thinking")
 		delete(body, "reasoning_effort")
 	case PolicyZai:
-		// glm-5.3: thinking is ALWAYS enabled (disabled is not supported);
-		// choice is reasoning_effort low|high|max.
-		// glm-4.7 family: thinking on/off only (no reasoning_effort).
-		if zaiThinkingToggle(route.RealModel) {
-			delete(body, "reasoning_effort")
-			// Per-model thinking toggle (GLM-4.7 family) wins when set; else
-			// fall back to the effort-derived default (off unless an effort is set).
-			if enabled, ok := cfg.ThinkingEnabledByModel[route.RealModel]; ok {
-				if enabled {
-					body["thinking"] = map[string]any{"type": "enabled"}
-				} else {
-					body["thinking"] = map[string]any{"type": "disabled"}
-				}
-			} else if effort == "" || effort == config.EffortOff {
-				body["thinking"] = map[string]any{"type": "disabled"}
-			} else {
-				body["thinking"] = map[string]any{"type": "enabled"}
-			}
-		} else {
-			// glm-5.3 always thinks — no "thinking: disabled".
-			norm, err := config.NormalizeReasoningEffort(route.RealModel, effort)
-			if err != nil {
-				norm = "low" // minimum thinking level as a safe fallback
-			}
-			body["thinking"] = map[string]any{"type": "enabled"}
-			body["reasoning_effort"] = norm
+		// glm-5.3 and glm-5.3-flash always think — no "thinking: disabled".
+		norm, err := config.NormalizeReasoningEffort(route.RealModel, effort)
+		if err != nil {
+			norm = "low" // minimum thinking level as a safe fallback
 		}
+		body["thinking"] = map[string]any{"type": "enabled"}
+		body["reasoning_effort"] = norm
 	}
 }
 
-// zaiThinkingToggle reports whether a Z.AI real model uses the thinking
-// {type: enabled|disabled} on/off shape (the GLM-4.7 family). GLM-5.3 uses a
-// reasoning_effort (always-thinks) shape instead.
-func zaiThinkingToggle(realModel string) bool {
-	return realModel == config.ModelZaiGLM47
-}
-
-// applyOpenRouterSort injects the OpenRouter provider routing hint. It is a
-// no-op for other providers or when the sort value is empty.
-func applyOpenRouterSort(body map[string]any, route Route, sort string) {
-	if route.Provider != config.ProviderOpenRouter || sort == "" {
+// applyOpenRouterRouting injects OpenRouter provider routing (sort, ignore,
+// preferred_max_latency). Non-OpenRouter routes drop a leftover provider object
+// so a peak-guard revert never forwards OR routing to the real provider.
+func applyOpenRouterRouting(body map[string]any, route Route, cfg SanitizeConfig) {
+	if body == nil {
 		return
 	}
-	body["provider"] = map[string]any{"sort": sort}
+	if route.Provider != config.ProviderOpenRouter {
+		delete(body, "provider")
+		return
+	}
+	pref := map[string]any{}
+	if cfg.OpenRouterSort != "" {
+		pref["sort"] = cfg.OpenRouterSort
+	}
+	if len(cfg.OpenRouterIgnore) > 0 {
+		pref["ignore"] = append([]string(nil), cfg.OpenRouterIgnore...)
+	}
+	if cfg.OpenRouterMaxLatencyP90 > 0 {
+		pref["preferred_max_latency"] = map[string]any{"p90": cfg.OpenRouterMaxLatencyP90}
+	}
+	if len(pref) == 0 {
+		delete(body, "provider")
+		return
+	}
+	body["provider"] = pref
+}
+
+// applyOpenRouterSession pins sticky routing to the gateway session so
+// follow-up turns reuse the same OpenRouter host (warm KV cache).
+func applyOpenRouterSession(body map[string]any, provider config.Provider, sessionID string) {
+	if body == nil {
+		return
+	}
+	if provider != config.ProviderOpenRouter || sessionID == "" {
+		delete(body, "session_id")
+		return
+	}
+	body["session_id"] = sessionID
 }
 
 // effectiveEffort reports the effort label for logs after policy application.

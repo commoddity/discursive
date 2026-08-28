@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/commoddity/discursive/internal/crypto"
 )
@@ -13,19 +15,78 @@ const configFileName = "config.json"
 
 const (
 	// EnvOpenRouterSort is the env var that controls the OpenRouter provider
-	// routing sort preference. Default is "throughput". Set to empty to disable.
+	// routing sort preference. Unset uses DefaultOpenRouterSort. "none", "off",
+	// or empty disables the sort hint.
 	EnvOpenRouterSort = "DISCURSIVE_OPENROUTER_SORT"
 	// DefaultOpenRouterSort is the default OpenRouter sort hint.
 	DefaultOpenRouterSort = "throughput"
+	// EnvOpenRouterIgnore is a comma-separated list of OpenRouter provider
+	// slugs to skip. "none" disables the default ignore list.
+	EnvOpenRouterIgnore = "DISCURSIVE_OPENROUTER_IGNORE"
+	// EnvOpenRouterMaxLatencyP90 is the preferred p90 latency cap in seconds.
+	// "0" or "off" disables the cap.
+	EnvOpenRouterMaxLatencyP90 = "DISCURSIVE_OPENROUTER_MAX_LATENCY_P90"
 )
 
+// DefaultOpenRouterIgnore are GLM Flash hosts with persistently high latency
+// or poor uptime on OpenRouter (Wafer ~15s P50; Morph/Venice poor availability).
+var DefaultOpenRouterIgnore = []string{"wafer", "morph", "venice"}
+
+// DefaultOpenRouterMaxLatencyP90 is the default preferred p90 latency (seconds).
+const DefaultOpenRouterMaxLatencyP90 = 2.5
+
 // OpenRouterSort returns the configured OpenRouter provider sort preference.
-// Empty disables the sort hint entirely.
+// Unset → DefaultOpenRouterSort. "none"/"off"/"" (explicit empty env) → omit sort.
 func OpenRouterSort() string {
-	if v := os.Getenv(EnvOpenRouterSort); v != "" {
-		return v
+	v, ok := os.LookupEnv(EnvOpenRouterSort)
+	if !ok {
+		return DefaultOpenRouterSort
 	}
-	return DefaultOpenRouterSort
+	v = strings.TrimSpace(v)
+	if v == "" || strings.EqualFold(v, "none") || strings.EqualFold(v, "off") {
+		return ""
+	}
+	return v
+}
+
+// OpenRouterIgnore returns provider slugs OpenRouter should skip.
+// Unset → DefaultOpenRouterIgnore. "none"/"off"/"" (explicit empty env) → none.
+func OpenRouterIgnore() []string {
+	v, ok := os.LookupEnv(EnvOpenRouterIgnore)
+	if !ok {
+		out := make([]string, len(DefaultOpenRouterIgnore))
+		copy(out, DefaultOpenRouterIgnore)
+		return out
+	}
+	v = strings.TrimSpace(v)
+	if v == "" || strings.EqualFold(v, "none") || strings.EqualFold(v, "off") {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// OpenRouterMaxLatencyP90 returns the preferred p90 latency cap in seconds.
+// Zero disables the preference.
+func OpenRouterMaxLatencyP90() float64 {
+	v := strings.TrimSpace(os.Getenv(EnvOpenRouterMaxLatencyP90))
+	if v == "" {
+		return DefaultOpenRouterMaxLatencyP90
+	}
+	if strings.EqualFold(v, "off") || v == "0" {
+		return 0
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil || n < 0 {
+		return DefaultOpenRouterMaxLatencyP90
+	}
+	return n
 }
 
 // AppSettings is the persisted settings (secrets encrypted at rest).

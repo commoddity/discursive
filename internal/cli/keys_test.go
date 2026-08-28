@@ -98,8 +98,8 @@ func TestSetModelFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.AliasModel != "o3-mini" || loaded.RealModel != "deepseek-v4-flash" {
-		t.Fatalf("got alias=%q real=%q want o3-mini deepseek-v4-flash", loaded.AliasModel, loaded.RealModel)
+	if loaded.AliasModel != "o3-mini" || loaded.RealModel != "deepseek-v4-flash-vision-exp" {
+		t.Fatalf("got alias=%q real=%q want o3-mini deepseek-v4-flash-vision-exp", loaded.AliasModel, loaded.RealModel)
 	}
 }
 

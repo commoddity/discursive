@@ -342,6 +342,31 @@
       box-shadow: 0 0 18px rgba(96, 165, 250, 0.38), inset 0 0 0 1px rgba(96, 165, 250, 0.28);
     }
 
+    #balances-summary .bal-stat-link.bal-peak-time-glow {
+      border-color: rgba(255, 179, 102, 0.45);
+      box-shadow: 0 0 14px rgba(255, 179, 102, 0.28), inset 0 0 0 1px rgba(255, 179, 102, 0.18);
+    }
+
+    #balances-summary .bal-stat-link.bal-peak-time-glow:hover {
+      border-color: rgba(255, 179, 102, 0.55);
+      background: rgba(255, 179, 102, 0.08);
+      box-shadow: 0 0 18px rgba(255, 179, 102, 0.38), inset 0 0 0 1px rgba(255, 179, 102, 0.28);
+    }
+
+    #balances-summary .bal-stat-link.bal-or-unavailable {
+      opacity: 0.42;
+      filter: grayscale(0.55);
+      border-color: #484f58;
+      box-shadow: none;
+      cursor: help;
+    }
+
+    #balances-summary .bal-stat-link.bal-or-unavailable:hover {
+      border-color: #6e7681;
+      background: rgba(22, 27, 34, 0.8);
+      box-shadow: none;
+    }
+
     .bal-stat-link .value {
       text-decoration: none;
     }
@@ -1270,6 +1295,49 @@
       color: var(--danger, #f85149);
     }
 
+    .compression-panel-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .compression-panel-stats .stat {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: rgba(22, 27, 34, 0.6);
+    }
+
+    .compression-panel-stats .label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .compression-panel-stats .value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .compression-panel-note {
+      margin-top: 10px;
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .compression-status-off {
+      color: #f85149;
+      font-weight: 600;
+    }
+
+    .compression-status-on {
+      color: #5ecd80;
+      font-weight: 600;
+    }
+
     .effort-toggle-btn::before {
       content: "Hide";
       grid-area: 1 / 1;
@@ -1529,6 +1597,26 @@
     </div>
   </div>
 
+  <div class="card" id="compression-stats-card">
+    <div class="card-header bal-card-header">
+      <h2>🗜️ Tool Compression</h2>
+      <div class="bal-header-actions">
+        <span class="health-info" style="margin-left:0"
+          data-tip="Summarizes large tool outputs via each provider's small/flash model before the main chat call. Cost is the summarizer worker only; char savings reduce tokens on the main model (not measured here).">?</span>
+      </div>
+    </div>
+    <div id="compression-stats-loading" class="loading">Loading...</div>
+    <div id="compression-stats-error" class="error" style="display:none"></div>
+    <div id="compression-stats-content" style="display:none">
+      <div style="font-size:0.8rem;margin-bottom:6px">
+        Status: <span id="compression-enabled-label">—</span>
+        <span style="color:var(--text-muted)"> · period matches chart range</span>
+      </div>
+      <div class="compression-panel-stats" id="compression-stats-grid"></div>
+      <div class="compression-panel-note" id="compression-stats-note"></div>
+    </div>
+  </div>
+
   <div class="card" id="model-controls-card">
     <div class="card-header bal-card-header">
       <h2>⚙️ Model Controls</h2>
@@ -1756,13 +1844,12 @@
     const MODEL_COLORS = {
       'deepseek::deepseek-v4-pro': '#2563eb', // deep blue
       'deepseek::deepseek-v4-flash': '#06b6d4', // cyan
+      'deepseek::deepseek-v4-flash-vision-exp': '#22d3ee', // lighter cyan
       'moonshot::kimi-k3': '#7c3aed', // deep purple
       'moonshot::kimi-k2.7-code': '#e879f9', // hot pink / magenta
       'thaura::thaura': '#059669', // emerald green
       'zai::glm-5.3': '#ec4899', // hot pink
-      'zai::glm-4.7': '#f472b6', // light pink
-      'zai::glm-4.7-flash': '#f9a8d4', // lighter pink
-      'zai::glm-4.7-flashx': '#fbcfe8', // palest pink
+      'zai::glm-5.3-flash': '#f472b6', // light pink
       'openrouter::deepseek/deepseek-v4-flash-0731': '#7dd3fc',
       'openrouter::deepseek/deepseek-v4-pro-0813': '#0ea5e9',
     };
@@ -1895,6 +1982,10 @@
           off_peak: { cache_hit: 0.007, input: 0.22, output: 0.66 },
           peak: { cache_hit: 0.014, input: 0.44, output: 1.32 },
         },
+        'deepseek-v4-flash-vision-exp': {
+          off_peak: { cache_hit: 0.007, input: 0.22, output: 0.66 },
+          peak: { cache_hit: 0.014, input: 0.44, output: 1.32 },
+        },
         'deepseek-v4-pro': {
           off_peak: { cache_hit: 0.022, input: 0.66, output: 1.98 },
           peak: { cache_hit: 0.044, input: 1.32, output: 3.96 },
@@ -1907,21 +1998,20 @@
         'deepseek/deepseek-v4-flash-0731': { cache_hit: 0.014, input: 0.065, output: 0.14 },
         'deepseek/deepseek-v4-pro-0813': { cache_hit: 0.022, input: 0.66, output: 1.98 },
         'z-ai/glm-5.3': { cache_hit: 0.26, input: 1.40, output: 4.40 },
-        'z-ai/glm-4.7': { cache_hit: 0.11, input: 0.60, output: 2.20 },
+        'z-ai/glm-5.3-flash': { cache_hit: 0.015, input: 0.075, output: 0.25 },
       },
       zai: {
         // Credit-based pricing (credits per 1M tokens), from official Coding
         // Plan multipliers per 10k tokens (credits = tokens × multiplier / 10000):
         // GLM-5.3: 6.9 / 1.7 / 24 → 690 / 170 / 2400 credits/MTok
-        // GLM-4.7: 4.6 / 1.2 / 16 → 460 / 120 / 1600
+        // GLM-5.3-flash: 2.3 / 0.56 / 8 → 230 / 56 / 800 credits/MTok
         // GLM-4.6V: 1.2 / 0.3 / 2.7 → 120 / 30 / 270
         // Off-peak (outside Mon–Fri 14:00–18:00 SGT) bills at 50%; these are
         // the standard (peak) rates, so estimates run high off-peak.
         'glm-5.3': { cache_hit: 170, input: 690, output: 2400 },
         'glm-5.2': { cache_hit: 170, input: 690, output: 2400 },
-        'glm-4.7': { cache_hit: 120, input: 460, output: 1600 },
-        'glm-4.7-flash': { cache_hit: 0, input: 0, output: 0 },  // Free
-        'glm-4.7-flashx': { cache_hit: 10, input: 70, output: 400 },
+        'glm-5.3-flash': { cache_hit: 56, input: 230, output: 800 },
+        'glm-4.7': { cache_hit: 56, input: 230, output: 800 }, // legacy log id
         'glm-4.6v': { cache_hit: 30, input: 120, output: 270 },
       }
     };
@@ -2198,6 +2288,66 @@
       copyToClipboard(event, raw);
     }
 
+    // --- Tool compression stats ---
+    function fmtChars(n) {
+      const v = +n || 0;
+      if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+      if (v >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+      return fmtNum(v);
+    }
+
+    async function loadCompressionStats() {
+      const loading = document.getElementById('compression-stats-loading');
+      const errEl = document.getElementById('compression-stats-error');
+      const content = document.getElementById('compression-stats-content');
+      const grid = document.getElementById('compression-stats-grid');
+      const note = document.getElementById('compression-stats-note');
+      const enabledLabel = document.getElementById('compression-enabled-label');
+      if (!loading || !grid) return;
+      try {
+        const since = timeRangeToSince(getSavedRange());
+        const data = await api('/api/compression-stats?since=' + encodeURIComponent(since));
+        const s = data.stats || {};
+        loading.style.display = 'none';
+        errEl.style.display = 'none';
+        content.style.display = 'block';
+
+        enabledLabel.textContent = data.tool_compression_enabled ? 'On' : 'Off';
+        enabledLabel.className = data.tool_compression_enabled ? 'compression-status-on' : 'compression-status-off';
+
+        const cacheTotal = (s.summarizer_calls || 0) + (s.cache_hits || 0);
+        const cachePct = cacheTotal > 0 ? Math.round((s.cache_hits || 0) * 100 / cacheTotal) : null;
+
+        const items = [
+          { label: 'Requests compressed', value: fmtNum(s.run_count || 0) },
+          { label: 'Tool results', value: fmtNum(s.tool_results_compressed || 0) },
+          { label: 'Chars saved', value: fmtChars(s.chars_saved || 0) },
+          { label: 'Summarizer cost', value: fmtMoney(s.summarizer_cost_usd || 0) },
+          { label: 'Summarizer calls', value: fmtNum(s.summarizer_calls || 0) },
+          { label: 'Cache hits', value: cachePct != null ? fmtNum(s.cache_hits || 0) + ' (' + cachePct + '%)' : fmtNum(s.cache_hits || 0) },
+        ];
+        grid.innerHTML = items.map(it =>
+          '<div class="stat"><div class="label">' + it.label + '</div><div class="value">' + it.value + '</div></div>'
+        ).join('');
+
+        const tokIn = s.summarizer_tokens_in || 0;
+        const tokOut = s.summarizer_tokens_out || 0;
+        let noteText = 'Summarizer worker: ' + fmtNum(tokIn) + ' in / ' + fmtNum(tokOut) + ' out tokens.';
+        if ((s.run_count || 0) === 0) {
+          noteText = 'No compression runs in this period. Compression triggers when total compressible tool output exceeds 20k chars and individual results exceed 24k chars.';
+        } else if ((s.chars_saved || 0) > 0 && (s.summarizer_cost_usd || 0) > 0) {
+          const savedPerDollar = Math.round((s.chars_saved || 0) / (s.summarizer_cost_usd || 1));
+          noteText += ' Roughly ' + fmtChars(savedPerDollar) + ' chars removed per $1 of summarizer cost (main-model savings not included).';
+        }
+        note.textContent = noteText;
+      } catch (e) {
+        loading.style.display = 'none';
+        content.style.display = 'none';
+        errEl.style.display = 'block';
+        errEl.textContent = 'Error: ' + e.message;
+      }
+    }
+
     // --- Model Controls (compression, reasoning effort, thinking) ---
     const PROVIDER_NAMES = { moonshot: 'Moonshot', deepseek: 'DeepSeek', thaura: 'Thaura', zai: 'Z.AI', openrouter: 'OpenRouter' };
     const EFFORT_DOC_URLS = {
@@ -2411,6 +2561,7 @@
         }
         status.className = 'settings-save-status ok';
         status.textContent = 'Saved at ' + new Date().toLocaleTimeString();
+        loadCompressionStats();
       } catch (e) {
         status.className = 'settings-save-status err';
         status.textContent = 'Error: ' + e.message;
@@ -2636,30 +2787,85 @@
       return deepseekIsPeak(utcMs) || zaiIsPeak(utcMs);
     }
 
-    function balancePeakGlowClass(provider) {
+    function openRouterPeakUsable(b) {
+      if (!b) return false;
+      if (b.peak_usable === true) return true;
+      if (b.peak_usable === false) return false;
+      if (!b.configured || b.error) return false;
+      const usd = balanceToUSD(b);
+      return usd != null && usd > 0;
+    }
+
+    function openRouterUnavailableReason(b) {
+      if (!b || !b.configured) {
+        return 'No OpenRouter key — peak traffic uses DeepSeek and Z.AI directly (peak rates).';
+      }
+      if (b.error) {
+        return 'OpenRouter unavailable (' + b.error + ') — peak traffic uses DeepSeek and Z.AI directly.';
+      }
+      const usd = balanceToUSD(b);
+      if (usd != null && usd <= 0) {
+        return 'OpenRouter balance is $0 — peak traffic uses DeepSeek and Z.AI directly.';
+      }
+      return 'OpenRouter unavailable — peak traffic uses DeepSeek and Z.AI directly.';
+    }
+
+    function balancePeakGlowClass(provider, orUsable) {
       const peakActive = isPeakFallbackActive(Date.now());
       if (peakActive) {
-        if (provider === 'openrouter' || provider === 'moonshot' || provider === 'thaura') {
-          return ' bal-peak-glow';
+        if (provider === 'openrouter') {
+          return orUsable ? ' bal-peak-glow' : ' bal-or-unavailable';
         }
-      } else if (provider === 'zai' || provider === 'deepseek') {
+        if ((provider === 'zai' || provider === 'deepseek') && !orUsable) {
+          return ' bal-peak-time-glow';
+        }
+        return '';
+      }
+      if (provider === 'zai' || provider === 'deepseek') {
         return ' bal-offpeak-glow';
       }
       return '';
     }
 
-    function renderBalanceStat(provider, b) {
+    function renderOpenRouterBalanceCard(b, peakActive, orUsable) {
+      const href = TOPUP_URLS.openrouter || '#';
+      const label = balanceLabel('openrouter');
+      const glowClass = balancePeakGlowClass('openrouter', orUsable);
+      const tipClass = ' bal-tip-hover';
+      const wrap = (inner) =>
+        '<div class="stat"><a class="bal-stat-link' + tipClass + glowClass + '" href="' + href + '" target="_blank" rel="noopener" data-provider="openrouter">' +
+        inner +
+        '</a></div>';
+
+      if (!peakActive) {
+        return '';
+      }
+      if (!orUsable) {
+        return wrap(
+          '<div class="label">' + label + '</div>' +
+          '<div class="value" style="color:var(--text-muted);font-size:1.1rem">Unavailable</div>' +
+          '<div class="sub">Peak fallback off</div>'
+        );
+      }
+      return renderBalanceStat('openrouter', b, orUsable);
+    }
+
+    function renderBalanceStat(provider, b, orUsableOverride) {
       const href = TOPUP_URLS[provider] || '#';
       const name = provider.charAt(0).toUpperCase() + provider.slice(1);
       let label = balanceLabel(provider);
+      const peakActive = isPeakFallbackActive(Date.now());
+      const orUsable = orUsableOverride != null
+        ? orUsableOverride
+        : openRouterPeakUsable(openrouterBalance);
       // Z.AI card shows a rich hover tooltip (MTD usage + weekly quota reset). The
       // native `title` is plain-text only, so mark the card and position a custom
       // element instead (see wireZaiBalanceTip).
       const isZai = provider === 'zai';
-      const isTipProv = provider === 'moonshot' || provider === 'deepseek' || provider === 'openrouter'; // carriers with confirmed spend or balance
+      const isTipProv = provider === 'moonshot' || provider === 'deepseek' || provider === 'openrouter';
       const blurCls = getBalancesVisible() ? '' : ' gw-key-blur';
       const tipClass = isZai ? ' zai-hover' : (isTipProv ? ' bal-tip-hover' : '');
-      const glowClass = balancePeakGlowClass(provider);
+      const glowClass = balancePeakGlowClass(provider, orUsable);
       const wrap = (inner) =>
         '<div class="stat"><a class="bal-stat-link' + tipClass + glowClass + '" href="' + href + '" target="_blank" rel="noopener" data-provider="' + provider + '"' + (isZai || isTipProv ? '' : ' title="Top up ' + name + '"') + '>' +
         inner +
@@ -2727,10 +2933,20 @@
         const peakActive = isPeakFallbackActive(Date.now());
         const order = ['zai', 'deepseek', 'moonshot', 'thaura', 'openrouter'];
         let active = order.filter(id => data[id] && data[id].configured);
-        if (!peakActive) {
+        const orUsable = openRouterPeakUsable(data.openrouter);
+        if (peakActive) {
+          if (!active.includes('openrouter')) {
+            active.push('openrouter');
+          }
+        } else {
           active = active.filter(id => id !== 'openrouter');
         }
-        const cards = active.map(id => renderBalanceStat(id, data[id])).join('');
+        const cards = active.map(id => {
+          if (id === 'openrouter') {
+            return renderOpenRouterBalanceCard(data.openrouter, peakActive, orUsable);
+          }
+          return renderBalanceStat(id, data[id], orUsable);
+        }).join('');
         div.style.display = cards ? 'grid' : 'none';
         div.style.setProperty('--bal-cols', String(active.length || 1));
         div.innerHTML = cards;
@@ -2846,6 +3062,10 @@
     function confirmedTipBody(provider) {
       if (provider === 'openrouter') {
         const b = openrouterBalance;
+        if (!openRouterPeakUsable(b)) {
+          return '<div class="ct-title">OpenRouter peak fallback</div>' +
+            '<div class="ct-empt">' + escapeHtml(openRouterUnavailableReason(b)) + '</div>';
+        }
         if (!b) return '<div class="ct-title">OpenRouter</div><div class="ct-empt">Balance not available</div>';
         if (b.error) return '<div class="ct-title">OpenRouter</div><div class="ct-empt">' + escapeHtml(b.error) + '</div>';
         if (b.amount == null) return '<div class="ct-title">OpenRouter</div><div class="ct-empt">No balance data</div>';
@@ -3722,6 +3942,7 @@
       loadByDay();
       loadByModel();
       loadByProvider();
+      loadCompressionStats();
       loadSessions();
     }
 
@@ -3924,8 +4145,12 @@
       label.textContent = anyPeak ? 'Peak' : 'Off-peak';
 
       let orRow = '';
-      if (openrouterBalance && openrouterBalance.usd !== undefined) {
-        orRow = '<div class="pk-row"><span class="pk-label">OpenRouter balance</span><span class="pk-value">' + fmtMoneyUSD(openrouterBalance.usd) + '</span></div>';
+      const orUsd = openrouterBalance ? balanceToUSD(openrouterBalance) : null;
+      if (openrouterBalance && orUsd != null) {
+        orRow = '<div class="pk-row"><span class="pk-label">OpenRouter balance</span><span class="pk-value">' + fmtMoneyUSD(orUsd) + '</span></div>';
+        if (!openRouterPeakUsable(openrouterBalance)) {
+          orRow += '<div class="pk-row"><span class="pk-label">Peak fallback</span><span class="pk-value" style="color:#ffb366">Direct providers</span></div>';
+        }
       } else if (openrouterBalance !== null) {
         orRow = '<div class="pk-row"><span class="pk-label">OpenRouter balance</span><span class="pk-value">—</span></div>';
       }

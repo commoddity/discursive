@@ -34,9 +34,9 @@ const (
 	// default). Higher than flash since pro produces longer-thinking answers.
 	proVerbosityMaxTokens = 8192
 
-	// glmVerbosityMaxTokens caps glm-4.7 output when verbosity is enabled
-	// (default on). glm-4.7 is the workhorse for subagents — generous enough
-	// for substantive diffs, tight enough to stop prose run-away.
+	// glmVerbosityMaxTokens caps glm-5.3-flash output when verbosity is enabled.
+	// Flash is the cheap Z.AI tier (gpt-4.1) — generous enough for diffs,
+	// tight enough to stop prose run-away.
 	glmVerbosityMaxTokens = 8192
 
 	// glmMaxVerbosityMaxTokens caps glm-5.3/glm-5.3[1m] output when verbosity

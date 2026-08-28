@@ -58,6 +58,11 @@ type Server struct {
 	compressor  *Compressor
 	verbosity   *verbosity.Controller
 
+	// openRouterPeakUsable overrides openRouterPeakRerouteOK when set (tests).
+	openRouterPeakUsable func() bool
+	orBalanceMu          sync.Mutex
+	orBalance            orBalanceCache
+
 	mu       sync.Mutex
 	listener net.Listener
 }
@@ -140,6 +145,10 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              flashVerbosityMaxTokens,
 			},
+			"deepseek-v4-flash-vision-exp": {
+				SystemMessageDirective: flashTersenessDirective,
+				MaxTokens:              flashVerbosityMaxTokens,
+			},
 			"deepseek-v4-pro": {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              proVerbosityMaxTokens,
@@ -152,7 +161,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              proVerbosityMaxTokens,
 			},
-			"glm-4.7": {
+			"glm-5.3-flash": {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              glmVerbosityMaxTokens,
 			},
@@ -168,7 +177,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              glmMaxVerbosityMaxTokens,
 			},
-			config.ModelOpenRouterZaiGLM47: {
+			config.ModelOpenRouterZaiGLM53Flash: {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              glmVerbosityMaxTokens,
 			},
@@ -343,7 +352,7 @@ func (s *Server) compressContext(provider config.Provider, at time.Time) (Compre
 	}
 	model := spec.SmallModel
 	routeProvider := provider
-	if spec.HasPeak && peakNow(model, at) && s.settings != nil && s.settings.HasOpenRouterKey() {
+	if spec.HasPeak && peakNow(model, at) && s.openRouterPeakRerouteOK() {
 		if twin, ok := config.OpenRouterTwinFor(model); ok {
 			model = twin
 			routeProvider = config.ProviderOpenRouter
@@ -358,10 +367,11 @@ func (s *Server) compressContext(provider config.Provider, at time.Time) (Compre
 		return CompressContext{}, err
 	}
 	return CompressContext{
-		Provider: routeProvider,
-		Model:    model,
-		ChatURL:  chatURL,
-		APIKey:   key,
+		Provider:  routeProvider,
+		Model:     model,
+		ChatURL:   chatURL,
+		APIKey:    key,
+		SessionID: s.sessionID,
 	}, nil
 }
 

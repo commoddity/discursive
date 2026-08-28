@@ -98,10 +98,11 @@ type CompressorConfig struct {
 
 // CompressContext selects the summarizer endpoint for one request.
 type CompressContext struct {
-	Provider config.Provider
-	Model    string
-	ChatURL  string
-	APIKey   string
+	Provider  config.Provider
+	Model     string
+	ChatURL   string
+	APIKey    string
+	SessionID string
 }
 
 // Compressor compresses verbose tool results and long conversation histories.
@@ -124,6 +125,8 @@ type CompressionStats struct {
 	ToolResultsCompressed int
 	CharsBefore           int
 	CharsAfter            int
+	SummarizerCalls       int
+	CacheHits             int
 }
 
 // NewCompressor creates a Compressor. If cfg.Enabled is false, subsequent
@@ -353,6 +356,7 @@ func (c *Compressor) Compress(ctx context.Context, body map[string]any, cctx Com
 			entry := v.(compressCacheEntry)
 			if time.Now().Before(entry.expiresAt) {
 				results[i] = entry.summary
+				stats.CacheHits++
 				slog.Debug("compress: tool_result_cache_hit",
 					"original_len", len(job.content),
 					"compressed_len", len(entry.summary),
@@ -368,7 +372,7 @@ func (c *Compressor) Compress(ctx context.Context, body map[string]any, cctx Com
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			val, err, _ := c.sfg.Do(j.hash, func() (any, error) {
+			val, err, shared := c.sfg.Do(j.hash, func() (any, error) {
 				summary, err := c.summarizeContent(ctx, j.content, cctx)
 				if err != nil {
 					return nil, err
@@ -379,6 +383,9 @@ func (c *Compressor) Compress(ctx context.Context, body map[string]any, cctx Com
 				})
 				return summary, nil
 			})
+			if err == nil && !shared {
+				stats.SummarizerCalls++
+			}
 			if err != nil {
 				// Empty/unshorter summaries are soft failures: leave a zero
 				// result so the caller truncates instead of failing open.
@@ -449,6 +456,8 @@ func (c *Compressor) summarizeContent(ctx context.Context, content string, cctx 
 		"max_tokens":  1000,
 		"temperature": 0,
 	}
+	applyOpenRouterRouting(reqBody, Route{Provider: cctx.Provider}, DefaultSanitizeConfig())
+	applyOpenRouterSession(reqBody, cctx.Provider, cctx.SessionID)
 
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
@@ -461,6 +470,7 @@ func (c *Compressor) summarizeContent(ctx context.Context, content string, cctx 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+cctx.APIKey)
+	applyOpenRouterRequestHeaders(req.Header, cctx.ChatURL, reqBody)
 
 	start := time.Now()
 	resp, err := c.client.Do(req)

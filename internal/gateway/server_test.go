@@ -218,7 +218,7 @@ func TestModelsListContent(t *testing.T) {
 		}
 		ids[m.ID] = true
 	}
-	for _, want := range []string{"gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "kimi-k3", "kimi-k2.7-code", "deepseek-v4-pro", "deepseek-v4-flash"} {
+	for _, want := range []string{"gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "kimi-k3", "kimi-k2.7-code", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp"} {
 		if !ids[want] {
 			t.Fatalf("missing id %s", want)
 		}
@@ -329,11 +329,11 @@ func TestProxyZai(t *testing.T) {
 		sawPath = r.URL.Path
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body["model"] != "glm-4.7" {
+		if body["model"] != config.ModelZaiGLM53Flash {
 			t.Errorf("model %v", body["model"])
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(mockCompletion("glm-4.7"))
+		_ = json.NewEncoder(w).Encode(mockCompletion(config.ModelZaiGLM53Flash))
 	})
 
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
@@ -363,7 +363,7 @@ func TestZai429RetriesBeforeSuccess(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(mockCompletion("glm-4.7"))
+		_ = json.NewEncoder(w).Encode(mockCompletion(config.ModelZaiGLM53Flash))
 	})
 
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{

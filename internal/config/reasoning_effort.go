@@ -12,7 +12,7 @@ const (
 	ModelDeepSeekV4Pro             = "deepseek-v4-pro"
 	ModelDeepSeekV4Flash           = "deepseek-v4-flash"
 	ModelZaiGLM53                  = "glm-5.3"
-	ModelZaiGLM47                  = "glm-4.7"
+	ModelZaiGLM53Flash             = "glm-5.3-flash"
 	ModelOpenRouterDeepSeekV4Flash = "deepseek/deepseek-v4-flash-0731"
 	ModelOpenRouterDeepSeekV4Pro   = "deepseek/deepseek-v4-pro-0813"
 )
@@ -61,6 +61,13 @@ func ReasoningEffortCatalog() []ReasoningEffortSpec {
 			Default:  EffortOff,
 		},
 		{
+			Model:    ModelDeepSeekV4FlashVisionExp,
+			Provider: ProviderDeepSeek,
+			Label:    "DeepSeek V4 Flash Vision",
+			Options:  []string{EffortOff, "high", "max"},
+			Default:  EffortOff,
+		},
+		{
 			Model:    ModelDeepSeekV4Flash,
 			Provider: ProviderDeepSeek,
 			Label:    "DeepSeek V4 Flash",
@@ -71,6 +78,13 @@ func ReasoningEffortCatalog() []ReasoningEffortSpec {
 			Model:    ModelZaiGLM53,
 			Provider: ProviderZai,
 			Label:    "GLM-5.3",
+			Options:  []string{"low", "high", "max"},
+			Default:  "low",
+		},
+		{
+			Model:    ModelZaiGLM53Flash,
+			Provider: ProviderZai,
+			Label:    "GLM-5.3-Flash",
 			Options:  []string{"low", "high", "max"},
 			Default:  "low",
 		},
@@ -127,11 +141,11 @@ func NormalizeReasoningEffort(model, effort string) (string, error) {
 }
 
 func isDeepSeekModel(model string) bool {
-	return model == ModelDeepSeekV4Pro || model == ModelDeepSeekV4Flash
+	return model == ModelDeepSeekV4Pro || model == ModelDeepSeekV4Flash || model == ModelDeepSeekV4FlashVisionExp
 }
 
 func isZaiModel(model string) bool {
-	return model == ModelZaiGLM53
+	return model == ModelZaiGLM53 || model == ModelZaiGLM53Flash
 }
 
 // normalizeZaiEffort maps Z.AI effort values for glm-5.3 (always thinks):

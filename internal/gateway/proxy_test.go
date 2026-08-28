@@ -427,3 +427,252 @@ func TestProxy_SubAgentRouterSameProviderDowngrade(t *testing.T) {
 		t.Fatalf("expected downgraded model %q, got %q", config.ModelKimiK27, moonshotModel)
 	}
 }
+
+func countImageURLParts(body map[string]any) int {
+	n := 0
+	msgs, _ := body["messages"].([]any)
+	for _, raw := range msgs {
+		msg, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		parts, ok := msg["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, p := range parts {
+			part, ok := p.(map[string]any)
+			if !ok {
+				continue
+			}
+			if part["type"] == "image_url" {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func TestProxyZaiFlashImagesPassThrough(t *testing.T) {
+	var visionCalls atomic.Int32
+	visionUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		visionCalls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(visionUp.Close)
+
+	var lastBody map[string]any
+	textUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&lastBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockCompletion(config.ModelZaiGLM53Flash))
+	}))
+	t.Cleanup(textUp.Close)
+
+	dataRoot := t.TempDir()
+	settings := config.DefaultSettings()
+	if err := settings.EnsureGatewayKey(); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.SetZaiKey(dataRoot, "sk-zai"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(dataRoot, settings); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := gateway.NewServer(gateway.ServerConfig{
+		ListenAddr: "127.0.0.1:0",
+		GatewayKey: settings.GatewayKey,
+		DataRoot:   dataRoot,
+		Settings:   &settings,
+		HTTPClient: textUp.Client(),
+		ChatURLOverride: map[config.Provider]string{
+			config.ProviderZai: textUp.URL + "/zai/chat/completions",
+		},
+		VisionChatURLOverride: visionUp.URL + "/chat/completions",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { _ = srv.Shutdown(t.Context()) })
+	env := &testEnv{srv: srv, ts: ts, gatewayKey: settings.GatewayKey, dataRoot: dataRoot}
+
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model": "gpt-4.1",
+		"messages": []any{
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "what is this?"},
+					map[string]any{
+						"type":      "image_url",
+						"image_url": map[string]any{"url": "data:image/png;base64,flashnative"},
+					},
+				},
+			},
+		},
+	})
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d body %s", res.StatusCode, body)
+	}
+	if visionCalls.Load() != 0 {
+		t.Fatalf("glm-5.3-flash must not call the describer, got %d vision calls", visionCalls.Load())
+	}
+	if countImageURLParts(lastBody) != 1 {
+		t.Fatalf("expected native image_url passthrough, got %v", lastBody["messages"])
+	}
+}
+
+func TestProxyDeepSeekFlashImagesPassThrough(t *testing.T) {
+	var visionCalls atomic.Int32
+	visionUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		visionCalls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(visionUp.Close)
+
+	var lastBody map[string]any
+	textUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&lastBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockCompletion(config.ModelDeepSeekV4FlashVisionExp))
+	}))
+	t.Cleanup(textUp.Close)
+
+	dataRoot := t.TempDir()
+	settings := config.DefaultSettings()
+	if err := settings.EnsureGatewayKey(); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.SetDeepSeekKey(dataRoot, "sk-ds"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(dataRoot, settings); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := gateway.NewServer(gateway.ServerConfig{
+		ListenAddr: "127.0.0.1:0",
+		GatewayKey: settings.GatewayKey,
+		DataRoot:   dataRoot,
+		Settings:   &settings,
+		HTTPClient: textUp.Client(),
+		ChatURLOverride: map[config.Provider]string{
+			config.ProviderDeepSeek: textUp.URL + "/deepseek/chat/completions",
+		},
+		VisionChatURLOverride: visionUp.URL + "/chat/completions",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { _ = srv.Shutdown(t.Context()) })
+	env := &testEnv{srv: srv, ts: ts, gatewayKey: settings.GatewayKey, dataRoot: dataRoot}
+
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model": "o3-mini",
+		"messages": []any{
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "what is this?"},
+					map[string]any{
+						"type":      "image_url",
+						"image_url": map[string]any{"url": "data:image/png;base64,dsflashnative"},
+					},
+				},
+			},
+		},
+	})
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d body %s", res.StatusCode, body)
+	}
+	if visionCalls.Load() != 0 {
+		t.Fatalf("deepseek flash vision must not call the describer, got %d vision calls", visionCalls.Load())
+	}
+	if lastBody["model"] != config.ModelDeepSeekV4FlashVisionExp {
+		t.Fatalf("model %v want %s", lastBody["model"], config.ModelDeepSeekV4FlashVisionExp)
+	}
+	if countImageURLParts(lastBody) != 1 {
+		t.Fatalf("expected native image_url passthrough, got %v", lastBody["messages"])
+	}
+}
+
+func TestProxyZai53ImagesDescribed(t *testing.T) {
+	var visionCalls atomic.Int32
+	visionUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		visionCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{
+				map[string]any{"message": map[string]any{"content": "a red button"}},
+			},
+		})
+	}))
+	t.Cleanup(visionUp.Close)
+
+	var lastBody map[string]any
+	textUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&lastBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockCompletion("glm-5.3"))
+	}))
+	t.Cleanup(textUp.Close)
+
+	dataRoot := t.TempDir()
+	settings := config.DefaultSettings()
+	if err := settings.EnsureGatewayKey(); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.SetZaiKey(dataRoot, "sk-zai"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(dataRoot, settings); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := gateway.NewServer(gateway.ServerConfig{
+		ListenAddr: "127.0.0.1:0",
+		GatewayKey: settings.GatewayKey,
+		DataRoot:   dataRoot,
+		Settings:   &settings,
+		HTTPClient: textUp.Client(),
+		ChatURLOverride: map[config.Provider]string{
+			config.ProviderZai: textUp.URL + "/zai/chat/completions",
+		},
+		VisionChatURLOverride: visionUp.URL + "/chat/completions",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { _ = srv.Shutdown(t.Context()) })
+	env := &testEnv{srv: srv, ts: ts, gatewayKey: settings.GatewayKey, dataRoot: dataRoot}
+
+	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
+		"model": "gpt-4.1-turbo",
+		"messages": []any{
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "fix that button"},
+					map[string]any{
+						"type":      "image_url",
+						"image_url": map[string]any{"url": "data:image/png;base64,glm53desc"},
+					},
+				},
+			},
+		},
+	})
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d body %s", res.StatusCode, body)
+	}
+	if visionCalls.Load() != 1 {
+		t.Fatalf("glm-5.3 must describe images, got %d vision calls", visionCalls.Load())
+	}
+	if countImageURLParts(lastBody) != 0 {
+		t.Fatalf("glm-5.3 must not receive image_url, got %v", lastBody["messages"])
+	}
+}

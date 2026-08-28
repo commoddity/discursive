@@ -106,17 +106,21 @@ func TestHandleBalanceSpend(t *testing.T) {
 	store := testStore(t)
 	now := time.Now().UTC()
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	// Both captures must fall on the current UTC calendar day. Using now.Add(-2h)
+	// fails between 00:00–01:59 UTC when the older snapshot lands on yesterday.
+	older := dayStart.Add(time.Minute)
+	newer := dayStart.Add(2 * time.Minute)
 
 	// Insert snapshots so ConfirmedSpend returns non-zero.
 	snaps := []usage.BalanceSnapshot{
 		{Provider: config.ProviderMoonshot, Basis: "day", PeriodStart: dayStart,
-			CapturedAt: now.Add(-2 * time.Hour), Amount: 50, Currency: "USD", USDAmount: 50},
+			CapturedAt: older, Amount: 50, Currency: "USD", USDAmount: 50},
 		{Provider: config.ProviderMoonshot, Basis: "day", PeriodStart: dayStart,
-			CapturedAt: now, Amount: 48, Currency: "USD", USDAmount: 48},
+			CapturedAt: newer, Amount: 48, Currency: "USD", USDAmount: 48},
 		{Provider: config.ProviderDeepSeek, Basis: "day", PeriodStart: dayStart,
-			CapturedAt: now.Add(-2 * time.Hour), Amount: 20, Currency: "USD", USDAmount: 20},
+			CapturedAt: older, Amount: 20, Currency: "USD", USDAmount: 20},
 		{Provider: config.ProviderDeepSeek, Basis: "day", PeriodStart: dayStart,
-			CapturedAt: now, Amount: 19, Currency: "USD", USDAmount: 19},
+			CapturedAt: newer, Amount: 19, Currency: "USD", USDAmount: 19},
 	}
 	for _, snap := range snaps {
 		if err := store.InsertBalanceSnapshot(snap); err != nil {

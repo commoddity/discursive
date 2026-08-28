@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
@@ -43,36 +44,6 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	visionModel := config.VisionModelFor(sanitized.Provider)
-	var visionURL string
-	if s.cfg.VisionChatURLOverride != "" {
-		visionURL = s.cfg.VisionChatURLOverride
-	} else {
-		var vErr error
-		visionURL, vErr = s.chatURL(sanitized.Provider, visionModel)
-		if vErr != nil {
-			logRequest(requestID, "status", http.StatusBadGateway, "error", vErr.Error(), "provider", string(sanitized.Provider), "model", visionModel)
-			writeJSONError(w, http.StatusBadGateway, vErr.Error(), "upstream_error")
-			return
-		}
-	}
-	if _, err := s.vision.ReplaceImages(r.Context(), sanitized.Body, vision.Request{
-		Provider: sanitized.Provider,
-		Model:    visionModel,
-		ChatURL:  visionURL,
-		GetKey: func() (string, bool) {
-			k, kerr := s.upstreamKey(sanitized.Provider)
-			if kerr != nil || k == "" {
-				return "", false
-			}
-			return k, true
-		},
-	}); err != nil {
-		logRequest(requestID, "status", http.StatusBadRequest, "error", "vision", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
-		writeJSONError(w, http.StatusBadRequest, err.Error(), "vision_error")
-		return
-	}
-
 	// Tool-result compression.
 	if s.compressor != nil && s.toolCompressionEnabled() {
 		cctx, cerr := s.compressContext(sanitized.Provider, time.Now())
@@ -82,7 +53,8 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			stats, err := s.compressor.Compress(r.Context(), sanitized.Body, cctx)
 			if err != nil {
 				slog.Warn("compress: failed, sending original", "request_id", requestID, "err", err)
-			} else if stats.ToolResultsCompressed > 0 {
+			} else if stats.CharsBefore > 0 {
+				s.recordCompressionRun(s.sessionID, requestID, stats)
 				slog.Info("compress: tool_results", "request_id", requestID,
 					"compressed", stats.ToolResultsCompressed,
 					"chars_before", stats.CharsBefore, "chars_after", stats.CharsAfter)
@@ -128,18 +100,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		// OpenRouter DeepSeek shape is emitted correctly.
 		cfg := s.sanitizeConfig()
 		applyThinkingPolicy(sanitized.Body, route, cfg)
-		applyOpenRouterSort(sanitized.Body, route, cfg.OpenRouterSort)
-	}
-
-	// Thinking-effort coupling: for GLM-4.7-family models (thinking on/off),
-	// force thinking OFF on downgrade-safe (mechanical) classes even when the
-	// per-model toggle is on, so cheap turns stay fast/cheap while hard turns
-	// (editing / complex_reasoning) keep quality. The per-model live toggle is
-	// the baseline; this only narrows it downward on mechanical classes.
-	if route, err := ResolveModel(sanitized.Model); err == nil && zaiThinkingToggle(route.RealModel) {
-		if !thinkingClass(routerResult.RequestClass) {
-			sanitized.Body["thinking"] = map[string]any{"type": "disabled"}
-		}
+		applyOpenRouterRouting(sanitized.Body, route, cfg)
 	}
 
 	// Apply verbosity controls (gated per-model on the live map so each model's
@@ -165,14 +126,27 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if corrected := s.isPeakAllowedOpenRouter(sanitized.Model, requestID); corrected != sanitized.Model {
 		sanitized.Model = corrected
 		sanitized.Body["model"] = corrected
-		if route, rerr := ResolveModel(corrected); rerr == nil {
-			sanitized.Provider = route.Provider
-			sanitized.Policy = route.Policy
-			cfg := s.sanitizeConfig()
-			applyThinkingPolicy(sanitized.Body, route, cfg)
-			applyOpenRouterSort(sanitized.Body, route, cfg.OpenRouterSort)
+		route, rerr := ResolveModel(corrected)
+		if rerr != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", fmt.Sprintf("off-peak OpenRouter correction model %q not resolvable: %v", corrected, rerr), "model", corrected)
+			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("off-peak OpenRouter correction model %q not resolvable: %v", corrected, rerr), "upstream_error")
+			return
 		}
+		sanitized.Provider = route.Provider
+		sanitized.Policy = route.Policy
+		cfg := s.sanitizeConfig()
+		applyThinkingPolicy(sanitized.Body, route, cfg)
+		applyOpenRouterRouting(sanitized.Body, route, cfg)
 	}
+
+	// Vision keys on the FINAL model (after router + peak). Native-vision
+	// models keep image_url; everything else is described by that provider's
+	// vision worker (DeepSeek pro → deepseek-v4-flash-vision-exp, glm-5.3 → glm-4.6v).
+	if !s.applyVision(w, r, sanitized, requestID) {
+		return
+	}
+
+	applyOpenRouterSession(sanitized.Body, sanitized.Provider, s.sessionID)
 
 	upstreamKey, err := s.upstreamKey(sanitized.Provider)
 	if err != nil {
@@ -231,7 +205,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				"body", scan.err.message,
 			)
 		}
-		logRequest(requestID, "status", resp.StatusCode, "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort, "stream", "passthrough")
+		logRequest(requestID, completionLogAttrs(started, resp.Header, scan, nil,
+			"status", resp.StatusCode, "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort, "stream", "passthrough",
+		)...)
 		return
 	}
 
@@ -257,7 +233,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started)
+	s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, sanitized.Provider, sanitized.Model, effort, requestID, started, resp.Header)
 }
 
 func (s *Server) finishUpstream(w http.ResponseWriter, resp *http.Response, wantsStream bool, provider config.Provider, model, effort, requestID string, started time.Time) {
@@ -281,7 +257,9 @@ func (s *Server) finishUpstream(w http.ResponseWriter, resp *http.Response, want
 				"body", scan.err.message,
 			)
 		}
-		logRequest(requestID, "status", resp.StatusCode, "provider", string(provider), "model", model, "effort", effort, "stream", "passthrough", "retry", true)
+		logRequest(requestID, completionLogAttrs(started, resp.Header, scan, nil,
+			"status", resp.StatusCode, "provider", string(provider), "model", model, "effort", effort, "stream", "passthrough", "retry", true,
+		)...)
 		return
 	}
 	respBody, err := io.ReadAll(resp.Body)
@@ -290,10 +268,10 @@ func (s *Server) finishUpstream(w http.ResponseWriter, resp *http.Response, want
 		writeJSONError(w, http.StatusBadGateway, "failed reading upstream body", "upstream_error")
 		return
 	}
-	s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, provider, model, effort, requestID, started)
+	s.writeBufferedResponse(w, resp.StatusCode, respBody, wantsStream, provider, model, effort, requestID, started, resp.Header)
 }
 
-func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBody []byte, wantsStream bool, provider config.Provider, model, effort, requestID string, started time.Time) {
+func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBody []byte, wantsStream bool, provider config.Provider, model, effort, requestID string, started time.Time, hdr http.Header) {
 	lat := time.Since(started)
 	if status >= 200 && status < 300 {
 		var completion map[string]any
@@ -301,6 +279,9 @@ func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBo
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)
 			_, _ = w.Write(respBody)
+			logRequest(requestID, completionLogAttrs(started, hdr, nil, nil,
+				"status", status, "provider", string(provider), "model", model, "effort", effort, "json_error", true,
+			)...)
 			return
 		}
 		if u, ok := completion["usage"].(map[string]any); ok {
@@ -308,13 +289,17 @@ func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBo
 		}
 		if wantsStream {
 			writeSynthesizedSSE(w, completion)
-			logRequest(requestID, "status", status, "provider", string(provider), "model", model, "effort", effort, "stream", "synthesize")
+			logRequest(requestID, completionLogAttrs(started, hdr, nil, completion,
+				"status", status, "provider", string(provider), "model", model, "effort", effort, "stream", "synthesize",
+			)...)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(completion)
-		logRequest(requestID, "status", status, "provider", string(provider), "model", model, "effort", effort, "stream", false)
+		logRequest(requestID, completionLogAttrs(started, hdr, nil, completion,
+			"status", status, "provider", string(provider), "model", model, "effort", effort, "stream", false,
+		)...)
 		return
 	}
 
@@ -346,7 +331,9 @@ func (s *Server) writeBufferedResponse(w http.ResponseWriter, status int, respBo
 			},
 		})
 	}
-	logRequest(requestID, "status", status, "provider", string(provider), "model", model, "effort", effort, "upstream_error", true)
+	logRequest(requestID, completionLogAttrs(started, hdr, nil, errObj,
+		"status", status, "provider", string(provider), "model", model, "effort", effort, "upstream_error", true,
+	)...)
 }
 
 func (s *Server) doUpstream(r *http.Request, url, apiKey string, body map[string]any) (*http.Response, error) {
@@ -360,6 +347,7 @@ func (s *Server) doUpstream(r *http.Request, url, apiKey string, body map[string
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
+	applyOpenRouterRequestHeaders(req.Header, url, body)
 
 	// Log the outbound request for debugging flash model issues.
 	model := ""
@@ -384,9 +372,9 @@ func (s *Server) doUpstream(r *http.Request, url, apiKey string, body map[string
 }
 
 // doUpstreamWithRetry wraps doUpstream with retry logic for Z.AI HTTP 429
-// responses. Transient plan/concurrency limits often clear quickly; we retry up
-// to three times with short exponential backoff before returning the 429 to
-// Cursor. Non-Z.AI providers bypass retries and call doUpstream directly.
+// responses. Transient upstream concurrency or quota blips often clear quickly;
+// we retry up to three times with short exponential backoff before returning the
+// 429 to Cursor. Non-Z.AI providers bypass retries and call doUpstream directly.
 func (s *Server) doUpstreamWithRetry(r *http.Request, url, apiKey string, body map[string]any, requestID, model string, provider config.Provider, effort string) (*http.Response, error) {
 	const maxRetries = 3
 	const baseDelay = 250 * time.Millisecond
@@ -415,4 +403,168 @@ func (s *Server) doUpstreamWithRetry(r *http.Request, url, apiKey string, body m
 		}
 	}
 	return nil, fmt.Errorf("retry exhausted for %s", model)
+}
+
+// applyVision rewrites or keeps image_url parts for the model that will actually
+// be sent upstream. Returns false if it already wrote an HTTP error.
+func (s *Server) applyVision(w http.ResponseWriter, r *http.Request, sanitized SanitizeResult, requestID string) bool {
+	nImages := vision.CountImages(sanitized.Body)
+	if config.HasNativeVision(sanitized.Model) {
+		if nImages > 0 {
+			slog.Info("vision_native_passthrough",
+				"request_id", requestID,
+				"model", sanitized.Model,
+				"images", nImages,
+			)
+		}
+		return true
+	}
+	if nImages > 0 && isDescribeAfterNative(sanitized.Model) {
+		slog.Info("vision_describe_after_native",
+			"request_id", requestID,
+			"model", sanitized.Model,
+			"images", nImages,
+		)
+	}
+	visionProvider, visionModel := visionWorkerFor(sanitized.Provider, sanitized.Model)
+	var visionURL string
+	if s.cfg.VisionChatURLOverride != "" {
+		visionURL = s.cfg.VisionChatURLOverride
+	} else {
+		var vErr error
+		visionURL, vErr = s.chatURL(visionProvider, visionModel)
+		if vErr != nil {
+			logRequest(requestID, "status", http.StatusBadGateway, "error", vErr.Error(), "provider", string(visionProvider), "model", visionModel)
+			writeJSONError(w, http.StatusBadGateway, vErr.Error(), "upstream_error")
+			return false
+		}
+	}
+	if _, err := s.vision.ReplaceImages(r.Context(), sanitized.Body, vision.Request{
+		Provider: visionProvider,
+		Model:    visionModel,
+		ChatURL:  visionURL,
+		GetKey: func() (string, bool) {
+			k, kerr := s.upstreamKey(visionProvider)
+			if kerr != nil || k == "" {
+				return "", false
+			}
+			return k, true
+		},
+	}); err != nil {
+		logRequest(requestID, "status", http.StatusBadRequest, "error", "vision", err.Error(), "provider", string(sanitized.Provider), "model", sanitized.Model)
+		writeJSONError(w, http.StatusBadRequest, err.Error(), "vision_error")
+		return false
+	}
+	return true
+}
+
+// visionWorkerFor returns the provider + model used to describe images for a
+// text-only chat route. OpenRouter twins use the real provider's vision worker
+// (OR DeepSeek flash is not multimodal).
+func visionWorkerFor(provider config.Provider, model string) (config.Provider, string) {
+	if provider == config.ProviderOpenRouter {
+		if _, realP, ok := config.OpenRouterRealFor(model); ok {
+			return realP, config.VisionModelFor(realP)
+		}
+	}
+	return provider, config.VisionModelFor(provider)
+}
+
+// isDescribeAfterNative reports flagship chat models that do not accept images.
+// Cursor still resends pixels from a prior native-vision turn (flash / vision-exp).
+func isDescribeAfterNative(model string) bool {
+	if real, _, ok := config.OpenRouterRealFor(model); ok {
+		model = real
+	}
+	if base, ok := strings.CutSuffix(model, "[1m]"); ok {
+		model = base
+	}
+	return model == config.ModelZaiGLM53 || model == config.ModelDeepSeekV4Pro
+}
+
+// completionLogAttrs appends latency_ms and, when known, or_host to a
+// gateway_request log. Host comes from OpenRouter response headers first,
+// then SSE/JSON metadata.
+func completionLogAttrs(started time.Time, hdr http.Header, scan *sseUsageScanner, completion map[string]any, extra ...any) []any {
+	host := openRouterHostFromHeaders(hdr)
+	if host == "" && scan != nil {
+		host = scan.orHost
+	}
+	if host == "" {
+		host = openRouterHostFromObject(completion)
+	}
+	extra = append(extra, "latency_ms", time.Since(started).Milliseconds())
+	if host != "" {
+		extra = append(extra, "or_host", host)
+	}
+	return extra
+}
+
+func applyOpenRouterRequestHeaders(h http.Header, url string, body map[string]any) {
+	if h == nil {
+		return
+	}
+	sid := ""
+	if body != nil {
+		if s, ok := body["session_id"].(string); ok {
+			sid = strings.TrimSpace(s)
+		}
+	}
+	if sid != "" {
+		h.Set("X-Session-Id", sid)
+	}
+	if strings.Contains(url, "openrouter.ai") || sid != "" {
+		h.Set("X-OpenRouter-Metadata", "enabled")
+	}
+}
+
+func openRouterHostFromHeaders(h http.Header) string {
+	if h == nil {
+		return ""
+	}
+	for _, k := range []string{"X-OpenRouter-Provider", "OpenRouter-Provider"} {
+		if v := strings.TrimSpace(h.Get(k)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func openRouterHostFromObject(obj map[string]any) string {
+	if obj == nil {
+		return ""
+	}
+	if p, ok := obj["provider"].(string); ok {
+		if v := strings.TrimSpace(p); v != "" {
+			return v
+		}
+	}
+	meta, ok := obj["openrouter_metadata"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	eps, ok := meta["endpoints"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	avail, ok := eps["available"].([]any)
+	if !ok {
+		return ""
+	}
+	for _, item := range avail {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		selected, _ := m["selected"].(bool)
+		if !selected {
+			continue
+		}
+		if p, ok := m["provider"].(string); ok {
+			if v := strings.TrimSpace(p); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
 }

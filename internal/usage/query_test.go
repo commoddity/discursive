@@ -110,11 +110,11 @@ func TestZaiCreditsAt(t *testing.T) {
 			want:   (690 + 2400) / 2,
 		},
 		{
-			name:   "glm47 peak cached",
-			model:  "glm-4.7",
+			name:   "glm53flash peak cached",
+			model:  config.ModelZaiGLM53Flash,
 			tokens: UsageTokens{CacheHitTokens: 2_000_000},
 			at:     peak,
-			want:   2 * 120,
+			want:   2 * 56,
 		},
 		{
 			name:   "glm46v vision worker off-peak",

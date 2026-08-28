@@ -122,6 +122,19 @@ func initSchema(db *sql.DB) error {
 		PRIMARY KEY (provider, basis, period_start, captured_at)
 	);
 	CREATE INDEX IF NOT EXISTS idx_bal_snap_prov_cap ON balance_snapshots(provider, captured_at);
+
+	CREATE TABLE IF NOT EXISTS compression_runs (
+		id                      TEXT PRIMARY KEY,
+		timestamp               TEXT NOT NULL,
+		chat_session_id         TEXT NOT NULL DEFAULT '',
+		request_id              TEXT NOT NULL DEFAULT '',
+		tool_results_compressed INTEGER NOT NULL DEFAULT 0,
+		chars_before            INTEGER NOT NULL DEFAULT 0,
+		chars_after             INTEGER NOT NULL DEFAULT 0,
+		summarizer_calls        INTEGER NOT NULL DEFAULT 0,
+		cache_hits              INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_compression_runs_ts ON compression_runs(timestamp);
 	`
 	if _, err := db.Exec(ddl); err != nil {
 		return fmt.Errorf("init schema: %w", err)

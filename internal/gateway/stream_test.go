@@ -50,6 +50,23 @@ data: [DONE]
 	}
 }
 
+func TestSSEUsageScanner_OpenRouterHost(t *testing.T) {
+	sse := `data: {"provider":"Wafer","choices":[{"delta":{"content":"hi"}}]}
+
+data: {"usage":{"prompt_tokens":10,"completion_tokens":1}}
+
+data: [DONE]
+`
+	var sc sseUsageScanner
+	sc.feed([]byte(sse))
+	if sc.orHost != "Wafer" {
+		t.Fatalf("orHost=%q want Wafer", sc.orHost)
+	}
+	if !sc.found {
+		t.Fatal("expected usage found")
+	}
+}
+
 func TestSSEUsageScanner_NoUsageInStream(t *testing.T) {
 	sse := `data: {"choices":[{"delta":{"content":"hello"}}]}
 

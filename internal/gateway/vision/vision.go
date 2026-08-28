@@ -22,10 +22,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-const (
-	cacheTTL      = 10 * time.Minute
-	maxConcurrent = 4
-)
+const cacheTTL = 10 * time.Minute
 
 // visionPrompt is the instruction sent to the vision model for each image.
 const visionPrompt = "Describe this image in detail for a coding assistant. Capture any text, UI, error messages, diagrams, and layout. Be precise and concise."
@@ -180,7 +177,6 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any, req 
 		return d.applyDescriptions(msgs, jobs, results), nil
 	}
 
-	sem := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
 
 	for i, job := range jobs {
@@ -191,8 +187,6 @@ func (d *Describer) ReplaceImages(ctx context.Context, body map[string]any, req 
 		wg.Add(1)
 		go func(idx int, j imageJob) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
 
 			val, err, _ := d.sfg.Do(j.hash, func() (any, error) {
 				desc, err := d.describeImage(ctx, j.imgURL, j.hash, req)
@@ -252,6 +246,38 @@ func logDescriptionsSkipped(jobs []imageJob, results []imageResult) {
 			"reason", "vision model could not describe the image (rate-limited, missing key, or upstream error)",
 		)
 	}
+}
+
+// CountImages returns how many image_url parts are present in body messages.
+func CountImages(body map[string]any) int {
+	if body == nil {
+		return 0
+	}
+	msgs, ok := body["messages"].([]any)
+	if !ok {
+		return 0
+	}
+	n := 0
+	for _, raw := range msgs {
+		msg, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		parts, ok := msg["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, part := range parts {
+			p, ok := part.(map[string]any)
+			if !ok {
+				continue
+			}
+			if extractImageURL(p) != "" {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 func extractImageURL(part map[string]any) string {

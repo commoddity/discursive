@@ -568,3 +568,71 @@ func TestCompress_SkipsWebFetchToolResult(t *testing.T) {
 		t.Fatalf("flash summarizer should not be called for WebFetch, got %d", count.Load())
 	}
 }
+
+func TestCompress_OpenRouterSessionAndRouting(t *testing.T) {
+	t.Setenv(config.EnvOpenRouterSort, "throughput")
+	t.Setenv(config.EnvOpenRouterIgnore, "wafer,morph,venice")
+	t.Setenv(config.EnvOpenRouterMaxLatencyP90, "2.5")
+
+	var gotBody map[string]any
+	var gotSessionHdr string
+	var gotMetaHdr string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSessionHdr = r.Header.Get("X-Session-Id")
+		gotMetaHdr = r.Header.Get("X-OpenRouter-Metadata")
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{
+				map[string]any{
+					"message": map[string]any{"content": "short summary"},
+				},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	c := &Compressor{
+		cfg:    CompressorConfig{},
+		client: srv.Client(),
+	}
+	long := longString(30000)
+	body := bodyWithMessages(shortToolResult(long))
+	_, err := c.Compress(t.Context(), body, CompressContext{
+		Provider:  config.ProviderOpenRouter,
+		Model:     config.ModelOpenRouterZaiGLM53Flash,
+		ChatURL:   srv.URL,
+		APIKey:    "or-test-key",
+		SessionID: "sess_compress",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotSessionHdr != "sess_compress" {
+		t.Fatalf("X-Session-Id=%q want sess_compress", gotSessionHdr)
+	}
+	if gotMetaHdr != "enabled" {
+		t.Fatalf("X-OpenRouter-Metadata=%q want enabled", gotMetaHdr)
+	}
+	if gotBody["session_id"] != "sess_compress" {
+		t.Fatalf("body session_id=%v", gotBody["session_id"])
+	}
+	prov, ok := gotBody["provider"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected provider object, body=%v", gotBody)
+	}
+	if prov["sort"] != "throughput" {
+		t.Fatalf("sort=%v", prov["sort"])
+	}
+	ignore, _ := prov["ignore"].([]any)
+	if len(ignore) != 3 {
+		t.Fatalf("ignore=%v", prov["ignore"])
+	}
+	lat, ok := prov["preferred_max_latency"].(map[string]any)
+	if !ok {
+		t.Fatalf("preferred_max_latency missing: %v", prov)
+	}
+	if lat["p90"] != 2.5 {
+		t.Fatalf("p90=%v", lat["p90"])
+	}
+}

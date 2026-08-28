@@ -37,7 +37,7 @@ func TestSetModelPersists(t *testing.T) {
 		wantAlias string
 		wantReal  string
 	}{
-		{name: "deepseek alias", requested: "o3-mini", wantAlias: "o3-mini", wantReal: "deepseek-v4-flash"},
+		{name: "deepseek alias", requested: "o3-mini", wantAlias: "o3-mini", wantReal: "deepseek-v4-flash-vision-exp"},
 		{name: "kimi alias", requested: "gpt-4o", wantAlias: "gpt-4o", wantReal: "kimi-k3"},
 		{name: "real k2.7", requested: "kimi-k2.7-code", wantAlias: "kimi-k2.7-code", wantReal: "kimi-k2.7-code"},
 	}

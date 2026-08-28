@@ -14,7 +14,7 @@ internal/
 ├── config/         # AppSettings, paths, load/save
 ├── crypto/         # Moonshot + DeepSeek secret protect + gateway key gen
 ├── gateway/        # HTTP server, auth, sanitizer, optimizer, multi-provider proxy
-│   └── vision/     # image description via glm-4.6v (content-hash cache, singleflight dedup)
+│   └── vision/     # image description / native passthrough (content-hash cache, singleflight dedup)
 ├── tunnel/         # cloudflared supervise + BYO public URL
 ├── usage/          # pricing table + per-session token/cost store
 └── doctor/         # health checks aggregating the above

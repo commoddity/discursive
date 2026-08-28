@@ -18,12 +18,17 @@ OpenAI-compat shapes: `` (local reference; do not vendor)
 
 | API model ID | Role |
 | ---- | --- |
-| `deepseek-v4-flash` | Default cheap / high-volume execution |
-| `deepseek-v4-pro` | Harder reasoning / agentic execution |
+| `deepseek-v4-flash-vision-exp` | Cheap / high-volume execution; **native vision** (https://api-docs.deepseek.com/guides/vision) |
+| `deepseek-v4-pro` | Harder reasoning / agentic execution (text-only; images described via flash-vision-exp) |
+| `deepseek-v4-flash` | Legacy id; resolves to `deepseek-v4-flash-vision-exp` |
 
 **Deprecated aliases (upstream, do not prefer in our map):** `deepseek-chat`,
 `deepseek-reasoner` (historically flash non-thinking / thinking; sunset
-2026-07-24 UTC per DeepSeek docs). Prefer `deepseek-v4-flash` / `deepseek-v4-pro`.
+2026-07-24 UTC per DeepSeek docs). Prefer `deepseek-v4-flash-vision-exp` /
+`deepseek-v4-pro`.
+
+Images are supported **only** on `deepseek-v4-flash-vision-exp` (user messages).
+Other DeepSeek models return 400 "This model does not support image".
 
 ## Thinking / sampling (MVP)
 
@@ -63,5 +68,11 @@ cheap.
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
 | `deepseek-v4-flash` tool-result turns log `est_usd ≈ 0.000` with ~99% `cache_hit_tokens` (e.g. 40,576 hit / 46 miss) while `tokens_in` climbs each turn | DeepSeek prompt caching keys on a matching prefix; because each turn appends one tool result to unchanged prior messages, the prefix (and thus the cache) is reused | Expected and desirable — do not treat near-zero flash-cost turns in a stable conversation as under-counting. It means the per-turn downgrade is already paying for itself; run medium write-turns on `pro` and small/read-only on `flash` without fear of cost blow-up |
+
+### `DeepSeek 400 This model does not support image`
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Upstream 400 on `deepseek-v4-pro` (or OpenRouter DeepSeek flash) with screenshots in history | Only `deepseek-v4-flash-vision-exp` accepts `image_url`; images only in `user` messages | Native passthrough on vision-exp (`HasNativeVision`). Pro and OR flash twins go through the describer after router/peak (`applyVision` in `proxy.go`) |
 
 `<!-- last-verified: 2026-08 -->`

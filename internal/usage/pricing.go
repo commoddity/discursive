@@ -140,13 +140,14 @@ type zaiRates struct {
 }
 
 var zaiPricing = map[string]zaiRates{
-	// GLM-5.3 USD per MTok from GLM-5.2's published rates (carried forward per docs);
-	// GLM-4.7 USD per MTok derived from devpack credit multipliers (4.6/1.2/16 per 10k).
-	// Sources: https://docs.z.ai/guides/overview/pricing + https://docs.z.ai/devpack/overview
-	"glm-5.3":  {0.26, 1.40, 4.40}, // same USD as glm-5.2
-	"glm-5.2":  {0.26, 1.40, 4.40}, // deprecated, same as glm-5.3
-	"glm-4.7":  {0.12, 0.46, 1.60}, // from 4.6/1.2/16 per 10k credits
-	"glm-4.6v": {0.03, 0.12, 0.27}, // vision worker, from 1.2/0.3/2.7 per 10k credits
+	// GLM USD/MTok from https://docs.z.ai/guides/overview/pricing (2026-08).
+	// glm-5.3-flash promo (until 2026-09-09 UTC+8): $0.015 cache / $0.075 in / $0.25 out.
+	// List rates: $0.03 / $0.15 / $0.50. glm-5.3: $0.26 / $1.40 / $4.40.
+	"glm-5.3":       {0.26, 1.40, 4.40},   // cache / input / output
+	"glm-5.2":       {0.26, 1.40, 4.40},   // deprecated, same as glm-5.3
+	"glm-5.3-flash": {0.015, 0.075, 0.25}, // promo until 2026-09-09 UTC+8; list $0.03/$0.15/$0.50
+	"glm-4.7":       {0.015, 0.075, 0.25}, // legacy log id; same as glm-5.3-flash
+	"glm-4.6v":      {0.03, 0.12, 0.27},   // vision worker, from 1.2/0.3/2.7 per 10k credits
 }
 
 // openrouterRates USD per 1M tokens (cache hit, input, output).
@@ -164,21 +165,22 @@ type openrouterRates struct {
 }
 
 var openrouterPricing = map[string]openrouterRates{
-	"deepseek/deepseek-v4-flash-0731": {0.014, 0.065, 0.14},
-	"deepseek/deepseek-v4-pro-0813":   {0.022, 0.66, 1.98},
-	config.ModelOpenRouterZaiGLM53:    {0.26, 1.40, 4.40}, // verified 2026-08 openrouter.ai/z-ai/glm-5.3
-	config.ModelOpenRouterZaiGLM47:    {0.11, 0.60, 2.20}, // verified 2026-08 openrouter.ai/z-ai/glm-4.7
+	"deepseek/deepseek-v4-flash-0731":   {0.014, 0.065, 0.14},
+	"deepseek/deepseek-v4-pro-0813":     {0.022, 0.66, 1.98},
+	config.ModelOpenRouterZaiGLM53:      {0.26, 1.40, 4.40},   // verified 2026-08 openrouter.ai/z-ai/glm-5.3
+	config.ModelOpenRouterZaiGLM53Flash: {0.015, 0.075, 0.25}, // Z.AI flash promo USD; list $0.03/$0.15/$0.50
 }
 
 // zaiCreditsPerMTok holds official Coding Plan credit multipliers per 10k
 // tokens, expressed as credits per 1M tokens (multiplier × 100).
 // Source: https://docs.z.ai/devpack/overview (Credit Calculation table).
 var zaiCreditsPerMTok = map[string][3]float64{ // {cache_hit, input, output}
-	"glm-5.3":     {170, 690, 2400}, // 1.7 / 6.9 / 24
-	"glm-5.2":     {170, 690, 2400}, // routed to 5.3 upstream
-	"glm-5-turbo": {150, 570, 2100}, // 1.5 / 5.7 / 21
-	"glm-4.7":     {120, 460, 1600}, // 1.2 / 4.6 / 16
-	"glm-4.6v":    {30, 120, 270},   // 0.3 / 1.2 / 2.7 (vision worker)
+	"glm-5.3":       {170, 690, 2400}, // 1.7 / 6.9 / 24
+	"glm-5.2":       {170, 690, 2400}, // routed to 5.3 upstream
+	"glm-5.3-flash": {56, 230, 800},   // 0.56 / 2.3 / 8 per 10k credits
+	"glm-4.7":       {56, 230, 800},   // legacy log id; same as glm-5.3-flash
+	"glm-5-turbo":   {150, 570, 2100}, // 1.5 / 5.7 / 21
+	"glm-4.6v":      {30, 120, 270},   // 0.3 / 1.2 / 2.7 (vision worker)
 }
 
 // ZaiCreditsAt computes coding-plan credits consumed by one usage event.

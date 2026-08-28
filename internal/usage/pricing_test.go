@@ -148,11 +148,18 @@ func TestEstimateUSD(t *testing.T) {
 			want:     1.40,
 		},
 		{
-			name:     "zai_glm47_input_output",
+			name:     "zai_glm53flash_input_output",
 			provider: config.ProviderZai,
-			model:    "glm-4.7",
+			model:    config.ModelZaiGLM53Flash,
 			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
-			want:     0.46 + 1.60,
+			want:     0.075 + 0.25,
+		},
+		{
+			name:     "zai_glm53flash_cache_hit_only",
+			provider: config.ProviderZai,
+			model:    config.ModelZaiGLM53Flash,
+			tokens:   UsageTokens{CacheHitTokens: 1_000_000},
+			want:     0.015,
 		},
 		{
 			name:     "unknown_zai_model",
@@ -262,6 +269,13 @@ func TestEstimateUSDDepSeekPeakOffPeak(t *testing.T) {
 		{
 			name:  "flash_off_peak",
 			model: "deepseek-v4-flash",
+			at:    post,
+			toks:  flash,
+			want:  0.22 + 0.66,
+		},
+		{
+			name:  "flash_vision_exp_off_peak",
+			model: "deepseek-v4-flash-vision-exp",
 			at:    post,
 			toks:  flash,
 			want:  0.22 + 0.66,

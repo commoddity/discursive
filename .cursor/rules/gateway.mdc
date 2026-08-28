@@ -61,10 +61,10 @@ and pricing row.
 || `gpt-4o`        | moonshot | `kimi-k3`         | Planning / flagship ||
 || `gpt-4o-mini`   | moonshot | `kimi-k2.7-code`  | Coding; always thinks ||
 || `o1`            | deepseek | `deepseek-v4-pro` | Harder execution    ||
-|| `o3-mini`       | deepseek | `deepseek-v4-flash` | Cheap execution     ||
+|| `o3-mini`       | deepseek | `deepseek-v4-flash-vision-exp` | Cheap execution; native vision ||
 || `gpt-5-nano`    | thaura   | `thaura`          | Ethical AI; optional provider ||
 || `gpt-4.1-turbo` | zai      | `glm-5.3[1m]`    | 1M context flagship; always thinks ||
-|| `gpt-4.1`       | zai      | `glm-4.7`         | Budget workhorse; thinking on/off ||
+|| `gpt-4.1`       | zai      | `glm-5.3-flash`   | Budget workhorse; 1M context; always thinks ||
 || `gpt-4-turbo`   | zai      | `glm-5.3[1m]`    | **Compat alias** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
 
 > **Peak-hour OpenRouter reroute (always on, HARD RULE: OpenRouter is peak-only).**
@@ -72,8 +72,8 @@ and pricing row.
 > peak (Mon–Fri 06:00–10:00 UTC) `applyPeakReroute` (`peakguard.go`) swaps to
 > each provider's OpenRouter twin from `config.OpenRouterTwinFor` (`providers.go`):
 > DeepSeek flash/pro → `deepseek/deepseek-v4-flash-0731` /
-> `deepseek/deepseek-v4-pro-0813`; Z.AI glm-5.3/glm-4.7 → `z-ai/glm-5.3` /
-> `z-ai/glm-4.7`. Moonshot/Thaura never peak. **Outside peak hours OpenRouter is
+> `deepseek/deepseek-v4-pro-0813`; Z.AI glm-5.3/glm-5.3-flash → `z-ai/glm-5.3` /
+> `z-ai/glm-5.3-flash`. Moonshot/Thaura never peak. **Outside peak hours OpenRouter is
 > never used.** Subagent/router downgrades use the **same provider's small model**
 > (`config.SmallModelFor`) — never cross-provider. Send-time guard:
 > `isPeakAllowedOpenRouter`; `DISCURSIVE_FORCE_PEAK` simulates peak. No OR key?
@@ -121,17 +121,8 @@ model-specific quirks.
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| Z.AI returns HTTP 429 (overloaded / insufficient balance) for `glm-5.3`/`glm-4.7` | Plan concurrency or quota blip; no cross-provider escape hatch. | `doUpstreamWithRetry()` in `proxy.go`: up to **3** retries with exponential backoff (250ms → 500ms → 1s). Return 429 to Cursor after retries exhaust. ||
-|| GLM turns slow when many concurrent subagents hit Z.AI | Coding-plan concurrency ~2 upstream; requests queue or 429. | No gateway overflow to other providers. Subagent router downgrades within Z.AI to `glm-4.7`. Reduce parallel Z.AI load; expect 429 retries. ||
-
-### Historical — pre-2026-08 semaphore overflow (superseded)
-
-|| Symptom | Cause | Fix (historical) ||
-|| ------- | ----- | ---- ||
-|| Z.AI 429 under heavy load | `zaiSem` overflow to DeepSeek | **Removed.** Hard routing + `doUpstreamWithRetry` replaced `zaiSem`/`acquireZaiLaneOrOverflow`/`selectDowngradeLane`. ||
-|| glm-4.6v starved chat budget | Separate vision semaphore | Vision now uses `config.VisionModelFor(provider)` per provider; no shared `zaiSem`. ||
-|| Direct glm-4.7 hung 20-45s when plan slots busy | `acquireZaiSlot` blocked instead of overflowing | **Removed with semaphore model.** ||
-|| Cannot verify lane overflow | No `glm47LaneInUse` counter | **Removed with semaphore.** Use `peak_reroute` + `subagent_router` logs instead. ||
+|| Z.AI returns HTTP 429 (overloaded / insufficient balance) for `glm-5.3`/`glm-5.3-flash` | Upstream concurrency (11 / 50) or quota blip; no cross-provider escape hatch. | `doUpstreamWithRetry()` in `proxy.go`: up to **3** retries with exponential backoff (250ms → 500ms → 1s). Return 429 to Cursor after retries exhaust. ||
+|| GLM turns slow when many concurrent subagents hit Z.AI | Upstream concurrency or quota; requests queue or 429. | No gateway overflow. Z.AI is never router-downgraded. Prefer flash (`gpt-4.1`) for parallel subagents; expect 429 retries. ||
 
 <!-- last-verified: 2026-08 -->
 
@@ -157,12 +148,42 @@ model-specific quirks.
 
 <!-- last-verified: 2026-08 -->
 
-## No context-size gate for router downgrades
+## Z.AI is never router-downgraded
 
 Cheap-class subagent/router downgrades use `config.SmallModelFor(provider)` within
-the same provider (e.g. DeepSeek pro → flash, Z.AI glm-5.3 → glm-4.7, Moonshot
-kimi-k3 → kimi-k2.7-code). Small models have large context; there is no
-performance-based skip based on context size.
+the same provider (DeepSeek pro → flash, Moonshot kimi-k3 → kimi-k2.7-code).
+**Z.AI is never downgraded** — all chat models share a 1M context window.
+`gpt-4.1` resolves to `glm-5.3-flash` (replaced glm-4.7). Legacy `glm-4.7`
+requests also map to `glm-5.3-flash` upstream. Flash-fleet agents use `or-flash`
+(DeepSeek), not Z.AI.
+
+|| Symptom | Cause | Fix ||
+|| ----- | ---- | ----- ||
+|| Z.AI 1261 "Prompt exceeds max length" after router downgrade on a long chat | Historical: router downgraded glm-5.3 → glm-4.7 (~200k); Cursor assumed 1M | Do not router-downgrade Z.AI. glm-4.7 replaced by glm-5.3-flash (1M). ||
+
+<!-- last-verified: 2026-08 -->
+
+## Native vision vs describer
+
+`config.HasNativeVision` is an allowlist of **upstream ids that accept `image_url`**. Vision runs **after** router + peak reroute so the final model decides.
+
+|| Final model | Images ||
+|| ----------- | ------ ||
+|| `glm-5.3-flash` / `z-ai/glm-5.3-flash` / legacy `glm-4.7` | Passthrough (`vision_native_passthrough`) ||
+|| `deepseek-v4-flash-vision-exp` | Passthrough (only DeepSeek chat model that accepts images; see https://api-docs.deepseek.com/guides/vision) ||
+|| `glm-5.3` / `z-ai/glm-5.3` | Describe via `glm-4.6v` (`vision_describe_after_native`) ||
+|| `deepseek-v4-pro` / OpenRouter DeepSeek twins | Describe via `deepseek-v4-flash-vision-exp` (pro and OR flash are text-only) ||
+|| Moonshot / Thaura | Describe via that provider's vision model ||
+
+Cursor always resends original `image_url` parts. Switching flash → flagship on the next turn describes those pixels; switching flagship → flash sees them natively.
+
+**Do not strip native flash images** to text on later turns unless multimodal prefill is measured as the bottleneck — repeated `vision_native_passthrough` is expected; cache hits on the text prefix dominate token cost.
+
+|| Symptom | Cause | Fix ||
+|| ----- | ---- | ----- ||
+|| DeepSeek 400 "This model does not support image" on pro or OR flash | Images passed through to a text-only id | Only `deepseek-v4-flash-vision-exp` is native; pro/OR must go through the describer keyed on the **final** model ||
+
+<!-- last-verified: 2026-08 -->
 
 <!-- last-verified: 2026-08 -->
 
@@ -181,7 +202,7 @@ performance-based skip based on context size.
 - Implemented in `internal/gateway/verbosity/`; applied in `proxy.go` after routing.
 - Three request-side mechanisms — **never edits response content**:
   1. **Directive injection** — appends terseness directive to last system/developer message
-  2. **Token cap** — lowers `max_tokens` per model (`deepseek-v4-flash` 4096, `deepseek-v4-pro` 8192, `glm-4.7` 8192, `glm-5.3` 16384)
+  2. **Token cap** — lowers `max_tokens` per model (`deepseek-v4-flash-vision-exp` 4096, `deepseek-v4-pro` 8192, `glm-5.3-flash` 8192, `glm-5.3` 16384)
 - Terseness applies **after** subagent-router downgrade so the final served model determines caps
 
 ## Runtime settings (no restart)

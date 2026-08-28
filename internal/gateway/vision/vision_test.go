@@ -436,3 +436,39 @@ func TestExtractImageURL(t *testing.T) {
 		})
 	}
 }
+
+func TestCountImages(t *testing.T) {
+	tests := []struct {
+		name string
+		body map[string]any
+		want int
+	}{
+		{name: "nil", body: nil, want: 0},
+		{name: "no messages", body: map[string]any{}, want: 0},
+		{
+			name: "text only",
+			body: map[string]any{"messages": []any{map[string]any{"role": "user", "content": "hi"}}},
+			want: 0,
+		},
+		{
+			name: "one image",
+			body: sampleChatBodyWithImages(standardImageURLPart("data:image/png;base64,aaa")),
+			want: 1,
+		},
+		{
+			name: "two images",
+			body: sampleChatBodyWithImages(
+				standardImageURLPart("data:image/png;base64,aaa"),
+				standardImageURLPart("data:image/png;base64,bbb"),
+			),
+			want: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CountImages(tt.body); got != tt.want {
+				t.Fatalf("CountImages = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

@@ -48,10 +48,10 @@ func ListAdvertisedModels() []AdvertisedModel {
 		{ID: "kimi-k3", Provider: config.ProviderMoonshot},
 		{ID: "kimi-k2.7-code", Provider: config.ProviderMoonshot},
 		{ID: "deepseek-v4-pro", Provider: config.ProviderDeepSeek},
-		{ID: "deepseek-v4-flash", Provider: config.ProviderDeepSeek},
+		{ID: "deepseek-v4-flash-vision-exp", Provider: config.ProviderDeepSeek},
 		{ID: "thaura", Provider: config.ProviderThaura},
 		{ID: "glm-5.3", Provider: config.ProviderZai},
-		{ID: "glm-4.7", Provider: config.ProviderZai},
+		{ID: "glm-5.3-flash", Provider: config.ProviderZai},
 	}
 }
 
@@ -66,13 +66,18 @@ func ResolveModel(requested string) (Route, error) {
 	case "o1":
 		return Route{config.ProviderDeepSeek, "deepseek-v4-pro", PolicyDeepSeek}, nil
 	case "o3-mini":
-		return Route{config.ProviderDeepSeek, "deepseek-v4-flash", PolicyDeepSeek}, nil
+		return Route{config.ProviderDeepSeek, config.ModelDeepSeekV4FlashVisionExp, PolicyDeepSeek}, nil
 	case "kimi-k3":
 		return Route{config.ProviderMoonshot, "kimi-k3", PolicyK3}, nil
 	case "kimi-k2.7-code":
 		return Route{config.ProviderMoonshot, "kimi-k2.7-code", PolicyK27}, nil
-	case "deepseek-v4-pro", "deepseek-v4-flash":
+	case "deepseek-v4-pro":
 		return Route{config.ProviderDeepSeek, requested, PolicyDeepSeek}, nil
+	case "deepseek-v4-flash-vision-exp":
+		return Route{config.ProviderDeepSeek, config.ModelDeepSeekV4FlashVisionExp, PolicyDeepSeek}, nil
+	case "deepseek-v4-flash":
+		// Legacy compat — upstream is the vision-capable flash model.
+		return Route{config.ProviderDeepSeek, config.ModelDeepSeekV4FlashVisionExp, PolicyDeepSeek}, nil
 	case "gpt-5-nano":
 		return Route{config.ProviderThaura, "thaura", PolicyThaura}, nil
 	case "thaura":
@@ -83,14 +88,17 @@ func ResolveModel(requested string) (Route, error) {
 		// Cursor sometimes rewrites gpt-4.1-turbo → gpt-4-turbo.
 		return Route{config.ProviderZai, "glm-5.3", PolicyZai}, nil
 	case "gpt-4.1":
-		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil
+		return Route{config.ProviderZai, config.ModelZaiGLM53Flash, PolicyZai}, nil
 	case "glm-5.3":
-		return Route{config.ProviderZai, "glm-5.3", PolicyZai}, nil
+		return Route{config.ProviderZai, config.ModelZaiGLM53, PolicyZai}, nil
+	case "glm-5.3-flash":
+		return Route{config.ProviderZai, config.ModelZaiGLM53Flash, PolicyZai}, nil
 	case "glm-4.7":
-		return Route{config.ProviderZai, "glm-4.7", PolicyZai}, nil
+		// Legacy compat — upstream is glm-5.3-flash (replaced glm-4.7).
+		return Route{config.ProviderZai, config.ModelZaiGLM53Flash, PolicyZai}, nil
 	case config.ModelOpenRouterDeepSeekV4Flash, config.ModelOpenRouterDeepSeekV4Pro:
 		return Route{config.ProviderOpenRouter, requested, PolicyDeepSeek}, nil
-	case config.ModelOpenRouterZaiGLM53, config.ModelOpenRouterZaiGLM47:
+	case config.ModelOpenRouterZaiGLM53, config.ModelOpenRouterZaiGLM53Flash:
 		return Route{config.ProviderOpenRouter, requested, PolicyZai}, nil
 	default:
 		return Route{}, fmt.Errorf("unknown model alias %q", requested)
