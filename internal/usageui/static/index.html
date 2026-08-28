@@ -2689,12 +2689,14 @@
       return 'bal-blue';
     }
 
-    // Credit quota coloring: percentage is consumed (0–100).
+    // Z.AI credit quota coloring by remaining % (100 − consumed).
+    // Blue 100–80%, green 79–20%, yellow 19–6%, red ≤5%.
     function balanceColorClassFromUsage(usedPct) {
       if (usedPct == null || isNaN(usedPct)) return '';
-      if (usedPct >= 80) return 'bal-red';
-      if (usedPct >= 50) return 'bal-yellow';
-      if (usedPct >= 20) return 'bal-green';
+      const remaining = 100 - usedPct;
+      if (remaining <= 5) return 'bal-red';
+      if (remaining < 20) return 'bal-yellow';
+      if (remaining < 80) return 'bal-green';
       return 'bal-blue';
     }
 

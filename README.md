@@ -197,8 +197,8 @@ determines whether the task is cheap enough for a flash model:
 
 > **Downgrade target.** Downgrades use `config.SmallModelFor(provider)` — never
 > cross-provider. Examples: DeepSeek `deepseek-v4-pro` → `deepseek-v4-flash`;
-> Moonshot `kimi-k3` → `kimi-k2.7-code`. Z.AI is not router-downgraded
-> (`glm-5.3` stays `glm-5.3`; pick `gpt-4.1` / `glm-5.3-flash` for the budget tier).
+> Moonshot `kimi-k3` → `kimi-k2.7-code`; Z.AI `glm-5.3` → `glm-5.3-flash`
+> (same 1M window; editing / complex / unknown stay on `glm-5.3`).
 >
 > **Peak-hour OpenRouter reroute (always on).** During DeepSeek peak
 > (01:00–04:00, 06:00–10:00 UTC Beijing weekdays) or Z.AI peak (Mon–Fri

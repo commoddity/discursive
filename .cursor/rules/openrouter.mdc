@@ -43,10 +43,10 @@ Enforcement:
 | `z-ai/glm-5.3` | `glm-5.3` | Z.AI |
 | `z-ai/glm-5.3-flash` | `glm-5.3-flash` | Z.AI |
 
-Peak reroute mapping (non-downgraded traffic only; big vs small via `config.IsBigModel`):
+Peak reroute mapping (after router downgrade; big vs small via `config.IsBigModel`):
 - `deepseek-v4-pro` → `deepseek/deepseek-v4-pro-0813`
 - `deepseek-v4-flash` → `deepseek/deepseek-v4-flash-0731`
-- `glm-5.3` / `glm-5.3[1m]` → `z-ai/glm-5.3`
+- `glm-5.3` → `z-ai/glm-5.3`
 - `glm-5.3-flash` / legacy `glm-4.7` → `z-ai/glm-5.3-flash`
 - `deepseek-v4-flash-vision-exp` / legacy `deepseek-v4-flash` → `deepseek/deepseek-v4-flash-0731`
 - Moonshot, Thaura: no peak reroute

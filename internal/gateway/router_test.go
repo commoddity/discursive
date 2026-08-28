@@ -658,6 +658,8 @@ func TestSubAgentRouter_ProviderSmallModelFallback(t *testing.T) {
 	}{
 		{"kimi-k3", config.ModelKimiK27},
 		{"kimi-k2.7-code", config.ModelKimiK27},
+		{"glm-5.3", config.ModelZaiGLM53Flash},
+		{config.ModelZaiGLM53Flash, config.ModelZaiGLM53Flash},
 		{"thaura", "thaura"},
 	}
 	for _, tt := range tests {
@@ -690,15 +692,18 @@ func TestSubAgentRouter_ProviderSmallModelFallback(t *testing.T) {
 	}
 }
 
-func TestSubAgentRouter_ZaiNeverDowngrades(t *testing.T) {
+func TestSubAgentRouter_ZaiDowngradesCheapClass(t *testing.T) {
+	flash := config.ModelZaiGLM53Flash
 	tests := []struct {
-		name  string
-		model string
+		name         string
+		model        string
+		wantOverride bool
+		wantModel    string
 	}{
-		{name: "glm-5.3 cheap class stays on 5.3", model: "glm-5.3"},
-		{name: "glm-5.3-flash cheap class stays on flash", model: config.ModelZaiGLM53Flash},
-		{name: "OpenRouter glm-5.3 twin stays", model: config.ModelOpenRouterZaiGLM53},
-		{name: "OpenRouter glm-5.3-flash twin stays", model: config.ModelOpenRouterZaiGLM53Flash},
+		{name: "glm-5.3 cheap class → flash", model: "glm-5.3", wantOverride: true, wantModel: flash},
+		{name: "glm-5.3-flash cheap class is no-op", model: flash, wantOverride: false, wantModel: flash},
+		{name: "OpenRouter glm-5.3 twin → flash", model: config.ModelOpenRouterZaiGLM53, wantOverride: true, wantModel: flash},
+		{name: "OpenRouter glm-5.3-flash twin → direct flash", model: config.ModelOpenRouterZaiGLM53Flash, wantOverride: true, wantModel: flash},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -714,13 +719,55 @@ func TestSubAgentRouter_ZaiNeverDowngrades(t *testing.T) {
 			if result.RequestClass != ClassCodeSearch {
 				t.Errorf("RequestClass = %q, want %q", result.RequestClass, ClassCodeSearch)
 			}
-			if result.OverrideApplied {
-				t.Errorf("Z.AI must not downgrade, got %q → %q", result.OriginalModel, result.OverrideModel)
+			if result.OverrideApplied != tt.wantOverride {
+				t.Errorf("OverrideApplied = %v, want %v (%q → %q)", result.OverrideApplied, tt.wantOverride, result.OriginalModel, result.OverrideModel)
 			}
-			if stringField(body, "model") != tt.model {
-				t.Errorf("body.model = %q, want %q", stringField(body, "model"), tt.model)
+			if stringField(body, "model") != tt.wantModel {
+				t.Errorf("body.model = %q, want %q", stringField(body, "model"), tt.wantModel)
 			}
 		})
+	}
+}
+
+func TestSubAgentRouter_ZaiEditingKeepsFlagship(t *testing.T) {
+	body := map[string]any{
+		"model": "glm-5.3",
+		"messages": []any{
+			map[string]any{"role": "system", "content": longSystemPrompt},
+			map[string]any{"role": "user", "content": "Implement a new rate limiter"},
+		},
+	}
+	r := NewSubAgentRouter(SubAgentRouterConfig{Enabled: true})
+	result := r.ClassifyAndOverride(body, "req_test")
+	if result.RequestClass != ClassEditing {
+		t.Errorf("RequestClass = %q, want %q", result.RequestClass, ClassEditing)
+	}
+	if result.OverrideApplied {
+		t.Errorf("Z.AI editing must keep glm-5.3, got %q → %q", result.OriginalModel, result.OverrideModel)
+	}
+	if stringField(body, "model") != "glm-5.3" {
+		t.Errorf("body.model = %q, want glm-5.3", stringField(body, "model"))
+	}
+}
+
+func TestSubAgentRouter_ZaiComplexReasoningKeepsFlagship(t *testing.T) {
+	body := map[string]any{
+		"model": "glm-5.3",
+		"messages": []any{
+			map[string]any{"role": "system", "content": longSystemPrompt},
+			map[string]any{"role": "user", "content": "How would you design the system architecture for this app?"},
+		},
+	}
+	r := NewSubAgentRouter(SubAgentRouterConfig{Enabled: true})
+	result := r.ClassifyAndOverride(body, "req_test")
+	if result.RequestClass != ClassComplexReasoning {
+		t.Errorf("RequestClass = %q, want %q", result.RequestClass, ClassComplexReasoning)
+	}
+	if result.OverrideApplied {
+		t.Errorf("Z.AI complex reasoning must keep glm-5.3, got %q → %q", result.OriginalModel, result.OverrideModel)
+	}
+	if stringField(body, "model") != "glm-5.3" {
+		t.Errorf("body.model = %q, want glm-5.3", stringField(body, "model"))
 	}
 }
 
@@ -884,7 +931,7 @@ internal/config/    → settings, paths, validation
 - o3-mini → DeepSeek deepseek-v4-flash (cheap execution)
 - gpt-5-nano → Thaura thaura (ethical AI)
 - gpt-4.1-turbo → Z.AI glm-5.3 (planning, cheaper than K3)
-- gpt-4.1 → Z.AI glm-4.7 (cheap execution)
+- gpt-4.1 → Z.AI glm-5.3-flash (cheap execution)
 
 ## Coding Standards
 - Wrap errors with %w; return actionable messages at CLI boundaries.

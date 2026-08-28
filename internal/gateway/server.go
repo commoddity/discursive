@@ -169,10 +169,6 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              glmMaxVerbosityMaxTokens,
 			},
-			"glm-5.3[1m]": {
-				SystemMessageDirective: flashTersenessDirective,
-				MaxTokens:              glmMaxVerbosityMaxTokens,
-			},
 			config.ModelOpenRouterZaiGLM53: {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              glmMaxVerbosityMaxTokens,

@@ -63,9 +63,9 @@ and pricing row.
 || `o1`            | deepseek | `deepseek-v4-pro` | Harder execution    ||
 || `o3-mini`       | deepseek | `deepseek-v4-flash-vision-exp` | Cheap execution; native vision ||
 || `gpt-5-nano`    | thaura   | `thaura`          | Ethical AI; optional provider ||
-|| `gpt-4.1-turbo` | zai      | `glm-5.3[1m]`    | 1M context flagship; always thinks ||
+|| `gpt-4.1-turbo` | zai      | `glm-5.3`        | 1M context flagship; always thinks ||
 || `gpt-4.1`       | zai      | `glm-5.3-flash`   | Budget workhorse; 1M context; always thinks ||
-|| `gpt-4-turbo`   | zai      | `glm-5.3[1m]`    | **Compat alias** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
+|| `gpt-4-turbo`   | zai      | `glm-5.3`        | **Compat alias** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
 
 > **Peak-hour OpenRouter reroute (always on, HARD RULE: OpenRouter is peak-only).**
 > During DeepSeek peak (01:00–04:00, 06:00–10:00 UTC Beijing weekdays) or Z.AI
@@ -78,8 +78,8 @@ and pricing row.
 > (`config.SmallModelFor`) — never cross-provider. Send-time guard:
 > `isPeakAllowedOpenRouter`; `DISCURSIVE_FORCE_PEAK` simulates peak. No OR key?
 > Peak traffic falls through to the direct provider and pays peak rates. Logs
-> `peak_reroute` at INFO with from/to + request_id. Applies to non-downgraded
-> traffic only.
+> `peak_reroute` at INFO with from/to + request_id. Runs after router
+> downgrade; on peak the small model's OpenRouter twin is used.
 
 Set the alias manually in Cursor Settings → Models. The gateway maps it and
 picks the right base URL + API key. No auto-application to Cursor's state.vscdb
@@ -89,7 +89,7 @@ picks the right base URL + API key. No auto-application to Cursor's state.vscdb
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.3[1m]`). Do not treat the rewritten name as a gateway bug. ||
+|| Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.3`). Do not treat the rewritten name as a gateway bug. ||
 
 ## Sanitizer order (preserve)
 
@@ -122,7 +122,7 @@ model-specific quirks.
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
 || Z.AI returns HTTP 429 (overloaded / insufficient balance) for `glm-5.3`/`glm-5.3-flash` | Upstream concurrency (11 / 50) or quota blip; no cross-provider escape hatch. | `doUpstreamWithRetry()` in `proxy.go`: up to **3** retries with exponential backoff (250ms → 500ms → 1s). Return 429 to Cursor after retries exhaust. ||
-|| GLM turns slow when many concurrent subagents hit Z.AI | Upstream concurrency or quota; requests queue or 429. | No gateway overflow. Z.AI is never router-downgraded. Prefer flash (`gpt-4.1`) for parallel subagents; expect 429 retries. ||
+|| GLM turns slow when many concurrent subagents hit Z.AI | Upstream concurrency (glm-5.3 = 11; flash = 50) or quota; cheap-class subagents used to stay on flagship | Router downgrades cheap-class Z.AI to `glm-5.3-flash`. Editing / complex / unknown stay on `glm-5.3`. 429 → `doUpstreamWithRetry`. No cross-provider overflow. ||
 
 <!-- last-verified: 2026-08 -->
 
@@ -148,18 +148,24 @@ model-specific quirks.
 
 <!-- last-verified: 2026-08 -->
 
-## Z.AI is never router-downgraded
+## Z.AI cheap-class downgrades to flash
 
 Cheap-class subagent/router downgrades use `config.SmallModelFor(provider)` within
-the same provider (DeepSeek pro → flash, Moonshot kimi-k3 → kimi-k2.7-code).
-**Z.AI is never downgraded** — all chat models share a 1M context window.
+the same provider (DeepSeek pro → flash, Moonshot kimi-k3 → kimi-k2.7-code,
+Z.AI `glm-5.3` → `glm-5.3-flash`). Both GLM chat models share a 1M context
+window, so the swap does not shrink Cursor's assumed context. Already-on-flash
+is a no-op. Editing / complex reasoning / unknown stay on the requested model.
 `gpt-4.1` resolves to `glm-5.3-flash` (replaced glm-4.7). Legacy `glm-4.7`
-requests also map to `glm-5.3-flash` upstream. Flash-fleet agents use `or-flash`
-(DeepSeek), not Z.AI.
+requests also map to `glm-5.3-flash` upstream.
+
+The gateway never reads Cursor agent frontmatter. If Cursor inherits the parent
+alias (`gpt-4.1-turbo` → `glm-5.3`), the router is the safety net for cheap-class
+turns. Honor-if-sent: a request that already arrives as flash is not upgraded.
 
 || Symptom | Cause | Fix ||
 || ----- | ---- | ----- ||
-|| Z.AI 1261 "Prompt exceeds max length" after router downgrade on a long chat | Historical: router downgraded glm-5.3 → glm-4.7 (~200k); Cursor assumed 1M | Do not router-downgrade Z.AI. glm-4.7 replaced by glm-5.3-flash (1M). ||
+|| Parent on `gpt-4.1-turbo`; explore/search subagents log `glm-5.3` not `glm-5.3-flash` | Cursor Task defaults to inherit; agent `model:` is not in the HTTP body. Historical router skipped Z.AI because glm-4.7 was ~200k | Router downgrades cheap-class Z.AI to `glm-5.3-flash`. Pin agent files to `gpt-4.1` as a best-effort Cursor hint. Do not use `or-flash` (not a ResolveModel alias). ||
+|| Z.AI 1261 "Prompt exceeds max length" after router downgrade on a long chat | Historical: router downgraded glm-5.3 → glm-4.7 (~200k); Cursor assumed 1M | Obsolete — glm-4.7 replaced by glm-5.3-flash (1M). Cheap-class Z.AI now downgrades to flash. ||
 
 <!-- last-verified: 2026-08 -->
 
@@ -217,23 +223,25 @@ Cursor always resends original `image_url` parts. Switching flash → flagship o
 ## Global subagent model sizing (flash fleet)
 
 The live subagent fleet lives in `/.cursor/agents/` (10 files).
-Flash agents use `model: or-flash` (gateway alias → DeepSeek flash off-peak,
-OpenRouter flash during DeepSeek peak). The **subagent router** downgrades
-within the request provider's small model (`config.SmallModelFor`); peak reroute
+Flash agents should pin `model: gpt-4.1` (Z.AI `glm-5.3-flash`) when the parent
+chat is on `gpt-4.1-turbo`. Do **not** pin `or-flash` — that string is not a
+`ResolveModel` alias. Cursor Task still defaults to inherit, so the **subagent
+router** is the safety net: cheap-class turns downgrade via
+`config.SmallModelFor` (Z.AI `glm-5.3` → `glm-5.3-flash`); peak reroute
 applies separately via `applyPeakReroute` (see `openrouter.mdc`).
 
 || Agent | model: | Rationale ||
 || ----- | ------ | --------- ||
-|| explore-flash | `or-flash` | Read-only search/read/cite; high volume ||
-|| browser-flash | `or-flash` | Read-only fetch + extract + cite ||
-|| web-researcher-flash | `or-flash` | Read-only search + cite synthesis ||
-|| doc-writer-flash | `or-flash` | Prose generation from diffs ||
-|| bash-flash | `or-flash` | Multi-step CLI loops; tool/agentic chops ||
-|| refactor-flash | `or-flash` | Mechanical, must not break call-sites ||
-|| test-runner-flash | `or-flash` | Runs tests + simple fixes ||
-|| implementer-flash | `or-flash` | Writes working code ||
-|| code-reviewer-flash | `or-flash` | Finds correctness bugs ||
-|| verifier-flash | `or-flash` | Independent validation ||
+|| explore-flash | `gpt-4.1` | Read-only search/read/cite; high volume ||
+|| browser-flash | `gpt-4.1` | Read-only fetch + extract + cite ||
+|| web-researcher-flash | `gpt-4.1` | Read-only search + cite synthesis ||
+|| doc-writer-flash | `gpt-4.1` | Prose generation from diffs ||
+|| bash-flash | `gpt-4.1` | Multi-step CLI loops; tool/agentic chops ||
+|| refactor-flash | `gpt-4.1` | Mechanical, must not break call-sites ||
+|| test-runner-flash | `gpt-4.1` | Runs tests + simple fixes ||
+|| implementer-flash | `gpt-4.1` | Writes working code ||
+|| code-reviewer-flash | `gpt-4.1` | Finds correctness bugs ||
+|| verifier-flash | `gpt-4.1` | Independent validation ||
 
 Keep this table in sync when editing `/.cursor/agents/*.md`.
 

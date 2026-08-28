@@ -24,9 +24,8 @@ import (
 //   - Code search / exploration → downgrade to the provider small model.
 //   - Structured extraction / json_object → downgrade to the provider small model.
 //   - Automation / workflows → downgrade to the provider small model.
-//   - Z.AI (glm-5.3 / glm-5.3-flash / OpenRouter twins) → never downgrade.
-//     All Z.AI chat models share a 1M context window; downgrading would not
-//     save context headroom. Explicit legacy `glm-4.7` resolves to glm-5.3-flash.
+//   - Z.AI glm-5.3 → glm-5.3-flash (same 1M window; flash is the cheap tier).
+//     Already-on-flash is a no-op. Historical glm-4.7 (~200k) is gone.
 //   - Editing / refactoring → keep model.
 //   - Complex reasoning / architecture → keep model.
 //   - Unclassified / unknown → keep model (conservative default).
@@ -127,13 +126,10 @@ func (r *SubAgentRouter) ClassifyAndOverride(body map[string]any, requestID stri
 		return result
 	}
 
-	// Downgrade within the original provider's catalog small model.
+	// Downgrade within the original provider's catalog small model
+	// (DeepSeek pro → flash, Moonshot k3 → k2.7-code, Z.AI glm-5.3 → glm-5.3-flash).
 	provider, ok := config.ProviderForModel(result.OriginalModel)
 	if !ok {
-		return result
-	}
-	// Z.AI models share 1M context — never downgrade within provider.
-	if provider == config.ProviderZai {
 		return result
 	}
 	override := config.SmallModelFor(provider)

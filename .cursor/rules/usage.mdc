@@ -171,12 +171,6 @@ OpenRouter hosts DeepSeek models and is used only as an internal peak-hour fallb
 | ------- | ----- | ---- |
 | Gateway `usage_summary` shows 1M+ `tokens_in`; Cursor Context Usage shows ~160k/200k | `usage_summary` is an **idle-window aggregate** (`DISCURSIVE_USAGE_IDLE`, default 30s) summing prompt tokens across N Agent requests; Cursor bar is **current-turn** prompt vs alias cap | Compare per-request DEBUG `usage` lines or `tokens_in ÷ request_count`; not a single 1M context blow-up. Cache hits are summed the same way. |
 
-### `Z.AI context suffix breaks catalog lookups`
-
-| Symptom | Cause | Fix |
-| ------- | ----- | ---- |
-| `glm-5.3[1m]` resolves to unknown model in reasoning-effort catalogs, or effort normalization fails | The `[1m]` long-context suffix is part of the real model ID but catalog entries are keyed by the base model (`glm-5.3`). Lookups miss the entry. | Strip `[1m]` (and future suffixes) before catalog lookups via `zaiModelKey()` / `TrimZaiContextSuffix()` in config. |
-
 ### `Chart.js tick callback breaks chart`
 
 | Symptom | Cause | Fix |

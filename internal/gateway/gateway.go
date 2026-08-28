@@ -39,7 +39,7 @@ const (
 	// tight enough to stop prose run-away.
 	glmVerbosityMaxTokens = 8192
 
-	// glmMaxVerbosityMaxTokens caps glm-5.3/glm-5.3[1m] output when verbosity
+	// glmMaxVerbosityMaxTokens caps glm-5.3 output when verbosity
 	// is manually enabled for the flagship (off by default — full-quality
 	// answers keep headroom for large diffs).
 	glmMaxVerbosityMaxTokens = 16384

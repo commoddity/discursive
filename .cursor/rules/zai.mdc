@@ -12,7 +12,7 @@ Z.AI (GLM) at **GLM Coding Plan** base URL `https://api.z.ai/api/coding/paas/v4`
 
 || Cursor alias    | Real model       | Description                                                         ||
 || --------------- | ---------------- | ------------------------------------------------------------------- ||
-|| `gpt-4.1-turbo` | `glm-5.3[1m]`    | 1M context flagship; always thinks; reasoning_effort + prompt cache  ||
+|| `gpt-4.1-turbo` | `glm-5.3`        | 1M context flagship; always thinks; reasoning_effort + prompt cache  ||
 || `gpt-4.1`       | `glm-5.3-flash`  | Budget workhorse; 1M context; always thinks; ~3× cheaper than 5.3 ||
 || (legacy)        | `glm-4.7`        | Accepted id; resolves upstream to `glm-5.3-flash`                   ||
 || (internal)      | `glm-4.6v`       | **Vision worker** only — describes images for ALL providers. Not user-selectable; not in `/v1/models`. Runs on the coding-plan endpoint. ||
@@ -88,9 +88,12 @@ The gateway does **not** enforce a local semaphore or overflow to other provider
 
 - **Chat**: requests go to the resolved Z.AI model; HTTP 429 →
   `doUpstreamWithRetry()` (3×, 250/500/1000ms backoff).
-- **Router downgrades**: **none.** Cheap-class turns stay on the requested
-  Z.AI model (`glm-5.3` is never rewritten to `glm-5.3-flash`). Pick
-  `gpt-4.1` / `glm-5.3-flash` explicitly for the budget tier.
+- **Router downgrades**: cheap-class turns (`simple_lookup`, `code_search`,
+  `structured_extraction`, `automation`, `subagent`) rewrite `glm-5.3` →
+  `glm-5.3-flash` via `config.SmallModelFor`. Already-on-flash is a no-op.
+  Editing / complex reasoning / unknown stay on `glm-5.3`. Both models are 1M
+  context. Pin `gpt-4.1` in agent frontmatter as a Cursor hint; the gateway
+  does not read those files.
 - **Vision**: `glm-5.3-flash` (and its OpenRouter twin) keep `image_url` natively.
   `glm-5.3` still uses `config.VisionModelFor(ProviderZai)` → `glm-4.6v`.
   No local vision concurrency cap — `singleflight` dedupes identical images only.
@@ -129,6 +132,6 @@ Coding Plan tiers (2026-08): **Lite** = 2,000 / 5-hour, 10,000 / weekly;
 
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
-|| glm-5.3 or glm-5.3-flash turns slow with many parallel subagents on the same model | Upstream concurrency (11 / 50) or quota; requests queue or 429. | No gateway overflow. Z.AI is never router-downgraded. Prefer `gpt-4.1` / flash for parallel subagents; `doUpstreamWithRetry` handles transient 429s. ||
+|| glm-5.3 or glm-5.3-flash turns slow with many parallel subagents on the same model | Upstream concurrency (11 / 50) or quota; cheap-class subagents used to stay on flagship (11) | Router downgrades cheap-class Z.AI to flash (50). Editing / complex stay on glm-5.3. `doUpstreamWithRetry` handles transient 429s. No cross-provider overflow. ||
 
 <!-- last-verified: 2026-08 -->

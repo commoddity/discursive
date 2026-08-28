@@ -13,7 +13,6 @@ func TestHasNativeVision(t *testing.T) {
 		{model: ModelDeepSeekV4FlashVisionExp, want: true},
 		{model: ModelZaiGLM53, want: false},
 		{model: ModelOpenRouterZaiGLM53, want: false},
-		{model: "glm-5.3[1m]", want: false},
 		{model: ModelDeepSeekV4Pro, want: false},
 		{model: ModelDeepSeekV4Flash, want: false},
 		{model: ModelOpenRouterDeepSeekV4Flash, want: false},

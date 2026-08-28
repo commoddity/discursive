@@ -82,9 +82,10 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Peak reroute: when the requested model's provider is in peak hours and
-	// an OpenRouter key is configured, route to the appropriate OpenRouter
-	// DeepSeek model. Runs after downgrade so cheap-class traffic already has
-	// its final model; peak reroute only applies to non-downgraded traffic.
+	// an OpenRouter key is configured, swap to that model's OpenRouter twin.
+	// Runs after downgrade so cheap-class traffic already sits on the small
+	// model; peak then maps that small model to its twin (e.g. glm-5.3-flash
+	// → z-ai/glm-5.3-flash). Off-peak stays on the direct provider.
 	if newModel, redirected := s.applyPeakReroute(sanitized.Model, requestID, time.Now()); redirected {
 		sanitized.Model = newModel
 		sanitized.Body["model"] = newModel
@@ -475,9 +476,6 @@ func visionWorkerFor(provider config.Provider, model string) (config.Provider, s
 func isDescribeAfterNative(model string) bool {
 	if real, _, ok := config.OpenRouterRealFor(model); ok {
 		model = real
-	}
-	if base, ok := strings.CutSuffix(model, "[1m]"); ok {
-		model = base
 	}
 	return model == config.ModelZaiGLM53 || model == config.ModelDeepSeekV4Pro
 }

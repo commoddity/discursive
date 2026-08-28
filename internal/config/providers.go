@@ -88,9 +88,6 @@ func ProviderSpecFor(p Provider) (ProviderSpec, bool) {
 // ProviderForModel maps a real model id or OpenRouter twin back to its provider.
 func ProviderForModel(model string) (Provider, bool) {
 	model = strings.TrimSpace(model)
-	if base, ok := strings.CutSuffix(model, "[1m]"); ok {
-		model = base
-	}
 	p, ok := modelToProvider[model]
 	return p, ok
 }
@@ -103,9 +100,6 @@ func IsBigModel(provider Provider, model string) bool {
 	}
 	if real, _, ok := OpenRouterRealFor(model); ok {
 		model = real
-	}
-	if base, ok := strings.CutSuffix(model, "[1m]"); ok {
-		model = base
 	}
 	return model == spec.BigModel
 }
@@ -134,9 +128,6 @@ func VisionModelFor(provider Provider) string {
 // not native even though it maps back to deepseek-v4-flash-vision-exp.
 func HasNativeVision(model string) bool {
 	model = strings.TrimSpace(model)
-	if base, ok := strings.CutSuffix(model, "[1m]"); ok {
-		model = base
-	}
 	switch model {
 	case ModelZaiGLM53Flash, ModelOpenRouterZaiGLM53Flash, "glm-4.7":
 		return true
@@ -149,9 +140,6 @@ func HasNativeVision(model string) bool {
 
 // OpenRouterTwinFor returns the OpenRouter upstream id for a real model id.
 func OpenRouterTwinFor(model string) (string, bool) {
-	if base, ok := strings.CutSuffix(model, "[1m]"); ok {
-		model = base
-	}
 	twin, ok := openRouterTwins[model]
 	return twin, ok
 }
