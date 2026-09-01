@@ -58,14 +58,20 @@ and pricing row.
 
 || Cursor alias    | Provider | Real model       | Typical use         ||
 || --------------- | -------- | ---------------- | ------------------- ||
-|| `gpt-4o`        | moonshot | `kimi-k3`         | Planning / flagship ||
-|| `gpt-4o-mini`   | moonshot | `kimi-k2.7-code`  | Coding; always thinks ||
-|| `o1`            | deepseek | `deepseek-v4-pro` | Harder execution    ||
-|| `o3-mini`       | deepseek | `deepseek-v4-flash-vision-exp` | Cheap execution; native vision ||
+|| `kimi-k3`        | moonshot | `kimi-k3`         | Planning / flagship (**prefer** — Cursor 1M context default) ||
+|| `kimi-k2.7-code` | moonshot | `kimi-k2.7-code`  | Coding; always thinks (**prefer**) ||
+|| `gpt-4o`         | moonshot | `kimi-k3`         | **Deprecated** — backwards compat; Cursor ~128k context assumption ||
+|| `gpt-4o-mini`    | moonshot | `kimi-k2.7-code`  | **Deprecated** — backwards compat; Cursor ~128k context assumption ||
+|| `deepseek-v4-pro` | deepseek | `deepseek-v4-pro` | Harder execution (**prefer** — Cursor 1M context default) ||
+|| `deepseek-v4-flash-vision-exp` | deepseek | `deepseek-v4-flash-vision-exp` | Cheap execution; native vision (**prefer**) ||
+|| `o1`            | deepseek | `deepseek-v4-pro` | **Deprecated** — backwards compat; Cursor ~200k context assumption ||
+|| `o3-mini`       | deepseek | `deepseek-v4-flash-vision-exp` | **Deprecated** — backwards compat; Cursor ~200k context assumption ||
 || `gpt-5-nano`    | thaura   | `thaura`          | Ethical AI; optional provider ||
-|| `gpt-4.1-turbo` | zai      | `glm-5.3`        | 1M context flagship; always thinks ||
-|| `gpt-4.1`       | zai      | `glm-5.3-flash`   | Budget workhorse; 1M context; always thinks ||
-|| `gpt-4-turbo`   | zai      | `glm-5.3`        | **Compat alias** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
+|| `glm-5.3`       | zai      | `glm-5.3`        | Planning; always thinks (**prefer** — Cursor 1M context default) ||
+|| `glm-5.3-flash` | zai      | `glm-5.3-flash`  | Budget workhorse; 1M context; always thinks (**prefer**) ||
+|| `gpt-4.1-turbo` | zai      | `glm-5.3`        | **Deprecated** — backwards compat; Cursor ~200k context assumption ||
+|| `gpt-4.1`       | zai      | `glm-5.3-flash`   | **Deprecated** — backwards compat; Cursor ~200k context assumption ||
+|| `gpt-4-turbo`   | zai      | `glm-5.3`        | **Compat** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
 
 > **Peak-hour OpenRouter reroute (always on, HARD RULE: OpenRouter is peak-only).**
 > During DeepSeek peak (01:00–04:00, 06:00–10:00 UTC Beijing weekdays) or Z.AI
@@ -90,6 +96,17 @@ picks the right base URL + API key. No auto-application to Cursor's state.vscdb
 || Symptom | Cause | Fix ||
 || ------- | ----- | ---- ||
 || Model picker shows `gpt-4.1-turbo`, but the gateway logs `unknown model alias "gpt-4-turbo"` | Cursor performs its own client-side model-ID matching against its internal OpenAI catalog and may substitute a close/known ID (drops the `.1`) before sending | (1) Advertise the real IDs in `/v1/models`; (2) accept the rewritten ID as a **compat alias** mapping to the same real model (`gpt-4-turbo` → `glm-5.3`). Do not treat the rewritten name as a gateway bug. ||
+
+### `Cursor compresses long chats too early / too late on custom models`
+
+Cursor's chat-compaction threshold is derived from the **alias string's assumed context window**, not the upstream model's real limit. Cursor assigns ~200k (or catalog cap) to names matching its internal catalog (e.g. `o1`, `o3-mini`, `gpt-4.1-turbo`, `gpt-4.1`) and defaults to **1M for unknown/real provider IDs**. So real provider model IDs get the correct 1M budget; legacy reasoning-model shorthand gets compacted far too early even when upstream (DeepSeek, Z.AI GLM) holds 1M.
+
+| Symptom | Cause | Fix |
+| ----- | ---- | ----- |
+| Long DeepSeek/Z.AI agent chat loops through repeated summarization | Cursor picks a catalog-matched alias (`o1`/`o3-mini`/`gpt-4.1*`) → assumes ~200k window → compacts ~140–170k | Use the **real provider model ID** as the primary alias (`deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`, `glm-5.3`, `glm-5.3-flash`) — 1M default. Keep legacy names as deprecated compat aliases only. |
+| Custom model upstream limit < Cursor-assumed window | Cursor assumes 1M for a name not in catalog, upstream caps at 200k | Don't use unknown names for constrained models; Cursor compacts too late and upstream truncates first. |
+
+<!-- last-verified: 2026-08 -->
 
 ## Sanitizer order (preserve)
 
@@ -222,7 +239,12 @@ Cursor always resends original `image_url` parts. Switching flash → flagship o
 
 ## Global subagent model sizing (flash fleet)
 
-The live subagent fleet lives in `/.cursor/agents/` (10 files).
+The subagent model-sizing table below applies to the flash fleet (Composer 2.5
+pinned agents). These are **built-in Cursor subagent types** available via the
+Task tool; only `bash-flash.md`, `browser-flash.md`, `explore-flash.md` also
+exist as `.cursor/agents/*.md` files. The rest are supplied by the Cursor
+runtime — do not create `.cursor/agents/*.md` files for them unless a
+repo-specific prompt is needed.
 Flash agents should pin `model: gpt-4.1` (Z.AI `glm-5.3-flash`) when the parent
 chat is on `gpt-4.1-turbo`. Do **not** pin `or-flash` — that string is not a
 `ResolveModel` alias. Cursor Task still defaults to inherit, so the **subagent

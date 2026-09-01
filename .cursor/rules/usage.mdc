@@ -53,9 +53,16 @@ all other hours off-peak. Peak = 2× off-peak on every billing item.
 Legacy flat card (pre-cutover events only): flash $0.0028 / $0.14 / $0.28,
 pro $0.011 / $0.55 / $1.10.
 
-Peak hours function (`usage.DeepSeekPeakHours(utcHour int)`):
+Peak hours function (`usage.DeepSeekPeakHours(at time.Time) bool`):
 ```go
-return (utcHour >= 1 && utcHour < 4) || (utcHour >= 6 && utcHour < 10)
+utc := at.UTC()
+if !utc.Before(DeepSeekWeekendOffPeakCutover) {
+	if wd := utc.In(beijingTZ).Weekday(); wd == time.Saturday || wd == time.Sunday {
+		return false // Beijing weekend off-peak all day
+	}
+}
+h := utc.Hour()
+return (h >= 1 && h < 4) || (h >= 6 && h < 10)
 ```
 
 ### Kimi K3 (Moonshot) (USD/MTok)
@@ -92,9 +99,9 @@ Source: https://docs.z.ai/guides/overview/pricing — verify live before updatin
 
 Source: https://thaura.ai/api-platform — verify live before updating.
 
-| Model   | Cache hit | Cache miss | Output |
-| ------ | --------- | ---------- | ------ |
-| `thaura` | $0.10     | $0.20      | $0.40  |
+| Model   | Input | Output |
+| ------ | ----- | ------ |
+| `thaura` | $0.50 | $2.00  |
 
 
 ### OpenRouter (USD/MTok) — peak fallback only

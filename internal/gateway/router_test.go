@@ -927,8 +927,9 @@ internal/config/    → settings, paths, validation
 ## Routing
 - gpt-4o → Moonshot kimi-k3 (planning/flagship)
 - gpt-4o-mini → Moonshot kimi-k2.7-code (coding)
-- o1 → DeepSeek deepseek-v4-pro (hard execution)
-- o3-mini → DeepSeek deepseek-v4-flash (cheap execution)
+- deepseek-v4-pro → DeepSeek pro (hard execution; prefer)
+- deepseek-v4-flash-vision-exp → DeepSeek flash (cheap execution; prefer)
+- o1 / o3-mini → deprecated aliases (same routes; Cursor ~200k context assumption)
 - gpt-5-nano → Thaura thaura (ethical AI)
 - gpt-4.1-turbo → Z.AI glm-5.3 (planning, cheaper than K3)
 - gpt-4.1 → Z.AI glm-5.3-flash (cheap execution)

@@ -22,7 +22,7 @@ internal/
 
 - Prefer small packages with a **package comment** stating responsibility and a
   one-line **Contract** (what it may / must not depend on).
-- Reference behavior: `src-tauri/` — reimplement in
+- Reference behavior: `examples/use-kimi-on-cursor/src-tauri/` — reimplement in
   Go; never vendor Rust/TS into the product tree.
 - CLI: **Cobra** — see `.cursor/rules/cobra.mdc`. No Viper for MVP.
 

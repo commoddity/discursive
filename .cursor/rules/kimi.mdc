@@ -1,6 +1,6 @@
 ---
 description: Moonshot/Kimi API models, params, streaming, tools (k3 / k2.7-code)
-globs: "**/kimi/**/*.go,**/gateway/**/*.go,**/usage/**/*.go"
+globs: "**/gateway/**/*.go,**/usage/**/*.go,**/config/**/*.go,**/cli/**/*.go"
 alwaysApply: false
 ---
 
@@ -14,7 +14,7 @@ Base URL default: `https://api.moonshot.ai/v1` — see `internal/config/urls.go`
 | API model ID      | Role |
 | ---- | --- |
 | `kimi-k3`         | Default flagship; 1M context; always thinks |
-| `kimi-k2.7-code`  | Coding model (`gpt-4o-mini`); always thinks (no non-thinking mode) |
+| `kimi-k2.7-code`  | Coding model; always thinks (no non-thinking mode) |
 
 ## Per-model parameter matrix (do not cross-apply)
 

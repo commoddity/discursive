@@ -12,8 +12,11 @@ Z.AI (GLM) at **GLM Coding Plan** base URL `https://api.z.ai/api/coding/paas/v4`
 
 || Cursor alias    | Real model       | Description                                                         ||
 || --------------- | ---------------- | ------------------------------------------------------------------- ||
-|| `gpt-4.1-turbo` | `glm-5.3`        | 1M context flagship; always thinks; reasoning_effort + prompt cache  ||
-|| `gpt-4.1`       | `glm-5.3-flash`  | Budget workhorse; 1M context; always thinks; ~3× cheaper than 5.3 ||
+|| `glm-5.3`       | `glm-5.3`        | 1M context flagship; always thinks; reasoning_effort + prompt cache (**prefer**) ||
+|| `glm-5.3-flash` | `glm-5.3-flash`  | Budget workhorse; 1M context; always thinks; ~3× cheaper than 5.3 (**prefer**) ||
+|| (deprecated)    | `gpt-4.1-turbo` → `glm-5.3` | Backwards compat alias; Cursor ~200k context assumption → use `glm-5.3` ||
+|| (deprecated)    | `gpt-4.1` → `glm-5.3-flash` | Backwards compat alias; Cursor ~200k context assumption → use `glm-5.3-flash` ||
+|| (compat)        | `gpt-4-turbo` → `glm-5.3` | Cursor sometimes rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
 || (legacy)        | `glm-4.7`        | Accepted id; resolves upstream to `glm-5.3-flash`                   ||
 || (internal)      | `glm-4.6v`       | **Vision worker** only — describes images for ALL providers. Not user-selectable; not in `/v1/models`. Runs on the coding-plan endpoint. ||
 

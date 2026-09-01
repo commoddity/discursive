@@ -1,6 +1,6 @@
 ---
 description: DeepSeek API models, thinking, tools, errors (v4-flash / v4-pro)
-globs: "**/deepseek/**/*.go,**/gateway/**/*.go,**/usage/**/*.go"
+globs: "**/gateway/**/*.go,**/usage/**/*.go,**/config/**/*.go,**/cli/**/*.go"
 alwaysApply: false
 ---
 
@@ -26,6 +26,12 @@ OpenAI-compat shapes: `` (local reference; do not vendor)
 `deepseek-reasoner` (historically flash non-thinking / thinking; sunset
 2026-07-24 UTC per DeepSeek docs). Prefer `deepseek-v4-flash-vision-exp` /
 `deepseek-v4-pro`.
+
+**Deprecated Cursor aliases (gateway, backwards compat):** `o1` →
+`deepseek-v4-pro`, `o3-mini` → `deepseek-v4-flash-vision-exp`. Prefer the real
+model IDs in Cursor's picker — Cursor assumes ~200k context for `o1`/`o3-mini`
+and compresses long chats too early; unknown names default to 1M (see
+`cursor-settings.mdc`).
 
 Images are supported **only** on `deepseek-v4-flash-vision-exp` (user messages).
 Other DeepSeek models return 400 "This model does not support image".

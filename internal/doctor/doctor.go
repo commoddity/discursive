@@ -91,7 +91,7 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 			if settings.HasMoonshotKey() {
 				return ""
 			}
-			return "optional: Moonshot/Kimi API key not saved (run set --moonshot-key to enable gpt-4o aliases)"
+			return "optional: Moonshot/Kimi API key not saved (run set --moonshot-key to enable kimi-k3 / kimi-k2.7-code)"
 		}(),
 	})
 
@@ -103,7 +103,7 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 			if settings.HasDeepSeekKey() {
 				return ""
 			}
-			return "optional: DeepSeek API key not saved (run set --deepseek-key to enable o1/o3-mini aliases)"
+			return "optional: DeepSeek API key not saved (run set --deepseek-key to enable deepseek-v4-pro / deepseek-v4-flash-vision-exp)"
 		}(),
 	})
 
@@ -115,7 +115,7 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 			if settings.HasThauraKey() {
 				return ""
 			}
-			return "optional: Thaura AI API key not saved (run set --thaura-key to enable the gpt-5-nano alias)"
+			return "optional: Thaura AI API key not saved (run set --thaura-key to enable thaura)"
 		}(),
 	})
 
@@ -127,7 +127,7 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 			if settings.HasZaiKey() {
 				return ""
 			}
-			return "optional: Z.AI API key not saved (run set --zai-key to enable the gpt-4.1-turbo / gpt-4.1 aliases)"
+			return "optional: Z.AI API key not saved (run set --zai-key to enable the glm-5.3 / glm-5.3-flash models)"
 		}(),
 	})
 
@@ -139,7 +139,7 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 			if settings.HasOpenRouterKey() {
 				return ""
 			}
-			return "optional: OpenRouter API key not saved (run set --openrouter-key to enable peak-hour DeepSeek fallback)"
+			return "optional: OpenRouter API key not saved (run set --openrouter-key for peak-hour reroute)"
 		}(),
 	})
 

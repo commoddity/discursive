@@ -1,42 +1,36 @@
+<p align="center">
+  <img src=".github/img/Discursive.png" alt="Discursive" width="600" />
+</p>
 
+<div align="center">
+  <blockquote>
+    <em>/dĭ-skûr′sĭv/ - proceeding coherently from topic to topic; marked by analytical reasoning</em>
+  </blockquote>
+  <p>A gateway proxy that enables <a href="https://cursor.com">Cursor</a>'s full agentic workflow with alternative providers.</p>
+</div>
 
-> */dĭ-skûr′sĭv/ - proceeding coherently from topic to topic; marked by analytical reasoning*
+<p align="center">
+  <a href="https://platform.kimi.ai/"><img src=".github/img/moonshot-white.svg" alt="Moonshot Kimi" height="35" valign="middle" /></a>
+  &ensp;&middot;&ensp;
+  <a href="https://api-docs.deepseek.com/"><img src=".github/img/deepseek.svg" alt="DeepSeek" height="35" valign="middle" /></a>
+  &ensp;&middot;&ensp;
+  <a href="https://thaura.ai/"><img src=".github/img/thaura.png" alt="Thaura AI" height="35" valign="middle" /></a>
+  &ensp;&middot;&ensp;
+  <a href="https://docs.z.ai/"><img src=".github/img/zai.svg" alt="Z.AI" height="35" valign="middle" /></a>
+</p>
 
-A gateway proxy that enables [Cursor](https://cursor.com)'s full agentic workflow with alternative providers.
-
- ·   ·   · 
-
-### Written in
+<h3 align="center">Written in <a href="https://go.dev/"><img src=".github/img/go.svg" alt="Go" height="28" valign="middle" /></a></h3>
 
 ---
 
-
-
-### Table of Contents 
+### Table of Contents <!-- omit in toc -->
 
 - [📦 Quickstart](#-quickstart)
-  - [1. Install](#1-install)
-  - [Prerequisites](#prerequisites)
-    - [Dependencies](#dependencies)
-  - [2. Start the gateway](#2-start-the-gateway)
-  - [3. Configure Cursor](#3-configure-cursor)
-  - [4. Switch providers](#4-switch-providers)
-  - [5. Switch back to Cursor's models](#5-switch-back-to-cursors-models)
 - [⚡ Subagent Routing](#-subagent-routing)
-  - [What gets downgraded](#what-gets-downgraded)
-  - [`discursive start` flags](#discursive-start-flags)
-  - [Compression](#compression)
+- [🔀 Peak-hour OpenRouter](#-peak-hour-openrouter)
 - [☁️ Setting up Cloudflare](#️-setting-up-cloudflare)
 - [📊 Usage Dashboard](#-usage-dashboard)
 - [🪐 Providers](#-providers)
-  - [Terseness (always on)](#terseness-always-on)
-  - [🌙 Moonshot (Kimi)](#-moonshot-kimi)
-  - [🐋 DeepSeek](#-deepseek)
-  - [🪻 Z.AI](#-zai)
-  - [OpenRouter (peak reroute only)](#openrouter-peak-reroute-only)
-  - [🐪 Thaura](#-thaura)
-- [🛠 Tech Stack](#-tech-stack)
-- [📁 File Structure](#-file-structure)
 - [🖥 CLI Commands](#-cli-commands)
 - [⌨️ Shell Completion](#️-shell-completion)
 - [🌍 Environment Variables](#-environment-variables)
@@ -47,13 +41,9 @@ A gateway proxy that enables [Cursor](https://cursor.com)'s full agentic workflo
 
 ---
 
-
-
 ## 📦 Quickstart
 
-
-
-### 1. Install 
+### 1. Install <!-- omit in toc -->
 
 ```bash
 go install github.com/commoddity/discursive@latest
@@ -61,31 +51,22 @@ go install github.com/commoddity/discursive@latest
 
 Or download a [release binary](https://github.com/commoddity/discursive/releases) and put it on your `PATH`.
 
-### Prerequisites 
-
-
-
-#### Dependencies 
+### Prerequisites <!-- omit in toc -->
 
 - [Go](https://go.dev/dl/) 1.26.5+
 - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
 
 On first run, the interactive wizard also prompts for:
 
+| Item | Required | Where to get / notes |
+| ---- | -------- | -------------------- |
+| **One** provider API key (Moonshot, DeepSeek, Z.AI, or Thaura) | ✅ Yes | See [Providers](#-providers) |
+| Cloudflare tunnel token | ✅ Yes | [Setting up Cloudflare](#️-setting-up-cloudflare) |
+| Public HTTPS URL | ✅ Yes | Tunnel hostname with `/v1` appended |
+| Additional provider keys | No | Enable more models in the picker |
+| OpenRouter key | No | [Peak-hour reroute](#-peak-hour-openrouter) only — `discursive set --openrouter-key` |
 
-| Item                    | Required | Where to get / notes                                       |
-| ----------------------- | -------- | ---------------------------------------------------------- |
-| Moonshot (Kimi) API key | ✅ Yes    | [platform.kimi.ai](https://platform.kimi.ai/)              |
-| DeepSeek API key        | ✅ Yes    | [platform.deepseek.com](https://platform.deepseek.com/)    |
-| Cloudflare tunnel token | ✅ Yes    | See [Setting up Cloudflare](#-setting-up-cloudflare) below |
-| Public HTTPS URL        | ✅ Yes    | Hostname from tunnel setup with `/v1` appended             |
-| Thaura AI API key       | No       | [thaura.ai](https://thaura.ai/api-platform)                |
-| Z.AI API key            | No       | [docs.z.ai](https://docs.z.ai/api-reference/introduction)  |
-
-
-
-
-### 2. Start the gateway 
+### 2. Start the gateway <!-- omit in toc -->
 
 ```bash
 discursive start --background
@@ -105,167 +86,128 @@ discursive status --show-key | jq
 Gateway keys are masked by default. Pass `--show-key` to print the full
 `gateway_key` for Cursor setup.
 
-> **💡 Subagent routing is on by default.** The gateway inspects
-> every request and, when the content indicates simple, cheap work (short lookups,
-> code search, structured extraction, automation), routes it to a cheaper
-> model — typically `deepseek-v4-flash` — to cut cost. Complex work
-> (editing/refactoring, reasoning) keeps the original model.
-> See [Subagent Routing](#-subagent-routing) below, or disable it with
+> **💡 Subagent routing is on by default.** Simple work (lookups, search,
+> extraction, automation) may route to a cheaper model on the same provider.
+> See [Subagent Routing](#-subagent-routing), or disable with
 > `discursive start --subagent-router=false`.
 
-
-
-### 3. Configure Cursor 
+### 3. Configure Cursor <!-- omit in toc -->
 
 Open **Cursor Settings → Models** and enter:
 
-
-| Setting                  | Value                                                 |
-| ------------------------ | ----------------------------------------------------- |
-| OpenAI API Key           | `gateway_key` from `discursive status --show-key`     |
+| Setting | Value |
+| ------- | ----- |
+| OpenAI API Key | `gateway_key` from `discursive status --show-key` |
 | Override OpenAI Base URL | `public_url` from `discursive status` (ends in `/v1`) |
-| Model                    | Pick an alias from the table below (e.g. `gpt-4o`)    |
-
+| Model | Pick from the table below (e.g. `kimi-k3`) |
 
 Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 `Connection verified` above the Base URL field.
 
-> **💡 Tip:** You can also copy the Gateway Key and Tunnel URL directly from
-> the [Usage Dashboard at http://localhost:4002](http://localhost:4002) —
-> hover over the `?` icons next to ☁️ Tunnel and 🔐 Gateway Key for field-specific
-> setup instructions.
+> **💡 Tip:** Copy Gateway Key and Tunnel URL from the
+> [Usage Dashboard at http://localhost:4002](http://localhost:4002) — hover the
+> `?` icons next to ☁️ Tunnel and 🔐 Gateway Key.
 
+### 4. Switch providers <!-- omit in toc -->
 
+Change the model in Cursor's picker — no restart needed:
 
-### 4. Switch providers 
+| Model | Provider | Use |
+| ----- | -------- | --- |
+| `kimi-k3` | Moonshot | Planning / flagship |
+| `kimi-k2.7-code` | Moonshot | Coding; always thinks |
+| `deepseek-v4-pro` | DeepSeek | Hard execution |
+| `deepseek-v4-flash-vision-exp` | DeepSeek | Cheap execution; native vision |
+| `glm-5.3` | Z.AI | Planning; always thinks |
+| `glm-5.3-flash` | Z.AI | Cheap execution; 1M context; native vision |
+| `thaura` | Thaura | Optional ethical AI provider |
 
-Change the model alias in Cursor's model picker — no restart needed:
-
-
-| Cursor alias    | Provider | Real model                     | Use                                                       |
-| --------------- | -------- | ------------------------------ | --------------------------------------------------------- |
-| `gpt-4o`        | Moonshot | `kimi-k3`                      | Planning / flagship                                       |
-| `gpt-4o-mini`   | Moonshot | `kimi-k2.7-code`               | Coding; always thinks                                     |
-| `o1`            | DeepSeek | `deepseek-v4-pro`              | Harder execution                                          |
-| `o3-mini`       | DeepSeek | `deepseek-v4-flash-vision-exp` | Cheap execution; native vision                            |
-| `gpt-5-nano`    | Thaura   | `thaura`                       | Ethical AI; optional provider                             |
-| `gpt-4.1-turbo` | Z.AI     | `glm-5.3`                      | Planning; always thinks; cheaper than K3                  |
-| `gpt-4.1`       | Z.AI     | `glm-5.3-flash`                | Cheap execution; 1M context; native vision                |
-| `gpt-4-turbo`   | Z.AI     | `glm-5.3`                      | Compat alias (Cursor may rewrite `gpt-4.1-turbo` to this) |
-
-
-
-
-### 5. Switch back to Cursor's models 
+### 5. Switch back to Cursor's models <!-- omit in toc -->
 
 In Cursor Settings → Models: turn off "Override OpenAI API Key" and
 "Override OpenAI Base URL", then pick a Cursor-native model.
 
 ---
 
-
-
 ## ⚡ Subagent Routing
 
-The gateway can **automatically downgrade individual requests** to a cheaper,
-faster model when the work is simple enough — cutting token cost and latency
-without changing what you pick in Cursor. Subagent routing is **on by default**
-and requires no configuration.
+The gateway can downgrade individual requests to a cheaper model when the work
+is simple enough. Subagent routing is **on by default**.
 
-> The router runs entirely **inside the gateway**. Cursor still sends every
-> request to the gateway under whatever model alias you chose; the gateway
-> inspects each request, may route it to a cheaper model, and proxies upstream.
-> Cursor's model picker is unaware of the routing.
+> The router runs inside the gateway. Cursor still sends your chosen model;
+> the gateway may route cheap work to that provider's small model upstream.
 
+### What gets downgraded <!-- omit in toc -->
 
+The last user message determines whether the task is cheap enough for a flash model:
 
-### What gets downgraded
+| Request type | Action | Downgrade target |
+| ------------ | ------ | ---------------- |
+| Simple lookup / explanation | downgrade | same provider's small model |
+| Code search / exploration | downgrade | same provider's small model |
+| Structured extraction | downgrade | same provider's small model |
+| Automation / mechanical work | downgrade | same provider's small model |
+| Editing / refactoring | keep | original model |
+| Complex reasoning / architecture | keep | original model |
+| Unknown / unclassified | keep | original model |
 
-Each incoming request is classified by its **content** — the last user message
-determines whether the task is cheap enough for a flash model:
+Downgrades use `config.SmallModelFor(provider)` — never cross-provider. Examples:
+DeepSeek `deepseek-v4-pro` → `deepseek-v4-flash-vision-exp`; Moonshot `kimi-k3` →
+`kimi-k2.7-code`; Z.AI `glm-5.3` → `glm-5.3-flash`.
 
+### `discursive start` flags <!-- omit in toc -->
 
-| Request type                                          | Action             | Downgrade target            |
-| ----------------------------------------------------- | ------------------ | --------------------------- |
-| Simple lookup / explanation                           | downgrade to small | same provider's small model |
-| Code search / exploration                             | downgrade to small | same provider's small model |
-| Structured extraction (`json_object` / `json_schema`) | downgrade to small | same provider's small model |
-| Automation / mechanical work (lint, git, scripts, PR) | downgrade to small | same provider's small model |
-| Editing / refactoring                                 | keep model         | original model              |
-| Complex reasoning / architecture                      | keep model         | original model              |
-| Unknown / unclassified                                | keep model         | original model              |
-
-> **Downgrade target.** Downgrades use `config.SmallModelFor(provider)` — never
-> cross-provider. Examples: DeepSeek `deepseek-v4-pro` → `deepseek-v4-flash`;
-> Moonshot `kimi-k3` → `kimi-k2.7-code`; Z.AI `glm-5.3` → `glm-5.3-flash`
-> (same 1M window; editing / complex / unknown stay on `glm-5.3`).
->
-> **Peak-hour OpenRouter reroute (always on).** During DeepSeek peak
-> (01:00–04:00, 06:00–10:00 UTC Beijing weekdays) or Z.AI peak (Mon–Fri
-> 06:00–10:00 UTC) the gateway swaps to each provider's OpenRouter twin:
-> DeepSeek flash/pro → `deepseek/deepseek-v4-flash-0731` /
-> `deepseek/deepseek-v4-pro-0813`; Z.AI glm-5.3/glm-5.3-flash → `z-ai/glm-5.3` /
-> `z-ai/glm-5.3-flash`. Moonshot/Thaura never peak. No OpenRouter key? Traffic falls
-> through to the direct provider and pays peak rates. Configure with
-> `discursive set --openrouter-key`.
-
-
-
-
-### `discursive start` flags
-
-
-| Flag                | Default  | Purpose                                                                                                                                                               |
-| ------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--subagent-router` | `true`   | Enable the subagent router (content-based classification + flash downgrade). Set `--subagent-router=false` to run the gateway with no automatic model changes.        |
-| `--log-level`       | `info`   | Log verbosity: `debug`, `info`, `warn`, `error`. Use `debug` to see per-request `request_class` and override lines from the router. Overrides `DISCURSIVE_LOG_LEVEL`. |
-| `--background`      | `false`  | Detach and run in the background. Logs to `{dataRoot}/gateway.log`.                                                                                                   |
-| `--tunnel`          | (config) | Tunnel mode: `named`, `none`, or `quick` (persists to config).                                                                                                        |
-| `--public-url`      | (config) | Public HTTPS base URL ending in `/v1` (persists to config).                                                                                                           |
-
-
-Examples:
+| Flag | Default | Purpose |
+| ---- | ------- | ------- |
+| `--subagent-router` | `true` | Content-based flash downgrade |
+| `--log-level` | `info` | `debug`, `info`, `warn`, `error` |
+| `--background` | `false` | Detach to daemon |
+| `--tunnel` | (config) | `named`, `none`, or `quick` |
+| `--public-url` | (config) | Public HTTPS base URL ending in `/v1` |
 
 ```bash
-# Routing on (default) + debug logging
-discursive start --subagent-router --log-level debug
-
-# Disable routing entirely
-discursive start --subagent-router=false
+discursive start --subagent-router --log-level debug   # routing on + debug
+discursive start --subagent-router=false             # disable routing
 ```
 
-> **💡 Tip:** At `--log-level debug`, the router logs one line per request with
-> `request_class`. This is the easiest way to see exactly what the router is
-> doing and tune your expectations.
+### Compression <!-- omit in toc -->
 
+Tool-result compression reduces upstream tokens in long agent sessions. Toggle
+from the usage dashboard (`http://127.0.0.1:4002` → **Model Controls**; no restart).
 
-
-### Compression
-
-Tool-result compression reduces token cost during multi-turn agent sessions. It
-is toggleable from the usage dashboard (`http://127.0.0.1:4002` → **Model Controls**,
-no restart required):
-
-1. **Tool-result compression**: Tool output exceeding 24,000 chars (and 20,000+ aggregate) is
-  summarized by a cheap model (`deepseek-v4-flash`).
-
-Compression is **fail-open with truncation**: if the summarizer returns an empty summary
-(soft failure), the original content is truncated to 24,000 chars instead of failing
-open. Hard errors (network, auth) return the original content unchanged — there is no
-quality loss. Results are cached by content hash with singleflight deduplication, so
-repeated tool results (e.g. `ls` output, test output) are compressed only once.
-
-**When to use:** Multi-turn agent sessions with verbose tools (file reads, test
-runs, search results). In testing, compression saved ~42% of input tokens in a
-~34-minute EPUB pipeline session with no observable quality degradation.
-
-**Cost:** The summarizer model uses `deepseek-v4-flash` pricing (nearly free per
-turn with prompt caching). The savings from reduced upstream tokens far outweigh
-the compression cost.
+Tool output above **24,000 chars** (and **20,000+** aggregate across compressible
+messages) is summarized by the provider's small model. Below those thresholds, no
+summarizer call runs. Each compression adds ~1–3s latency. Results are cached by
+content hash with singleflight deduplication. On summarizer failure, content is
+truncated or returned unchanged (fail-open).
 
 ---
 
+## 🔀 Peak-hour OpenRouter
 
+During provider peak billing, the gateway may swap to each model's OpenRouter
+twin when an OpenRouter key is configured:
+
+| Provider | Peak window | Direct model → OpenRouter twin |
+| -------- | ----------- | ------------------------------ |
+| DeepSeek | 01:00–04:00 and 06:00–10:00 UTC (Beijing weekdays) | `deepseek-v4-flash-vision-exp` → `deepseek/deepseek-v4-flash-0731`; `deepseek-v4-pro` → `deepseek/deepseek-v4-pro-0813` |
+| Z.AI | Mon–Fri 06:00–10:00 UTC | `glm-5.3` → `z-ai/glm-5.3`; `glm-5.3-flash` → `z-ai/glm-5.3-flash` |
+
+Moonshot and Thaura never peak. **Outside peak hours OpenRouter is never used.**
+
+No OpenRouter key (or zero credits)? Traffic falls through to the direct provider
+and pays peak rates. Configure with `discursive set --openrouter-key`.
+
+OpenRouter list pricing (no peak/off-peak tiers):
+
+| Upstream ID | Cache hit / MTok | Input / MTok | Output / MTok |
+| ----------- | ---------------- | ------------ | ------------- |
+| `deepseek/deepseek-v4-flash-0731` | $0.014 | $0.065 | $0.14 |
+| `deepseek/deepseek-v4-pro-0813` | $0.022 | $0.66 | $1.98 |
+| `z-ai/glm-5.3` | $0.26 | $1.40 | $4.40 |
+| `z-ai/glm-5.3-flash` | $0.015 | $0.075 | $0.25 |
+
+---
 
 ## ☁️ Setting up Cloudflare
 
@@ -274,413 +216,157 @@ a public HTTPS URL.
 
 1. Go to [Cloudflare Zero Trust → Tunnels](https://one.dash.cloudflare.com/)
 2. Click **Add a tunnel**, choose **Cloudflared**, give it a name
-3. Copy the tunnel token — you'll paste it into the Discursive wizard
+3. Copy the tunnel token — paste into the Discursive wizard
 4. Under **Public Hostname**, add a route:
-  - **Subdomain**: anything you like (e.g. `discursive`)
-  - **Domain**: choose from your Cloudflare zones
-  - **Service**: `http://localhost:4001`
-5. The public URL you'll enter in the wizard is the hostname from step 4
-  with `/v1` appended (e.g. `https://discursive.yourdomain.com/v1`)
+   - **Subdomain**: e.g. `discursive`
+   - **Domain**: your Cloudflare zone
+   - **Service**: `http://localhost:4001`
+5. Public URL for the wizard: hostname from step 4 with `/v1` appended
+   (e.g. `https://discursive.yourdomain.com/v1`)
 
 ---
-
-
 
 ## 📊 Usage Dashboard
 
-*Usage Dashboard*
+The gateway serves a local dashboard at `http://localhost:4002` (loopback only).
+Starts automatically with `discursive start`.
 
-The gateway serves a local usage dashboard at `http://localhost:4002`
-(loopback only). It starts automatically with `discursive start` — no extra
-process or configuration.
+- System health, reasoning effort, provider balances, MTD spend
+- Spend by period / model / provider; session browser
+- Model controls (compression toggle)
 
-- **System health** - health checks & system uptime
-- **Reasoning effort** — per-model `low` / `high` / `max` (and DeepSeek `off`) saved to app settings
-- **Terseness** — always-on directive + token caps per model (no dashboard toggle)
-- **Provider balances & monthly spend projection** — average daily spend, projected monthly total
-- **Month to date spending** — requests, tokens, and estimated cost (USD, EUR, CNY)
-- **Spend by period, model, and provider** — clear charts per time period, model, and provider
-- **Sessions** — summary stats for the selected range; expand to browse individual sessions
-
-> **💡 Note:** The Usage Dashboard is not exposed via the public tunnel. Only accessible locally on `localhost:4002`.
+> The dashboard is not exposed via the public tunnel.
 
 ---
-
-
 
 ## 🪐 Providers
 
-Models that support configurable reasoning / thinking (`kimi-k3`,
-`deepseek-v4-pro`, `deepseek-v4-flash`) can be tuned from the Usage Dashboard
-(**Reasoning Effort** card at `http://127.0.0.1:4002`). Values are stored in app
-settings and applied to new gateway requests immediately (no restart). Gateway
-logs include an `effort` field on request/response/usage lines.
+Models with configurable reasoning (`kimi-k3`, `deepseek-v4-pro`,
+`deepseek-v4-flash-vision-exp`, `glm-5.3`, `glm-5.3-flash`) can be tuned from
+the dashboard **Reasoning Effort** card. `kimi-k2.7-code` always thinks.
 
-
-| Model                                              | Options              | Default                                                                                  |
-| -------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------- |
-| `kimi-k3`                                          | `low`, `high`, `max` | `low` (API default is `max`; we default lower for cost)                                  |
-| `deepseek-v4-pro` / `deepseek-v4-flash-vision-exp` | `off`, `high`, `max` | `off` (`off` → `thinking: disabled`; otherwise `thinking: enabled` + `reasoning_effort`) |
-| `glm-5.3` / `glm-5.3-flash`                        | `low`, `high`, `max` | `low` (always thinks; `disabled` is not supported; we default lower for cost)            |
-
-
-- Lower effort usually means fewer thinking tokens and lower cost. `thaura` does not
-expose this control.
-- `kimi-k2.7-code` always thinks — thinking is always on and there is no effort
-selector: [Kimi K2.7 Code](https://www.kimi.com/resources/kimi-k2-7-code)
-- DeepSeek only documents `high`/`max` for effort: [DeepSeek Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)).
-
-
-
-### Terseness (always on)
+### Terseness (always on) <!-- omit in toc -->
 
 The gateway injects a terseness directive and lowers `max_tokens` per model on
-every request (hardcoded in `server.go` — no dashboard toggle). Response
-content is never edited; streaming and non-streaming replies pass through
-byte-for-byte.
+every request. Response content is never edited.
 
-### 🌙 Moonshot (Kimi)
+### 🌙 Moonshot (Kimi) <!-- omit in toc -->
 
-[Moonshot](https://platform.kimi.ai/) provides frontier models with long-context
-windows and native reasoning capabilities.
+| API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role |
+| ------------ | ---------------- | ------------ | ------------- | ---- |
+| `kimi-k3` | $0.30 | $3.00 | $15.00 | Flagship; 1M context |
+| `kimi-k2.7-code` | $0.19 | $0.95 | $4.00 | Coding; always thinks |
 
+- [Pricing](https://platform.kimi.ai/docs/pricing/chat) · [API docs](https://platform.kimi.ai/docs/)
 
-| API model ID     | Cache hit / MTok | Input / MTok | Output / MTok | Role                                      |
-| ---------------- | ---------------- | ------------ | ------------- | ----------------------------------------- |
-| `kimi-k3`        | $0.30            | $3.00        | $15.00        | Flagship; 1M-token context, always thinks |
-| `kimi-k2.7-code` | $0.19            | $0.95        | $4.00         | Coding model; always thinks               |
+### 🐋 DeepSeek <!-- omit in toc -->
 
+Peak hours (01:00–04:00 and 06:00–10:00 UTC) bill at 2× off-peak rates.
 
-- Pricing: [https://platform.kimi.ai/docs/pricing/chat](https://platform.kimi.ai/docs/pricing/chat)
-- API docs: [https://platform.kimi.ai/docs/](https://platform.kimi.ai/docs/)
-- K3 reasoning effort: [Reasoning Effort](https://platform.kimi.ai/docs/guide/use-reasoning-effort)
+| API model ID | Tier | Cache hit / MTok | Cache miss / MTok | Output / MTok | Role |
+| ------------ | ---- | ---------------- | ----------------- | ------------- | ---- |
+| `deepseek-v4-pro` | Off-peak | $0.022 | $0.66 | $1.98 | Hard reasoning |
+| `deepseek-v4-pro` | Peak | $0.044 | $1.32 | $3.96 | |
+| `deepseek-v4-flash-vision-exp` | Off-peak | $0.007 | $0.22 | $0.66 | Cheap + vision |
+| `deepseek-v4-flash-vision-exp` | Peak | $0.014 | $0.44 | $1.32 | |
 
----
+- [Pricing](https://api-docs.deepseek.com/quick_start/pricing) · [API docs](https://api-docs.deepseek.com/)
 
+### 🪻 Z.AI <!-- omit in toc -->
 
+GLM Coding Plan base URL: `https://api.z.ai/api/coding/paas/v4`.
 
-### 🐋 DeepSeek 
+| API model ID | Cache hit / MTok | Input / MTok | Output / MTok | Role |
+| ------------ | ---------------- | ------------ | ------------- | ---- |
+| `glm-5.3` | $0.26 | $1.40 | $4.40 | Planning; always thinks |
+| `glm-5.3-flash` | $0.015 | $0.075 | $0.25 | Budget; 1M context; vision |
+| `glm-4.6v` | $0.03 | $0.12 | $0.27 | Vision worker (internal) |
 
-[DeepSeek](https://api-docs.deepseek.com/) provides cost-efficient reasoning
-models at a fraction of the cost per token.
+Z.AI billing is points-based on the Coding Plan. `discursive usage` excludes Z.AI
+from MTD totals; subscription cost appears in the month projection.
 
-DeepSeek uses **peak / off-peak billing** (effective 2026-08-16 16:00 UTC).
-Peak hours are 01:00–04:00 and 06:00–10:00 UTC (all other hours are
-off-peak); peak rates are 2× the off-peak rates.
+- [Pricing](https://docs.z.ai/guides/overview/pricing) · [API docs](https://docs.z.ai/api-reference/introduction)
 
+### 🐪 Thaura <!-- omit in toc -->
 
-| API model ID                   | Tier     | Cache hit / MTok | Cache miss / MTok | Output / MTok | Role                                 |
-| ------------------------------ | -------- | ---------------- | ----------------- | ------------- | ------------------------------------ |
-| `deepseek-v4-pro`              | Off-peak | $0.022           | $0.66             | $1.98         | Harder reasoning / agentic execution |
-| `deepseek-v4-pro`              | Peak     | $0.044           | $1.32             | $3.96         |                                      |
-| `deepseek-v4-flash-vision-exp` | Off-peak | $0.007           | $0.22             | $0.66         | Cheap execution; native vision       |
-| `deepseek-v4-flash-vision-exp` | Peak     | $0.014           | $0.44             | $1.32         |                                      |
+| API model ID | Input / MTok | Output / MTok | Role |
+| ------------ | ------------ | ------------- | ---- |
+| `thaura` | $0.50 | $2.00 | OpenAI-compatible chat |
 
+Incubated by [Tech for Palestine](https://techforpalestine.org/).
 
-- Pricing: [https://api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/quick_start/pricing)
-- API docs: [https://api-docs.deepseek.com/](https://api-docs.deepseek.com/)
-- Thinking mode: [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)
-
----
-
-
-
-### 🪻 [Z.AI](http://Z.AI) 
-
-[Z.AI](https://docs.z.ai/) provides GLM-series models with
-thinking support and prompt caching. Z.AI is used via the **GLM Coding Plan**
-(subscription, credits quota), which exposes the OpenAI-compatible base URL
-`https://api.z.ai/api/coding/paas/v4`.
-
-
-| API model ID    | Cache hit / MTok | Input / MTok | Output / MTok | Role                                                                                               |
-| --------------- | ---------------- | ------------ | ------------- | -------------------------------------------------------------------------------------------------- |
-| `glm-5.3`       | $0.26            | $1.40        | $4.40         | Planning; always thinks; reasoning_effort + cache                                                  |
-| `glm-5.3-flash` | $0.015           | $0.075       | $0.25         | Budget execution; 1M context; native vision (promo until 2026-09-09 UTC+8; list $0.03/$0.15/$0.50) |
-| `glm-4.6v`      | $0.03            | $0.12        | $0.27         | Z.AI vision worker for glm-5.3 (not user-selectable)                                               |
-
-> **Z.AI USD/MTok** from [pricing](https://docs.z.ai/guides/overview/pricing) (2026-08).
-> `glm-5.3-flash` promo cache/input/output $0.015/$0.075/$0.25 until 2026-09-09
-> UTC+8 (list $0.03/$0.15/$0.50). Coding Plan billing is still points-based.
-
-### OpenRouter (peak reroute only)
-
-OpenRouter hosts DeepSeek and Z.AI models and is used only as an internal
-peak-hour transport. Cursor aliases still map to direct providers; the gateway
-reroutes to OpenRouter upstream IDs when that provider is in peak pricing and an
-OpenRouter key is configured.
-
-| Upstream ID                       | Cache hit / MTok | Input / MTok | Output / MTok | Role                     |
-| --------------------------------- | ---------------- | ------------ | ------------- | ------------------------ |
-| `deepseek/deepseek-v4-flash-0731` | $0.014           | $0.065       | $0.14         | DeepSeek small peak twin |
-| `deepseek/deepseek-v4-pro-0813`   | $0.022           | $0.66        | $1.98         | DeepSeek big peak twin   |
-| `z-ai/glm-5.3`                    | $0.26            | $1.40        | $4.40         | Z.AI big peak twin       |
-| `z-ai/glm-5.3-flash`              | $0.015           | $0.075       | $0.25         | Z.AI small peak twin     |
-
-> **Flat list rates.** OpenRouter has no peak/off-peak pricing
-> (see [Why Use OpenRouter for DeepSeek](https://openrouter.ai/blog/insights/why-openrouter-for-deepseek/)),
-> so these rates apply year-round. Weighted-average "typical blended cost" is
-> informational: flash ≈ $0.0476 in / $0.384 out, pro ≈ $0.2365 in / $3.174 out.
-> The dashboard and usage records use the list rates above.
->
-> Peak OpenRouter calls send the gateway session as `session_id` / `X-Session-Id`
-> (sticky host from turn 1), `provider.sort=throughput`,
-> `preferred_max_latency.p90=2.5s`, and ignore `wafer,morph,venice`. Override with
-> `DISCURSIVE_OPENROUTER_*` (see Environment Variables). Completion logs include
-> `latency_ms` and `or_host`.
-
-
-> **GLM Coding Plan quota is points-based (2026-08).** Model calls consume
-> credits via multipliers per 10k tokens (input 6.9, cached input 1.7, output
-> 24); off-peak hours consume 50% of standard credits. The dashboard balance
-> panel reads Z.AI quota buckets (`data.limits[]`) generically. Tiers (2026-08):
-> **Lite** = 2,000 / 5-hour, 10,000 / weekly; **Pro** = 12,000 / 5-hour,
-> 60,000 / weekly (6x Lite). `discursive usage` excludes Z.AI from MTD/Today
-> totals (flat-fee coding plan); the Z.AI subscription ($64/mo effective on Pro)
-> appears only in the month projection. The "Spend by Period"/"Spend by Model"
-> bar charts show Z.AI usage with subscription-implied visual height (credits ×
-> plan fee / monthly quota) for chart comparison — not billed spend.
->
-> **Image routing:** `glm-5.3-flash` and `deepseek-v4-flash-vision-exp` receive
-> `image_url` natively. Other chat models get a text description from that
-> provider's vision worker (Z.AI `glm-5.3` → `glm-4.6v`; DeepSeek pro →
-> `deepseek-v4-flash-vision-exp`; Moonshot → `kimi-k2.7-code`). Cursor still
-> resends original images, so switching flash → flagship describes them on the
-> next turn. On describer failure the image is replaced with a placeholder.
-
-- Pricing: [https://docs.z.ai/guides/overview/pricing](https://docs.z.ai/guides/overview/pricing)
-- API docs: [https://docs.z.ai/api-reference/introduction](https://docs.z.ai/api-reference/introduction)
-- API key: [https://z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) (GLM Coding Plan key)
-
-
-| Parameter          | `glm-5.3` / `glm-5.3-flash`                              |
-| ------------------ | -------------------------------------------------------- |
-| `thinking`         | Always `{type: "enabled"}` (`disabled` is not supported) |
-| `reasoning_effort` | Always sent → `low`/`high`/`max`                         |
-
+- [API platform](https://thaura.ai/api-platform)
 
 ---
-
-
-
-### 🐪 Thaura 
-
-[Thaura](https://thaura.ai/) is an AI platform that combines technical
-excellence with ethical principles, designed to support Palestinian liberation
-and mission-aligned technology development.
-
-
-| API model ID | Input / MTok | Output / MTok | Role                                |
-| ------------ | ------------ | ------------- | ----------------------------------- |
-| `thaura`     | $0.50        | $2.00         | OpenAI-compatible chat and tool use |
-
-
-- Pricing: [https://thaura.ai/api-platform](https://thaura.ai/api-platform)
-- API docs: [https://thaura.ai/api-platform](https://thaura.ai/api-platform)
-
-> **🇵🇸 Incubated by Tech for Palestine**
->
-> Click to expand  
->
-> [Tech for Palestine](https://techforpalestine.org/) (T4P) is a coalition of founders, engineers, product marketers, investors, and other professionals working in support of Palestinian liberation.
->
-> **What is Tech for Palestine?**
->
-> Tech for Palestine is first and foremost an incubator for advocacy projects. They rally volunteers from across the tech world — founders, engineers, marketers, investors, and more — all committed to Palestinian liberation.
->
-> The T4P Incubator helps pro-Palestine advocates build, grow, and scale their work towards a Free Palestine. They support projects — whether collections of individuals, registered non-profits, or even companies — whose mission helps Palestine, especially advocacy groups building technical products or in the tech space.
->
-> The Incubator is free and provides:
->
-> - 👥 **Volunteers** - Access to skilled professionals
-> - 📢 **Marketing Support** - Help spreading your message
-> - 🎓 **Mentorship** - Guidance from experienced professionals
-> - 🔗 **Connections** - Links to the broader Palestinian advocacy ecosystem
->
-> **Get Involved:**
->
-> - Volunteer your skills
-> - Join their Discord
-> - Start a project of your own
-> - Be a mentor
-> - Hire Palestinians
->
-> Learn more at [techforpalestine.org](https://techforpalestine.org/)
-
----
-
-
-
-## 🛠 Tech Stack
-
-
-| Component     | Technology                                                                                                 |
-| ------------- | ---------------------------------------------------------------------------------------------------------- |
-| Language      | Go 1.26.5+                                                                                                 |
-| CLI framework | [Cobra](https://cobra.dev/)                                                                                |
-| Tunnel        | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) named tunnel |
-| Upstream APIs | OpenAI-compatible chat completions (Moonshot + DeepSeek + Thaura + Z.AI)                                   |
-
-
----
-
-
-
-## 📁 File Structure
-
-```
-main.go                   # Entry point
-internal/
-  cli/                    # Cobra command tree (start, stop, status, doctor, …)
-    start/                # Start gateway / background daemon / tunnel
-    setcmd/               # `set` command
-    wizard/               # Interactive init wizard
-  config/                 # App settings, paths, upstream URL helpers
-  crypto/                 # Encrypt upstream keys + gateway key gen
-  gateway/                # HTTP server, sanitizer, optimizer, proxy, auth
-    vision/               # Per-provider image description (content-hash cache, graceful fallback)
-  tunnel/                 # cloudflared supervisor
-  doctor/                 # Health checks
-  usage/                  # Pricing tables, token/cost store, slog helpers
-  usageui/                # Embedded usage dashboard (HTTP, Chart.js)
-.cursor/rules/            # Agent conventions
-.cursor/skills/           # Invocable workflows
-planning/          # Local scratch for MVP task plans (gitignored — not in fresh checkout)
-```
-
----
-
-
 
 ## 🖥 CLI Commands
 
-All output is JSON on stdout. Pipe through `jq` for readability.
+All output is JSON on stdout — pipe through `jq`. Interactive prompts on stderr.
 
+| Command | Description |
+| ------- | ----------- |
+| `discursive start` | Start gateway (`--background`, `--subagent-router`, `--tunnel`, `--public-url`) |
+| `discursive stop` | Stop background gateway |
+| `discursive status` | Config + runtime state (`--show-key` for full gateway key) |
+| `discursive doctor` | Health checks |
+| `discursive usage` | Token + cost estimates (`--date`, `--session`, `--days`) |
+| `discursive init` | First-time setup wizard |
+| `discursive set` | `--moonshot-key`, `--deepseek-key`, `--zai-key`, `--thaura-key`, `--openrouter-key`, `--tunnel-token`, `--public-url`, `--model` |
+| `discursive logs` | Tail `gateway.log` (`-f`, `-n N`) |
+| `discursive version` | Print version |
 
-| Command                                               | Description                                                                                                                                                                                                                                                                                                                                                                            |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `discursive start`                                    | Start gateway on `localhost:4001`. `--background` forks to daemon. `--log-level` (debug/info/warn/error). `--tunnel` (named/none/quick), `--public-url`. `--subagent-router` (on by default). Runtime toggles managed from the usage dashboard. Auto-invokes `init` if config is incomplete on first run. See [Subagent Routing](#-subagent-routing) and [Compression](#-compression). |
-| `discursive stop`                                     | Write a `gateway.stop` poll file (the real signal for background gateways that ignore SIGTERM), then SIGTERM for foreground/legacy processes, SIGKILL on no-graceful-exit. No-op if not running.                                                                                                                                                                                       |
-| `discursive status`                                   | Config dump + runtime state: PID alive? uptime? log file path/size, tunnel mode, model mapping. Gateway key masked by default; `--show-key` prints the full key.                                                                                                                                                                                                                       |
-| `discursive logs`                                     | Pretty-print `gateway.log` with colored level prefixes. `--follow` (`-f`) for live tail (uses fsnotify — no polling). `-n N` for last N lines. File auto-rotates at ~2 MB, keeps 2 backups.                                                                                                                                                                                            |
-| `discursive log-level [debug\|info\|warn\|error]`     | Show or set log verbosity. No arg prints the current level; pass `debug`/`info`/`warn`/`error` (alias `warning`) to set it for the current process. Persist with `export DISCURSIVE_LOG_LEVEL=debug`.                                                                                                                                                                                  |
-| `discursive doctor`                                   | Health checks: keys present, port available, local/public HTTP health, tunnel mode, cloudflared binary, logs writable.                                                                                                                                                                                                                                                                 |
-| `discursive usage`                                    | Token + cost estimates per session/model. Defaults to today; `--date YYYY-MM-DD`, `--session <id>`, or `--days N` (last N days). Also prints a confirmed + estimated spend report (Moonshot/DeepSeek balance-confirmed + Thaura estimate; Z.AI excluded — flat-fee plan). Subcommands: `purge`, `prune-snapshots`.                                                                     |
-| `discursive usage purge`                              | Delete usage events older than `--max-age` (Go duration, default `90d`; also `24h`, `7d`, `30d`…). `--dry-run` previews the count without deleting.                                                                                                                                                                                                                                    |
-| `discursive usage prune-snapshots`                    | Delete balance snapshots older than `--max-age` (default `90d`). Raw snapshot rows used to compute confirmed spend; no longer needed once a period is complete. `--dry-run` previews without deleting.                                                                                                                                                                                 |
-| `discursive init`                                     | Run first-time setup: write config, generate the gateway key, store provider API keys. Auto-invoked by `start` when config is incomplete.                                                                                                                                                                                                                                              |
-| `discursive set`                                      | Configure settings via flags. `--moonshot-key`, `--deepseek-key`, `--thaura-key`, `--zai-key`, `--openrouter-key`, `--tunnel-token`, `--public-url`, `--rotate-gateway-key`, `--model`, `--clear <provider>`. Combine several in one call. `--show-key` prints the full gateway key.                                                                                                   |
-| `discursive completion [bash\|zsh\|fish\|powershell]` | Generate a shell completion script (Cobra built-in). See [Shell Completion](#-shell-completion).                                                                                                                                                                                                                                                                                       |
-| `discursive version`                                  | Print version.                                                                                                                                                                                                                                                                                                                                                                         |
-
-
-JSON slog on **stdout**, interactive prompts on **stderr** — pipe-friendly.
+Run `discursive --help` for the full command tree.
 
 ---
-
-
 
 ## ⌨️ Shell Completion
 
-Cobra's built-in `completion` command generates scripts for bash, zsh, fish, and
-PowerShell. After install, Tab completes subcommands, flags, log levels, tunnel
-modes, and model aliases.
-
-**zsh** (macOS default):
-
 ```bash
-# Oh My Zsh
-mkdir -p ~/.oh-my-zsh/completions
-discursive completion zsh > ~/.oh-my-zsh/completions/_discursive
-
-# Or any zsh with compinit (add to ~/.zshrc, then restart the shell):
-discursive completion zsh > "${fpath[1]}/_discursive"
+discursive completion zsh > ~/.oh-my-zsh/completions/_discursive   # zsh
+discursive completion bash | sudo tee /etc/bash_completion.d/discursive  # bash
 ```
 
-**bash** (Linux / macOS with bash-completion):
-
-```bash
-# Linux (system-wide)
-discursive completion bash | sudo tee /etc/bash_completion.d/discursive >/dev/null
-
-# Or per-session / add to ~/.bashrc:
-source <(discursive completion bash)
-```
-
-**fish:**
-
-```bash
-discursive completion fish > ~/.config/fish/completions/discursive.fish
-```
-
-Verify: type `discursive`  then Tab — you should see subcommands.
+See `discursive completion --help` for fish and PowerShell.
 
 ---
-
-
 
 ## 🌍 Environment Variables
 
-
-| Variable                | Purpose                                                   | Default |
-| ----------------------- | --------------------------------------------------------- | ------- |
-| `DISCURSIVE_LOG_LEVEL`  | Log verbosity: `debug`, `info`, `warn`, `error`           | `info`  |
-| `DISCURSIVE_USAGE_IDLE` | Idle window before emitting a usage summary (Go duration) | `30s`   |
-| `DISCURSIVE_OPENROUTER_SORT` | OpenRouter `provider.sort` (`throughput`, `latency`, `price`; `none`/`off`/empty omits) | `throughput` |
-| `DISCURSIVE_OPENROUTER_MAX_LATENCY_P90` | Soft p90 latency cap in seconds (`0`/`off` disables) | `2.5` |
-| `DISCURSIVE_OPENROUTER_IGNORE` | Comma-separated OpenRouter host slugs to skip (`none`/`off` disables) | `wafer,morph,venice` |
-
+| Variable | Purpose | Default |
+| -------- | ------- | ------- |
+| `DISCURSIVE_LOG_LEVEL` | Log verbosity | `info` |
+| `DISCURSIVE_USAGE_IDLE` | Idle window before usage summary | `30s` |
+| `DISCURSIVE_OPENROUTER_SORT` | OpenRouter `provider.sort` | `throughput` |
+| `DISCURSIVE_OPENROUTER_MAX_LATENCY_P90` | Soft p90 latency cap (seconds) | `2.5` |
+| `DISCURSIVE_OPENROUTER_IGNORE` | Host slugs to skip | `wafer,morph,venice` |
 
 ---
-
-
 
 ## 🔄 CI / Release
 
-
-| Trigger                  | Job                          | What runs                                            |
-| ------------------------ | ---------------------------- | ---------------------------------------------------- |
-| Push to `main` / PR      | Verify (lint + test + build) | `golangci-lint` + `go test ./...` + `go build ./...` |
-| Tag `v*` (e.g. `v0.1.0`) | Release (GoReleaser)         | Cross-compile + publish binaries to GitHub Releases  |
-
-
-The verify job must pass before release runs. Releases use the built-in
-`secrets.GITHUB_TOKEN` (no custom PAT needed).
-
-Binaries are built via [GoReleaser](https://goreleaser.com/) and published at
-[https://github.com/commoddity/discursive/releases](https://github.com/commoddity/discursive/releases).
+| Trigger | Job | What runs |
+| ------- | --- | --------- |
+| Push to `main` / PR | Verify | `golangci-lint` + `go test ./...` + `go build ./...` |
+| Tag `v*` | Release | GoReleaser → [GitHub Releases](https://github.com/commoddity/discursive/releases) |
 
 ---
-
-
 
 ## 🔒 Security
 
-- Upstream Moonshot, DeepSeek, Thaura, and Z.AI keys are **encrypted at rest** and never sent
-to Cursor, never appear in logs
+- Upstream provider keys encrypted at rest; never sent to Cursor or logged
 - Cursor receives only the generated gateway key (`sk-...`)
-- Gateway key is **masked by default** in `status` / `rotate-gateway-key`;
-pass `--show-key` when you need the full value for Cursor setup
-- Gateway binds to loopback (`localhost`); the Cloudflare tunnel is the only
-public surface
-- All output is JSON on stdout — never emit upstream secrets or raw headers
+- Gateway binds to loopback; Cloudflare tunnel is the public surface
+- `status` masks the gateway key by default — use `--show-key` for Cursor setup
 
 ---
-
-
 
 ## 🧪 Methodology
 
 Discursive was developed using [Turboplan](https://github.com/commoddity/turboplan),
-a methodology for AI-assisted software delivery. Turboplan structures work into
-sequenced phases, enforces layered verification ("don't advance until the layer
-below passes"), and maintains self-evolving agent rules that capture failure
-patterns. Every feature in this project was planned, executed, and verified
-through Turboplan's task lifecycle.
+a methodology for AI-assisted software delivery — sequenced phases, layered
+verification, and self-evolving agent rules.
 
 ---
-
-
 
 ## 📜 License
 
