@@ -2187,6 +2187,7 @@
         grid.style.display = 'grid';
 
         const raw = h.gateway_key || '';
+        const tunnelUrl = h.public_url || '';
         const up = fmtUptime(h.uptime_seconds);
 
         grid.innerHTML =
@@ -2197,8 +2198,11 @@
           '<div class="health-col health-col-wide">' +
           '<div class="health-label">☁️ Tunnel <span class="health-info" data-tip="Paste the Tunnel URL into Cursor: Settings → Models → Override OpenAI Base URL. Must end in /v1.">?</span><a class="health-link" href="https://github.com/commoddity/discursive#-quickstart" target="_blank" title="See Quickstart guide">🔗</a></div>' +
           '<div class="health-val" style="display:flex;align-items:center;gap:8px;word-break:normal;">' +
-          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">' + (h.public_url || '—') + '</span>' +
-          (h.public_url ? '<button class="health-btn copy-btn" style="min-width:100px;white-space:nowrap" onclick="copyToClipboard(event, \'' + h.public_url + '\')">Copy URL</button>' : '') +
+          (tunnelUrl
+            ? '<span id="tunnel-url-text" class="gw-key-text gw-key-blur">' + tunnelUrl + '</span>' +
+              '<button class="health-btn" onclick="toggleTunnelUrl()" id="tunnel-url-toggle" style="min-width:82px;white-space:nowrap">Show URL</button>' +
+              '<button class="health-btn copy-btn" onclick="copyTunnelUrl()" style="min-width:100px;white-space:nowrap">Copy URL</button>'
+            : '<span>—</span>') +
           '</div>' +
           '</div>' +
           '<div class="health-col">' +
@@ -2224,6 +2228,7 @@
           '</div>';
 
         grid.dataset.gatewayKey = raw;
+        grid.dataset.publicUrl = tunnelUrl;
 
         // Sync the live uptime clock from server-reported value
         syncUptime(h.uptime_seconds);
@@ -2253,6 +2258,7 @@
     }
 
     let gatewayKeyVisible = false;
+    let tunnelUrlVisible = false;
     function toggleGatewayKey() {
       const txt = document.getElementById('gw-key-text');
       const btn = document.getElementById('gw-key-toggle');
@@ -2267,6 +2273,22 @@
         txt.classList.add('gw-key-blur');
         txt.removeAttribute('title');
         btn.textContent = 'Show Key';
+      }
+    }
+    function toggleTunnelUrl() {
+      const txt = document.getElementById('tunnel-url-text');
+      const btn = document.getElementById('tunnel-url-toggle');
+      const grid = document.getElementById('health-grid');
+      const raw = grid.dataset.publicUrl;
+      tunnelUrlVisible = !tunnelUrlVisible;
+      if (tunnelUrlVisible) {
+        txt.classList.remove('gw-key-blur');
+        txt.title = raw;
+        btn.textContent = 'Hide URL';
+      } else {
+        txt.classList.add('gw-key-blur');
+        txt.removeAttribute('title');
+        btn.textContent = 'Show URL';
       }
     }
     function copyToClipboard(ev, text) {
@@ -2285,6 +2307,11 @@
     function copyGatewayKey() {
       const grid = document.getElementById('health-grid');
       const raw = grid.dataset.gatewayKey;
+      copyToClipboard(event, raw);
+    }
+    function copyTunnelUrl() {
+      const grid = document.getElementById('health-grid');
+      const raw = grid.dataset.publicUrl;
       copyToClipboard(event, raw);
     }
 

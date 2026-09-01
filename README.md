@@ -10,13 +10,13 @@
 </div>
 
 <p align="center">
-  <a href="https://platform.kimi.ai/"><img src=".github/img/moonshot-white.svg" alt="Moonshot Kimi" height="35" valign="middle" /></a>
+  <a href="https://docs.z.ai/"><img src=".github/img/zai.svg" alt="Z.AI" height="35" valign="middle" /></a>
   &ensp;&middot;&ensp;
   <a href="https://api-docs.deepseek.com/"><img src=".github/img/deepseek.svg" alt="DeepSeek" height="35" valign="middle" /></a>
   &ensp;&middot;&ensp;
-  <a href="https://thaura.ai/"><img src=".github/img/thaura.png" alt="Thaura AI" height="35" valign="middle" /></a>
+  <a href="https://platform.kimi.ai/"><img src=".github/img/moonshot-white.svg" alt="Moonshot Kimi" height="35" valign="middle" /></a>
   &ensp;&middot;&ensp;
-  <a href="https://docs.z.ai/"><img src=".github/img/zai.svg" alt="Z.AI" height="35" valign="middle" /></a>
+  <a href="https://thaura.ai/"><img src=".github/img/thaura.png" alt="Thaura AI" height="35" valign="middle" /></a>
 </p>
 
 <h3 align="center">Written in <a href="https://go.dev/"><img src=".github/img/go.svg" alt="Go" height="28" valign="middle" /></a></h3>
@@ -43,7 +43,7 @@
 
 ## 📦 Quickstart
 
-### 1. Install
+### 1. Install <!-- omit in toc -->
 
 ```bash
 go install github.com/commoddity/discursive@latest
@@ -51,7 +51,7 @@ go install github.com/commoddity/discursive@latest
 
 Or download a [release binary](https://github.com/commoddity/discursive/releases) and put it on your `PATH`.
 
-### Prerequisites
+### Prerequisites <!-- omit in toc -->
 
 - [Go](https://go.dev/dl/) 1.26.5+
 - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
@@ -62,13 +62,13 @@ On first run, the interactive wizard also prompts for:
 | Item                                                           | Required | Where to get / notes                                                                 |
 | -------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------ |
 | **One** provider API key (Moonshot, DeepSeek, Z.AI, or Thaura) | ✅ Yes    | See [Providers](#-providers)                                                         |
-| Cloudflare tunnel token                                        | ✅ Yes    | [Setting up Cloudflare](#️-setting-up-cloudflare)                                    |
+| Cloudflare tunnel token                                        | ✅ Yes    | [Setting up Cloudflare](#️-setting-up-cloudflare)                                     |
 | Public HTTPS URL                                               | ✅ Yes    | Tunnel hostname with `/v1` appended                                                  |
 | Additional provider keys                                       | No       | Enable more models in the picker                                                     |
 | OpenRouter key                                                 | No       | [Peak-hour reroute](#-peak-hour-openrouter) only — `discursive set --openrouter-key` |
 
 
-### 2. Start the gateway
+### 2. Start the gateway <!-- omit in toc -->
 
 ```bash
 discursive start --background
@@ -93,7 +93,7 @@ Gateway keys are masked by default. Pass `--show-key` to print the full
 > See [Subagent Routing](#-subagent-routing), or disable with
 > `discursive start --subagent-router=false`.
 
-### 3. Configure Cursor
+### 3. Configure Cursor <!-- omit in toc -->
 
 Open **Cursor Settings → Models** and enter:
 
@@ -112,7 +112,7 @@ Reload Cursor: **Cmd+Shift+P → Reload Window**. You should see
 > [Usage Dashboard at http://localhost:4002](http://localhost:4002) — hover the
 > `?` icons next to ☁️ Tunnel and 🔐 Gateway Key.
 
-### 4. Switch providers
+### 4. Switch providers <!-- omit in toc -->
 
 Change the model in Cursor's picker — no restart needed:
 
@@ -128,7 +128,7 @@ Change the model in Cursor's picker — no restart needed:
 | `thaura`                       | Thaura   | Optional ethical AI provider               |
 
 
-### 5. Switch back to Cursor's models
+### 5. Switch back to Cursor's models <!-- omit in toc -->
 
 In Cursor Settings → Models: turn off "Override OpenAI API Key" and
 "Override OpenAI Base URL", then pick a Cursor-native model.
@@ -143,7 +143,7 @@ is simple enough. Subagent routing is **on by default**.
 > The router runs inside the gateway. Cursor still sends your chosen model;
 > the gateway may route cheap work to that provider's small model upstream.
 
-### What gets downgraded
+### What gets downgraded <!-- omit in toc -->
 
 The last user message determines whether the task is cheap enough for a flash model:
 
@@ -167,7 +167,7 @@ Downgrades use `config.SmallModelFor(provider)` — never cross-provider.
 - Moonshot `kimi-k3` → `kimi-k2.7-code`
 - Z.AI `glm-5.3` → `glm-5.3-flash`
 
-### `discursive start` flags
+### `discursive start` flags <!-- omit in toc -->
 
 
 | Flag                | Default  | Purpose                               |
@@ -184,7 +184,7 @@ discursive start --subagent-router --log-level debug   # routing on + debug
 discursive start --subagent-router=false             # disable routing
 ```
 
-### Compression
+### Compression <!-- omit in toc -->
 
 Tool-result compression reduces upstream tokens in long agent sessions. 
 
@@ -265,12 +265,12 @@ Starts automatically with `discursive start`.
 > `deepseek-v4-flash-vision-exp`, `glm-5.3`, `glm-5.3-flash`) can be tuned from
 > the dashboard **Reasoning Effort** card. `kimi-k2.7-code` always thinks.
 
-### 🤐 Terseness (always on)
+### 🤐 Terseness (always on) <!-- omit in toc -->
 
 The gateway injects a terseness directive and lowers `max_tokens` per model on
 every request. Response content is never edited.
 
-### 🌙 Moonshot (Kimi)
+### 🌙 Moonshot (Kimi) <!-- omit in toc -->
 
 
 | API model ID     | Cache hit / MTok | Input / MTok | Output / MTok | Role                  |
@@ -281,7 +281,7 @@ every request. Response content is never edited.
 
 - [Pricing](https://platform.kimi.ai/docs/pricing/chat) · [API docs](https://platform.kimi.ai/docs/)
 
-### 🐋 DeepSeek
+### 🐋 DeepSeek <!-- omit in toc -->
 
 Peak hours (01:00–04:00 and 06:00–10:00 UTC) bill at 2× off-peak rates.
 
@@ -296,7 +296,7 @@ Peak hours (01:00–04:00 and 06:00–10:00 UTC) bill at 2× off-peak rates.
 
 - [Pricing](https://api-docs.deepseek.com/quick_start/pricing) · [API docs](https://api-docs.deepseek.com/)
 
-### 🪻 [Z.AI](http://Z.AI)
+### 🪻 [Z.AI](http://Z.AI) <!-- omit in toc -->
 
 GLM Coding Plan base URL: `https://api.z.ai/api/coding/paas/v4`.
 
@@ -313,7 +313,7 @@ from MTD totals; subscription cost appears in the month projection.
 
 - [Pricing](https://docs.z.ai/guides/overview/pricing) · [API docs](https://docs.z.ai/api-reference/introduction)
 
-### 🐪 Thaura
+### 🐪 Thaura <!-- omit in toc -->
 
 
 | API model ID | Input / MTok | Output / MTok | Role                   |
