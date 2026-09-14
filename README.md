@@ -34,6 +34,7 @@
 - [🖥 CLI Commands](#-cli-commands)
 - [⚡ Features](#-features)
   - [⚡ Subagent Routing](#-subagent-routing)
+  - [⚒️ Tool Result Compression](#-tool-result-compression)
   - [🤐 Terseness (always on)](#-terseness-always-on)
 - [⚙️ Config](#️-config)
   - [⌨️ Shell Completion](#️-shell-completion)
@@ -372,7 +373,7 @@ Downgrades use `config.SmallModelFor(provider)` - never cross-provider.
 
 
 
-### Compression <!-- omit in toc -->
+### ⚒️ Tool Result Compression
 
 Tool-result compression reduces upstream tokens in long agent sessions. 
 
