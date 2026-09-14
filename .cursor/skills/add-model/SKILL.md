@@ -7,7 +7,7 @@ description: >-
   and test that must change. Does not support adding new providers (Thaura
   or net-new) — only models within existing Moonshot/DeepSeek providers.
   Manual-only — /add-model.
-model: deepseek-v4-flash
+model: deepseek-flash
 disable-model-invocation: true
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---

@@ -218,7 +218,7 @@ func TestModelsListContent(t *testing.T) {
 		}
 		ids[m.ID] = true
 	}
-	for _, want := range []string{"gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "kimi-k3", "kimi-k2.7-code", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp"} {
+	for _, want := range []string{"gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "kimi-k3", "kimi-k2.7-code", "deepseek-v4-pro", "deepseek-flash"} {
 		if !ids[want] {
 			t.Fatalf("missing id %s", want)
 		}

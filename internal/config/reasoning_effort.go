@@ -10,10 +10,10 @@ const (
 	ModelKimiK3                    = "kimi-k3"
 	ModelKimiK27                   = "kimi-k2.7-code"
 	ModelDeepSeekV4Pro             = "deepseek-v4-pro"
-	ModelDeepSeekV4Flash           = "deepseek-v4-flash"
+	ModelDeepSeekFlash             = "deepseek-flash"
 	ModelZaiGLM53                  = "glm-5.3"
 	ModelZaiGLM53Flash             = "glm-5.3-flash"
-	ModelOpenRouterDeepSeekV4Flash = "deepseek/deepseek-v4-flash-0731"
+	ModelOpenRouterDeepSeekV4Flash = "deepseek/deepseek-v4.1-flash"
 	ModelOpenRouterDeepSeekV4Pro   = "deepseek/deepseek-v4-pro-0813"
 )
 
@@ -61,16 +61,9 @@ func ReasoningEffortCatalog() []ReasoningEffortSpec {
 			Default:  EffortOff,
 		},
 		{
-			Model:    ModelDeepSeekV4FlashVisionExp,
+			Model:    ModelDeepSeekFlash,
 			Provider: ProviderDeepSeek,
-			Label:    "DeepSeek V4 Flash Vision",
-			Options:  []string{EffortOff, "high", "max"},
-			Default:  EffortOff,
-		},
-		{
-			Model:    ModelDeepSeekV4Flash,
-			Provider: ProviderDeepSeek,
-			Label:    "DeepSeek V4 Flash",
+			Label:    "DeepSeek Flash",
 			Options:  []string{EffortOff, "high", "max"},
 			Default:  EffortOff,
 		},
@@ -141,7 +134,7 @@ func NormalizeReasoningEffort(model, effort string) (string, error) {
 }
 
 func isDeepSeekModel(model string) bool {
-	return model == ModelDeepSeekV4Pro || model == ModelDeepSeekV4Flash || model == ModelDeepSeekV4FlashVisionExp
+	return model == ModelDeepSeekV4Pro || model == ModelDeepSeekFlash
 }
 
 func isZaiModel(model string) bool {

@@ -35,7 +35,7 @@ const (
 
 // Deprecated DeepSeek Cursor aliases. Still resolved for backwards compat, but
 // Cursor applies ~200k context assumptions for o1/o3-mini and compresses long
-// chats too early. Prefer deepseek-v4-pro and deepseek-v4-flash-vision-exp
+// chats too early. Prefer deepseek-v4-pro and deepseek-flash
 // (not in Cursor's catalog → 1M default context budget).
 const (
 	DeprecatedAliasDeepSeekPro   = "o1"
@@ -68,7 +68,7 @@ func ListAdvertisedModels() []AdvertisedModel {
 		{ID: "kimi-k2.7-code", Provider: config.ProviderMoonshot},
 		// DeepSeek — prefer real IDs (Cursor 1M context default; see DeprecatedAlias*).
 		{ID: "deepseek-v4-pro", Provider: config.ProviderDeepSeek},
-		{ID: "deepseek-v4-flash-vision-exp", Provider: config.ProviderDeepSeek},
+		{ID: "deepseek-flash", Provider: config.ProviderDeepSeek},
 		// Z.AI — prefer real IDs (Cursor 1M context default; see DeprecatedAlias*).
 		{ID: "glm-5.3", Provider: config.ProviderZai},
 		{ID: "glm-5.3-flash", Provider: config.ProviderZai},
@@ -101,19 +101,16 @@ func ResolveModel(requested string) (Route, error) {
 		// Deprecated: use deepseek-v4-pro (Cursor 1M context default).
 		return Route{config.ProviderDeepSeek, "deepseek-v4-pro", PolicyDeepSeek}, nil
 	case DeprecatedAliasDeepSeekFlash:
-		// Deprecated: use deepseek-v4-flash-vision-exp (Cursor 1M context default).
-		return Route{config.ProviderDeepSeek, config.ModelDeepSeekV4FlashVisionExp, PolicyDeepSeek}, nil
+		// Deprecated: use deepseek-flash (Cursor 1M context default).
+		return Route{config.ProviderDeepSeek, config.ModelDeepSeekFlash, PolicyDeepSeek}, nil
 	case "kimi-k3":
 		return Route{config.ProviderMoonshot, "kimi-k3", PolicyK3}, nil
 	case "kimi-k2.7-code":
 		return Route{config.ProviderMoonshot, "kimi-k2.7-code", PolicyK27}, nil
 	case "deepseek-v4-pro":
 		return Route{config.ProviderDeepSeek, requested, PolicyDeepSeek}, nil
-	case "deepseek-v4-flash-vision-exp":
-		return Route{config.ProviderDeepSeek, config.ModelDeepSeekV4FlashVisionExp, PolicyDeepSeek}, nil
-	case "deepseek-v4-flash":
-		// Legacy compat — upstream is the vision-capable flash model.
-		return Route{config.ProviderDeepSeek, config.ModelDeepSeekV4FlashVisionExp, PolicyDeepSeek}, nil
+	case "deepseek-flash":
+		return Route{config.ProviderDeepSeek, config.ModelDeepSeekFlash, PolicyDeepSeek}, nil
 	case "gpt-5-nano":
 		return Route{config.ProviderThaura, "thaura", PolicyThaura}, nil
 	case "thaura":

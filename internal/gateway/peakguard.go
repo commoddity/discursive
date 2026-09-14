@@ -33,9 +33,8 @@ func isDeepSeekModel(model string) bool {
 }
 
 // peakNow reports whether model is in peak billing for its provider at at.
-// Z.AI models peak Mon–Fri 06:00–10:00 UTC; DeepSeek models peak on Beijing
-// weekdays 01:00–04:00 and 06:00–10:00 UTC (Beijing weekends off-peak all day
-// from 2026-08-23 00:00 Beijing).
+// Z.AI models peak Mon–Fri 06:00–10:00 UTC; DeepSeek models peak Mon–Fri
+// 01:00–04:00 and 06:00–10:00 UTC.
 // When EnvForcePeak is set, any peak-eligible model (DeepSeek, Z.AI) is
 // treated as in peak for testing.
 func peakNow(model string, at time.Time) bool {

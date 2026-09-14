@@ -314,7 +314,7 @@ func TestSanitizeRequest_DeepSeekPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Model != config.ModelDeepSeekV4FlashVisionExp {
+	if res.Model != config.ModelDeepSeekFlash {
 		t.Fatalf("model: %s", res.Model)
 	}
 }
@@ -346,7 +346,7 @@ func TestSanitizeRequest_PassesImagesForDeepSeekZai(t *testing.T) {
 				},
 			},
 			check: func(t *testing.T, res SanitizeResult) {
-				if res.Provider != config.ProviderDeepSeek || res.Model != config.ModelDeepSeekV4FlashVisionExp {
+				if res.Provider != config.ProviderDeepSeek || res.Model != config.ModelDeepSeekFlash {
 					t.Fatalf("route: %s/%s", res.Provider, res.Model)
 				}
 				// No system warning should be prepended (sanitizer no longer strips).

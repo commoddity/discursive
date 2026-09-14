@@ -258,7 +258,7 @@ func TestQueryByModel(t *testing.T) {
 		CompletionTokens: 500_000, Timestamp: time.Date(2026, 7, 15, 12, 1, 0, 0, time.UTC),
 	})
 	_, _ = store.Record(Event{
-		SessionID: "s1", Provider: config.ProviderDeepSeek, Model: "deepseek-v4-flash",
+		SessionID: "s1", Provider: config.ProviderDeepSeek, Model: "deepseek-flash",
 		PromptTokens: 2_000_000, CompletionTokens: 1_000_000,
 		Timestamp: time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC),
 	})
@@ -295,7 +295,7 @@ func TestQueryByProvider(t *testing.T) {
 		PromptTokens: 1_000_000, Timestamp: time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC),
 	})
 	_, _ = store.Record(Event{
-		SessionID: "s1", Provider: config.ProviderDeepSeek, Model: "deepseek-v4-flash",
+		SessionID: "s1", Provider: config.ProviderDeepSeek, Model: "deepseek-flash",
 		PromptTokens: 2_000_000, Timestamp: time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC),
 	})
 
@@ -326,7 +326,7 @@ func TestQuerySessions(t *testing.T) {
 		PromptTokens: 100, Timestamp: time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC),
 	})
 	_, _ = store.Record(Event{
-		SessionID: "sess-two", Provider: config.ProviderDeepSeek, Model: "deepseek-v4-flash",
+		SessionID: "sess-two", Provider: config.ProviderDeepSeek, Model: "deepseek-flash",
 		PromptTokens: 200, Timestamp: time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC),
 	})
 
@@ -474,7 +474,7 @@ func TestAccumulateDailyEvent(t *testing.T) {
 		},
 		{
 			name: "event starts a distinct model breakdown",
-			ev: Event{Model: "deepseek-v4-flash", Provider: config.ProviderDeepSeek,
+			ev: Event{Model: "deepseek-flash", Provider: config.ProviderDeepSeek,
 				PromptTokens: 5, EstUSD: 0.5},
 			seedDS: &DailySummary{RequestCount: 1, TokensIn: 100, TokensOut: 50,
 				CacheHitTokens: 10, CacheMissTokens: 90, EstUSD: 1.25},
@@ -483,7 +483,7 @@ func TestAccumulateDailyEvent(t *testing.T) {
 				CacheHitTokens: 10, CacheMissTokens: 90, EstUSD: 1.75},
 			wantModels: map[string]ModelBreakdown{
 				"kimi-k3": *existing,
-				"deepseek-v4-flash": {Model: "deepseek-v4-flash", Provider: string(config.ProviderDeepSeek),
+				"deepseek-flash": {Model: "deepseek-flash", Provider: string(config.ProviderDeepSeek),
 					RequestCount: 1, TokensIn: 5, TokensOut: 0, EstUSD: 0.5},
 			},
 		},
@@ -601,7 +601,7 @@ func TestScanRows(t *testing.T) {
 		Timestamp: time.Date(2026, 7, 15, 13, 0, 0, 0, time.UTC),
 	})
 	_, _ = store.Record(Event{
-		SessionID: "s2", Provider: config.ProviderDeepSeek, Model: "deepseek-v4-flash",
+		SessionID: "s2", Provider: config.ProviderDeepSeek, Model: "deepseek-flash",
 		PromptTokens: 3000, Timestamp: time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC),
 	})
 
@@ -620,8 +620,8 @@ func TestScanRows(t *testing.T) {
 
 	t.Run("model breakdowns grouped by provider,model", func(t *testing.T) {
 		want := map[string]ModelBreakdown{
-			"kimi-k3":           {Model: "kimi-k3", Provider: string(config.ProviderMoonshot), RequestCount: 2, TokensIn: 3000, TokensOut: 1500, CacheHitTokens: 300},
-			"deepseek-v4-flash": {Model: "deepseek-v4-flash", Provider: string(config.ProviderDeepSeek), RequestCount: 1, TokensIn: 3000},
+			"kimi-k3":        {Model: "kimi-k3", Provider: string(config.ProviderMoonshot), RequestCount: 2, TokensIn: 3000, TokensOut: 1500, CacheHitTokens: 300},
+			"deepseek-flash": {Model: "deepseek-flash", Provider: string(config.ProviderDeepSeek), RequestCount: 1, TokensIn: 3000},
 		}
 		rows := queryRows(t, store, modelBreakdownQuery+" GROUP BY provider, model ORDER BY SUM(est_usd) DESC", nil)
 		got, err := scanRows(rows, scanModelBreakdownRow)

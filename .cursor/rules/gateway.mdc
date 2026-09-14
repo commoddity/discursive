@@ -63,9 +63,9 @@ and pricing row.
 || `gpt-4o`         | moonshot | `kimi-k3`         | **Deprecated** — backwards compat; Cursor ~128k context assumption ||
 || `gpt-4o-mini`    | moonshot | `kimi-k2.7-code`  | **Deprecated** — backwards compat; Cursor ~128k context assumption ||
 || `deepseek-v4-pro` | deepseek | `deepseek-v4-pro` | Harder execution (**prefer** — Cursor 1M context default) ||
-|| `deepseek-v4-flash-vision-exp` | deepseek | `deepseek-v4-flash-vision-exp` | Cheap execution; native vision (**prefer**) ||
+|| `deepseek-flash` | deepseek | `deepseek-flash` | Cheap execution; native vision (**prefer**) ||
 || `o1`            | deepseek | `deepseek-v4-pro` | **Deprecated** — backwards compat; Cursor ~200k context assumption ||
-|| `o3-mini`       | deepseek | `deepseek-v4-flash-vision-exp` | **Deprecated** — backwards compat; Cursor ~200k context assumption ||
+|| `o3-mini`       | deepseek | `deepseek-flash` | **Deprecated** — backwards compat; Cursor ~200k context assumption ||
 || `gpt-5-nano`    | thaura   | `thaura`          | Ethical AI; optional provider ||
 || `glm-5.3`       | zai      | `glm-5.3`        | Planning; always thinks (**prefer** — Cursor 1M context default) ||
 || `glm-5.3-flash` | zai      | `glm-5.3-flash`  | Budget workhorse; 1M context; always thinks (**prefer**) ||
@@ -74,10 +74,10 @@ and pricing row.
 || `gpt-4-turbo`   | zai      | `glm-5.3`        | **Compat** — Cursor rewrites `gpt-4.1-turbo` → `gpt-4-turbo` ||
 
 > **Peak-hour OpenRouter reroute (always on, HARD RULE: OpenRouter is peak-only).**
-> During DeepSeek peak (01:00–04:00, 06:00–10:00 UTC Beijing weekdays) or Z.AI
+> During DeepSeek peak (01:00–04:00, 06:00–10:00 UTC Mon–Fri) or Z.AI
 > peak (Mon–Fri 06:00–10:00 UTC) `applyPeakReroute` (`peakguard.go`) swaps to
 > each provider's OpenRouter twin from `config.OpenRouterTwinFor` (`providers.go`):
-> DeepSeek flash/pro → `deepseek/deepseek-v4-flash-0731` /
+> DeepSeek flash/pro → `deepseek/deepseek-v4.1-flash` /
 > `deepseek/deepseek-v4-pro-0813`; Z.AI glm-5.3/glm-5.3-flash → `z-ai/glm-5.3` /
 > `z-ai/glm-5.3-flash`. Moonshot/Thaura never peak. **Outside peak hours OpenRouter is
 > never used.** Subagent/router downgrades use the **same provider's small model**
@@ -103,7 +103,7 @@ Cursor's chat-compaction threshold is derived from the **alias string's assumed 
 
 | Symptom | Cause | Fix |
 | ----- | ---- | ----- |
-| Long DeepSeek/Z.AI agent chat loops through repeated summarization | Cursor picks a catalog-matched alias (`o1`/`o3-mini`/`gpt-4.1*`) → assumes ~200k window → compacts ~140–170k | Use the **real provider model ID** as the primary alias (`deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`, `glm-5.3`, `glm-5.3-flash`) — 1M default. Keep legacy names as deprecated compat aliases only. |
+| Long DeepSeek/Z.AI agent chat loops through repeated summarization | Cursor picks a catalog-matched alias (`o1`/`o3-mini`/`gpt-4.1*`) → assumes ~200k window → compacts ~140–170k | Use the **real provider model ID** as the primary alias (`deepseek-v4-pro`, `deepseek-flash`, `glm-5.3`, `glm-5.3-flash`) — 1M default. Keep legacy names as deprecated compat aliases only. |
 | Custom model upstream limit < Cursor-assumed window | Cursor assumes 1M for a name not in catalog, upstream caps at 200k | Don't use unknown names for constrained models; Cursor compacts too late and upstream truncates first. |
 
 <!-- last-verified: 2026-08 -->
@@ -193,9 +193,9 @@ turns. Honor-if-sent: a request that already arrives as flash is not upgraded.
 || Final model | Images ||
 || ----------- | ------ ||
 || `glm-5.3-flash` / `z-ai/glm-5.3-flash` / legacy `glm-4.7` | Passthrough (`vision_native_passthrough`) ||
-|| `deepseek-v4-flash-vision-exp` | Passthrough (only DeepSeek chat model that accepts images; see https://api-docs.deepseek.com/guides/vision) ||
+|| `deepseek-flash` | Passthrough (only DeepSeek chat model that accepts images; see https://api-docs.deepseek.com/guides/vision) ||
 || `glm-5.3` / `z-ai/glm-5.3` | Describe via `glm-4.6v` (`vision_describe_after_native`) ||
-|| `deepseek-v4-pro` / OpenRouter DeepSeek twins | Describe via `deepseek-v4-flash-vision-exp` (pro and OR flash are text-only) ||
+|| `deepseek-v4-pro` / OpenRouter DeepSeek twins | Describe via `deepseek-flash` (pro and OR flash are text-only) ||
 || Moonshot / Thaura | Describe via that provider's vision model ||
 
 Cursor always resends original `image_url` parts. Switching flash → flagship on the next turn describes those pixels; switching flagship → flash sees them natively.
@@ -204,7 +204,7 @@ Cursor always resends original `image_url` parts. Switching flash → flagship o
 
 || Symptom | Cause | Fix ||
 || ----- | ---- | ----- ||
-|| DeepSeek 400 "This model does not support image" on pro or OR flash | Images passed through to a text-only id | Only `deepseek-v4-flash-vision-exp` is native; pro/OR must go through the describer keyed on the **final** model ||
+|| DeepSeek 400 "This model does not support image" on pro or OR flash | Images passed through to a text-only id | Only `deepseek-flash` is native; pro/OR must go through the describer keyed on the **final** model ||
 
 <!-- last-verified: 2026-08 -->
 
@@ -225,7 +225,7 @@ Cursor always resends original `image_url` parts. Switching flash → flagship o
 - Implemented in `internal/gateway/verbosity/`; applied in `proxy.go` after routing.
 - Three request-side mechanisms — **never edits response content**:
   1. **Directive injection** — appends terseness directive to last system/developer message
-  2. **Token cap** — lowers `max_tokens` per model (`deepseek-v4-flash-vision-exp` 4096, `deepseek-v4-pro` 8192, `glm-5.3-flash` 8192, `glm-5.3` 16384)
+  2. **Token cap** — lowers `max_tokens` per model (`deepseek-flash` 4096, `deepseek-v4-pro` 8192, `glm-5.3-flash` 8192, `glm-5.3` 16384)
 - Terseness applies **after** subagent-router downgrade so the final served model determines caps
 
 ## Runtime settings (no restart)

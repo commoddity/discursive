@@ -38,28 +38,27 @@ Thaura AI: hardcoded `$0.50/$2.00` per MTok. Check `thaura.ai/api-platform` if a
 Source: https://api-docs.deepseek.com/quick_start/pricing — verify live before updating.
 
 **Peak/off-peak billing since 2026-08-16 16:00 UTC.** Peak hours are
-01:00–04:00 and 06:00–10:00 UTC (half-open windows; hours 1,2,3 and 6,7,8,9);
-all other hours off-peak. Peak = 2× off-peak on every billing item.
+01:00–04:00 and 06:00–10:00 UTC (half-open windows; hours 1,2,3 and 6,7,8,9)
+on UTC weekdays (Monday–Friday); all other hours off-peak. Peak = 2× off-peak
+on every billing item. Flash pricing updated 2026-09-14.
 
 | Model | Tier | Cache hit | Cache miss | Output |
 | ----- | ---- | --------- | ---------- | ------ |
-| `deepseek-v4-flash` | Off-peak | $0.007 | $0.22 | $0.66 |
-| `deepseek-v4-flash` | Peak | $0.014 | $0.44 | $1.32 |
-| `deepseek-v4-flash-vision-exp` | Off-peak | $0.007 | $0.22 | $0.66 |
-| `deepseek-v4-flash-vision-exp` | Peak | $0.014 | $0.44 | $1.32 |
+| `deepseek-flash` | Off-peak | $0.003 | $0.15 | $0.60 |
+| `deepseek-flash` | Peak | $0.006 | $0.30 | $1.20 |
 | `deepseek-v4-pro` | Off-peak | $0.022 | $0.66 | $1.98 |
 | `deepseek-v4-pro` | Peak | $0.044 | $1.32 | $3.96 |
 
 Legacy flat card (pre-cutover events only): flash $0.0028 / $0.14 / $0.28,
-pro $0.011 / $0.55 / $1.10.
+pro $0.003625 / $0.435 / $0.87. Intermediate off-peak card (2026-08-16 through
+2026-09-13): flash $0.007 / $0.22 / $0.66.
 
 Peak hours function (`usage.DeepSeekPeakHours(at time.Time) bool`):
 ```go
 utc := at.UTC()
-if !utc.Before(DeepSeekWeekendOffPeakCutover) {
-	if wd := utc.In(beijingTZ).Weekday(); wd == time.Saturday || wd == time.Sunday {
-		return false // Beijing weekend off-peak all day
-	}
+wd := utc.Weekday()
+if wd == time.Saturday || wd == time.Sunday {
+	return false
 }
 h := utc.Hour()
 return (h >= 1 && h < 4) || (h >= 6 && h < 10)
@@ -112,7 +111,7 @@ OpenRouter hosts DeepSeek models and is used only as an internal peak-hour fallb
 
 || Upstream ID                         | Cache hit | Cache miss | Output ||
 || ----------------------------------- | --------- | ---------- | ------ ||
-|| `deepseek/deepseek-v4-flash-0731`  | $0.014    | $0.065     | $0.14  ||
+|| `deepseek/deepseek-v4.1-flash`  | $0.003    | $0.15      | $0.60  ||
 || `deepseek/deepseek-v4-pro-0813`    | $0.022    | $0.66      | $1.98  ||
 
 > **List rates.** OpenRouter's weighted-average "typical blended cost" is

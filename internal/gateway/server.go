@@ -141,11 +141,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              flashVerbosityMaxTokens,
 			},
-			"deepseek-v4-flash": {
-				SystemMessageDirective: flashTersenessDirective,
-				MaxTokens:              flashVerbosityMaxTokens,
-			},
-			"deepseek-v4-flash-vision-exp": {
+			config.ModelDeepSeekFlash: {
 				SystemMessageDirective: flashTersenessDirective,
 				MaxTokens:              flashVerbosityMaxTokens,
 			},

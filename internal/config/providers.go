@@ -2,10 +2,6 @@ package config
 
 import "strings"
 
-// ModelDeepSeekV4FlashVisionExp is the DeepSeek vision model used by the
-// gateway image-description worker for DeepSeek-routed requests.
-const ModelDeepSeekV4FlashVisionExp = "deepseek-v4-flash-vision-exp"
-
 // ModelZaiGLM46v is the Z.AI vision model used by the gateway image worker.
 const ModelZaiGLM46v = "glm-4.6v"
 
@@ -32,8 +28,8 @@ var providerCatalog = map[Provider]ProviderSpec{
 	},
 	ProviderDeepSeek: {
 		BigModel:    ModelDeepSeekV4Pro,
-		SmallModel:  ModelDeepSeekV4FlashVisionExp,
-		VisionModel: ModelDeepSeekV4FlashVisionExp,
+		SmallModel:  ModelDeepSeekFlash,
+		VisionModel: ModelDeepSeekFlash,
 		HasPeak:     true,
 	},
 	ProviderZai: {
@@ -52,11 +48,10 @@ var providerCatalog = map[Provider]ProviderSpec{
 
 // openRouterTwins maps real model ids to OpenRouter upstream ids for peak reroute.
 var openRouterTwins = map[string]string{
-	ModelDeepSeekV4Pro:            ModelOpenRouterDeepSeekV4Pro,
-	ModelDeepSeekV4Flash:          ModelOpenRouterDeepSeekV4Flash, // legacy id
-	ModelDeepSeekV4FlashVisionExp: ModelOpenRouterDeepSeekV4Flash,
-	ModelZaiGLM53:                 ModelOpenRouterZaiGLM53,
-	ModelZaiGLM53Flash:            ModelOpenRouterZaiGLM53Flash,
+	ModelDeepSeekV4Pro: ModelOpenRouterDeepSeekV4Pro,
+	ModelDeepSeekFlash: ModelOpenRouterDeepSeekV4Flash,
+	ModelZaiGLM53:      ModelOpenRouterZaiGLM53,
+	ModelZaiGLM53Flash: ModelOpenRouterZaiGLM53Flash,
 }
 
 // modelToProvider maps every known real or OpenRouter model id to its chat provider.
@@ -76,7 +71,6 @@ func init() {
 	}
 	// Legacy ids still accepted by ResolveModel.
 	modelToProvider["glm-4.7"] = ProviderZai
-	modelToProvider[ModelDeepSeekV4Flash] = ProviderDeepSeek
 }
 
 // ProviderSpecFor returns the catalog row for provider.
@@ -125,13 +119,13 @@ func VisionModelFor(provider Provider) string {
 // HasNativeVision reports whether the chat model accepts image_url natively,
 // so the gateway should skip the describer. Allowlisted by the id actually
 // sent upstream — OpenRouter's DeepSeek flash twin is text-only, so it is
-// not native even though it maps back to deepseek-v4-flash-vision-exp.
+// not native even though it maps back to deepseek-flash.
 func HasNativeVision(model string) bool {
 	model = strings.TrimSpace(model)
 	switch model {
 	case ModelZaiGLM53Flash, ModelOpenRouterZaiGLM53Flash, "glm-4.7":
 		return true
-	case ModelDeepSeekV4FlashVisionExp:
+	case ModelDeepSeekFlash:
 		return true
 	default:
 		return false
@@ -145,8 +139,6 @@ func OpenRouterTwinFor(model string) (string, bool) {
 }
 
 // OpenRouterRealFor maps an OpenRouter id back to the real model and provider.
-// Catalog big/small models win over legacy ids that share a twin
-// (e.g. deepseek-v4-flash and deepseek-v4-flash-vision-exp → same OR flash id).
 func OpenRouterRealFor(orID string) (string, Provider, bool) {
 	for p, spec := range providerCatalog {
 		for _, m := range []string{spec.BigModel, spec.SmallModel} {

@@ -182,8 +182,8 @@ func TestProxyDeepSeekImagesDescribedByVision(t *testing.T) {
 	if visionEvent == nil {
 		t.Fatalf("expected a deepseek vision usage event, got %+v", events)
 	}
-	if visionEvent.Model != config.ModelDeepSeekV4FlashVisionExp {
-		t.Fatalf("vision usage event model = %q, want %s", visionEvent.Model, config.ModelDeepSeekV4FlashVisionExp)
+	if visionEvent.Model != config.ModelDeepSeekFlash {
+		t.Fatalf("vision usage event model = %q, want %s", visionEvent.Model, config.ModelDeepSeekFlash)
 	}
 	if visionEvent.SessionID != "vision-worker" {
 		t.Fatalf("vision usage event session = %q, want vision-worker", visionEvent.SessionID)
@@ -537,7 +537,7 @@ func TestProxyDeepSeekFlashImagesPassThrough(t *testing.T) {
 	textUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&lastBody)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(mockCompletion(config.ModelDeepSeekV4FlashVisionExp))
+		_ = json.NewEncoder(w).Encode(mockCompletion(config.ModelDeepSeekFlash))
 	}))
 	t.Cleanup(textUp.Close)
 
@@ -592,8 +592,8 @@ func TestProxyDeepSeekFlashImagesPassThrough(t *testing.T) {
 	if visionCalls.Load() != 0 {
 		t.Fatalf("deepseek flash vision must not call the describer, got %d vision calls", visionCalls.Load())
 	}
-	if lastBody["model"] != config.ModelDeepSeekV4FlashVisionExp {
-		t.Fatalf("model %v want %s", lastBody["model"], config.ModelDeepSeekV4FlashVisionExp)
+	if lastBody["model"] != config.ModelDeepSeekFlash {
+		t.Fatalf("model %v want %s", lastBody["model"], config.ModelDeepSeekFlash)
 	}
 	if countImageURLParts(lastBody) != 1 {
 		t.Fatalf("expected native image_url passthrough, got %v", lastBody["messages"])

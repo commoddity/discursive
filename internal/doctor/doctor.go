@@ -103,7 +103,7 @@ func RunAll(settings config.AppSettings, dataRoot string) Report {
 			if settings.HasDeepSeekKey() {
 				return ""
 			}
-			return "optional: DeepSeek API key not saved (run set --deepseek-key to enable deepseek-v4-pro / deepseek-v4-flash-vision-exp)"
+			return "optional: DeepSeek API key not saved (run set --deepseek-key to enable deepseek-v4-pro / deepseek-flash)"
 		}(),
 	})
 

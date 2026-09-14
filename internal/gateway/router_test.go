@@ -28,7 +28,7 @@ func TestSubAgentRouter_SubagentDetection(t *testing.T) {
 			},
 			enabled:      true,
 			wantClass:    ClassCodeSearch, // content-based: "find" keyword
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "subagent: all 3 signals → short prompt + 3 msgs + tools",
@@ -196,7 +196,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "explain prefix → flash",
@@ -208,7 +208,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "how does prefix → flash",
@@ -220,7 +220,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "summarization: capture conversation → flash",
@@ -232,7 +232,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup, // summarization beats editing (despite "write")
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "summarization: summarize this chat → flash",
@@ -244,7 +244,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup, // summarization beats editing
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "code search: find keyword → flash",
@@ -256,7 +256,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "code search: search keyword → flash",
@@ -268,7 +268,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "code search: explore keyword → flash",
@@ -280,7 +280,7 @@ func TestContentClassification_DowngradePath(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "code search: long exploration → code search (exploration guard)",
@@ -299,7 +299,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassCodeSearch, // exploration guard blocks long-message heuristic; falls through to code search
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "code search + complex keyword → complex reasoning (explicit signals beat guard)",
@@ -324,7 +324,7 @@ This is a read-only exploration task — do not modify any files.`},
 				"response_format": map[string]any{"type": "json_object"},
 			},
 			wantClass:    ClassStructuredExtraction,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "structured extraction: json_schema → flash",
@@ -337,7 +337,7 @@ This is a read-only exploration task — do not modify any files.`},
 				"response_format": map[string]any{"type": "json_schema"},
 			},
 			wantClass:    ClassStructuredExtraction,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "automation: pull request → flash",
@@ -349,7 +349,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "automation: git push → flash",
@@ -361,7 +361,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "automation: gh pr → flash",
@@ -373,7 +373,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "automation: run script → flash",
@@ -385,7 +385,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "automation: run a script → flash",
@@ -397,7 +397,7 @@ This is a read-only exploration task — do not modify any files.`},
 				},
 			},
 			wantClass:    ClassAutomation,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "editing+complex: refactor + pipeline → keep model (complex beats editing)",
@@ -773,7 +773,7 @@ func TestSubAgentRouter_ZaiComplexReasoningKeepsFlagship(t *testing.T) {
 
 func TestSubAgentRouter_SubagentOnFlashIsNoop(t *testing.T) {
 	body := map[string]any{
-		"model": "deepseek-v4-flash-vision-exp",
+		"model": "deepseek-flash",
 		"messages": []any{
 			map[string]any{"role": "system", "content": "short"},
 			map[string]any{"role": "user", "content": "hi"},
@@ -787,7 +787,7 @@ func TestSubAgentRouter_SubagentOnFlashIsNoop(t *testing.T) {
 	if result.OverrideApplied {
 		t.Errorf("flash → flash should be a no-op, but OverrideApplied=true (%q → %q)", result.OriginalModel, result.OverrideModel)
 	}
-	if stringField(body, "model") != "deepseek-v4-flash-vision-exp" {
+	if stringField(body, "model") != "deepseek-flash" {
 		t.Errorf("flash model should stay flash, got %q", stringField(body, "model"))
 	}
 }
@@ -928,7 +928,7 @@ internal/config/    → settings, paths, validation
 - gpt-4o → Moonshot kimi-k3 (planning/flagship)
 - gpt-4o-mini → Moonshot kimi-k2.7-code (coding)
 - deepseek-v4-pro → DeepSeek pro (hard execution; prefer)
-- deepseek-v4-flash-vision-exp → DeepSeek flash (cheap execution; prefer)
+- deepseek-flash → DeepSeek flash (cheap execution; prefer)
 - o1 / o3-mini → deprecated aliases (same routes; Cursor ~200k context assumption)
 - gpt-5-nano → Thaura thaura (ethical AI)
 - gpt-4.1-turbo → Z.AI glm-5.3 (planning, cheaper than K3)
@@ -1005,7 +1005,7 @@ func TestContentClassification_WithCursorXML(t *testing.T) {
 				},
 			},
 			wantClass:    ClassSimpleLookup,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "code search wrapped in attached_files",
@@ -1017,7 +1017,7 @@ func TestContentClassification_WithCursorXML(t *testing.T) {
 				},
 			},
 			wantClass:    ClassCodeSearch,
-			wantOverride: config.ModelDeepSeekV4FlashVisionExp,
+			wantOverride: config.ModelDeepSeekFlash,
 		},
 		{
 			name: "editing+complex wrapped in XML",

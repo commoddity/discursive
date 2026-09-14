@@ -21,8 +21,8 @@ func TestNormalizeReasoningEffort(t *testing.T) {
 		{name: "k27 low invalid", model: ModelKimiK27, effort: "low", wantErr: true},
 		{name: "ds off", model: ModelDeepSeekV4Pro, effort: "off", want: "off"},
 		{name: "ds high", model: ModelDeepSeekV4Pro, effort: "high", want: "high"},
-		{name: "ds max", model: ModelDeepSeekV4Flash, effort: "max", want: "max"},
-		{name: "ds low maps to high", model: ModelDeepSeekV4Flash, effort: "low", want: "high"},
+		{name: "ds max", model: ModelDeepSeekFlash, effort: "max", want: "max"},
+		{name: "ds low maps to high", model: ModelDeepSeekFlash, effort: "low", want: "high"},
 		{name: "ds medium maps to high", model: ModelDeepSeekV4Pro, effort: "medium", want: "high"},
 		{name: "ds xhigh maps to max", model: ModelDeepSeekV4Pro, effort: "xhigh", want: "max"},
 		{name: "ds garbage", model: ModelDeepSeekV4Pro, effort: "turbo", wantErr: true},
@@ -68,16 +68,16 @@ func TestNormalizeReasoningEffortMapDefaults(t *testing.T) {
 		t.Fatalf("zai glm-5.3 default: %q", got[ModelZaiGLM53])
 	}
 	got = NormalizeReasoningEffortMap(map[string]string{
-		ModelKimiK3:          "max",
-		ModelDeepSeekV4Flash: "medium", // legacy alias → high
-		ModelZaiGLM53:        "high",
-		"thaura":             "low",
+		ModelKimiK3:        "max",
+		ModelDeepSeekFlash: "medium", // legacy alias → high
+		ModelZaiGLM53:      "high",
+		"thaura":           "low",
 	})
 	if got[ModelKimiK3] != "max" {
 		t.Fatalf("k3: %q", got[ModelKimiK3])
 	}
-	if got[ModelDeepSeekV4Flash] != "high" {
-		t.Fatalf("flash medium→high: %q", got[ModelDeepSeekV4Flash])
+	if got[ModelDeepSeekFlash] != "high" {
+		t.Fatalf("flash medium→high: %q", got[ModelDeepSeekFlash])
 	}
 	if got[ModelZaiGLM53] != "high" {
 		t.Fatalf("zai glm-5.3: %q", got[ModelZaiGLM53])

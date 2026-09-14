@@ -26,7 +26,7 @@ func TestRecordAndQueryCompressionStats(t *testing.T) {
 	_, err := store.Record(Event{
 		SessionID:        CompressorWorkerSession,
 		Provider:         config.ProviderDeepSeek,
-		Model:            "deepseek-v4-flash-vision-exp",
+		Model:            "deepseek-flash",
 		PromptTokens:     5000,
 		CompletionTokens: 800,
 		RequestID:        "compressor",

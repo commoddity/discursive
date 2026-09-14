@@ -10,7 +10,7 @@ import (
 
 func TestApplyOpenRouterRouting(t *testing.T) {
 	orRoute := Route{Provider: config.ProviderOpenRouter, RealModel: config.ModelOpenRouterZaiGLM53Flash}
-	dsRoute := Route{Provider: config.ProviderDeepSeek, RealModel: config.ModelDeepSeekV4Flash}
+	dsRoute := Route{Provider: config.ProviderDeepSeek, RealModel: config.ModelDeepSeekFlash}
 
 	tests := []struct {
 		name  string

@@ -118,12 +118,12 @@ func TestFormatByModel_Empty(t *testing.T) {
 
 func TestFormatByModel_StableOrder(t *testing.T) {
 	by := map[string]ModelTotals{
-		"kimi-k3":           {EstUSD: 0.100},
-		"deepseek-v4-flash": {EstUSD: 0.050},
+		"kimi-k3":        {EstUSD: 0.100},
+		"deepseek-flash": {EstUSD: 0.050},
 	}
 	got := FormatByModel(by)
-	// Alphabetically sorted: deepseek-v4-flash first.
-	if !strings.Contains(got, "deepseek-v4-flash=0.050") {
+	// Alphabetically sorted: deepseek-flash first.
+	if !strings.Contains(got, "deepseek-flash=0.050") {
 		t.Fatalf("missing deepseek: %s", got)
 	}
 	if !strings.Contains(got, "kimi-k3=0.100") {
@@ -139,7 +139,7 @@ func TestFormatByModel_StableOrder(t *testing.T) {
 func TestSummarizeEvents(t *testing.T) {
 	events := []Event{
 		{SessionID: "s1", Provider: "moonshot", Model: "kimi-k3", PromptTokens: 100, CompletionTokens: 50, CacheHitTokens: 20, CacheMissTokens: 80, EstUSD: 0.300},
-		{SessionID: "s1", Provider: "deepseek", Model: "deepseek-v4-flash", PromptTokens: 200, CompletionTokens: 100, CacheHitTokens: 0, CacheMissTokens: 200, EstUSD: 0.100},
+		{SessionID: "s1", Provider: "deepseek", Model: "deepseek-flash", PromptTokens: 200, CompletionTokens: 100, CacheHitTokens: 0, CacheMissTokens: 200, EstUSD: 0.100},
 	}
 	sum := summarizeEvents(events)
 
@@ -170,8 +170,8 @@ func TestSummarizeEvents(t *testing.T) {
 	if sum.ByModel["kimi-k3"].EstUSD != 0.300 {
 		t.Fatalf("kimi-k3 EstUSD = %v", sum.ByModel["kimi-k3"].EstUSD)
 	}
-	if sum.ByModel["deepseek-v4-flash"].EstUSD != 0.100 {
-		t.Fatalf("deepseek-v4-flash EstUSD = %v", sum.ByModel["deepseek-v4-flash"].EstUSD)
+	if sum.ByModel["deepseek-flash"].EstUSD != 0.100 {
+		t.Fatalf("deepseek-flash EstUSD = %v", sum.ByModel["deepseek-flash"].EstUSD)
 	}
 }
 

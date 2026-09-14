@@ -38,17 +38,16 @@ Enforcement:
 
 | Upstream id | Real model | Provider |
 | --- | --- | --- |
-| `deepseek/deepseek-v4-flash-0731` | `deepseek-v4-flash-vision-exp` | DeepSeek |
+| `deepseek/deepseek-v4.1-flash` | `deepseek-flash` | DeepSeek |
 | `deepseek/deepseek-v4-pro-0813` | `deepseek-v4-pro` | DeepSeek |
 | `z-ai/glm-5.3` | `glm-5.3` | Z.AI |
 | `z-ai/glm-5.3-flash` | `glm-5.3-flash` | Z.AI |
 
 Peak reroute mapping (after router downgrade; big vs small via `config.IsBigModel`):
 - `deepseek-v4-pro` → `deepseek/deepseek-v4-pro-0813`
-- `deepseek-v4-flash` → `deepseek/deepseek-v4-flash-0731`
+- `deepseek-flash` → `deepseek/deepseek-v4.1-flash`
 - `glm-5.3` → `z-ai/glm-5.3`
 - `glm-5.3-flash` / legacy `glm-4.7` → `z-ai/glm-5.3-flash`
-- `deepseek-v4-flash-vision-exp` / legacy `deepseek-v4-flash` → `deepseek/deepseek-v4-flash-0731`
 - Moonshot, Thaura: no peak reroute
 
 Subagent/router downgrades stay on the same provider's small model. OR is not used
@@ -65,7 +64,7 @@ its OR twin if one exists.
 
 ## Pricing (USD per 1M tokens)
 
-Source: https://openrouter.ai/deepseek/deepseek-v4-flash-0731 ·
+Source: https://openrouter.ai/deepseek/deepseek-v4.1-flash ·
 https://openrouter.ai/deepseek/deepseek-v4-pro-0813 — OpenRouter flat **list**
 rates. OpenRouter does not apply peak/off-peak pricing
 (https://openrouter.ai/blog/insights/why-openrouter-for-deepseek/), so these
@@ -73,13 +72,13 @@ rates apply year-round.
 
 | Model                              | Cache hit | Input | Output |
 | ---------------------------------- | --------- | ----- | ------ |
-| `deepseek/deepseek-v4-flash-0731`  | $0.014    | $0.065 | $0.14  |
+| `deepseek/deepseek-v4.1-flash`  | $0.003    | $0.15  | $0.60  |
 | `deepseek/deepseek-v4-pro-0813`    | $0.022    | $0.66  | $1.98  |
 | `z-ai/glm-5.3`                     | $0.26     | $1.40  | $4.40  |
 | `z-ai/glm-5.3-flash`               | $0.015    | $0.075 | $0.25  |
 
 Typical blended (OpenRouter weighted average) informational rates shown in dashboard/README:
-- flash: $0.0476 in / $0.384 out
+- flash: $0.15 in / $0.60 out (list; provider-weighted average may differ)
 - pro: $0.2365 in / $3.174 out
 
 ## Sanitizer policy

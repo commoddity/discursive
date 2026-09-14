@@ -19,7 +19,7 @@ func verboseFlashCompletion() map[string]any {
 	return map[string]any{
 		"id":      "chatcmpl-flash",
 		"object":  "chat.completion",
-		"model":   "deepseek-v4-flash",
+		"model":   "deepseek-flash",
 		"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": "Here is the fix.\n\n```go\nx := 1\n```\n\nThis first sentence warns the reader. This second sentence restates the code. This third sentence adds a redundant remark. This fourth sentence is pure filler. This fifth sentence explains nothing new."}, "finish_reason": "stop"}},
 		"usage": map[string]any{
 			"prompt_tokens":     float64(10),
@@ -39,7 +39,7 @@ func TestVerbosityEnabled_AppliesRequestSideControls_PassthroughResponse(t *test
 
 	env := setupVerbosityEnv(t, upstream)
 
-	// o3-mini alias resolves to deepseek-v4-flash.
+	// o3-mini alias resolves to deepseek-flash.
 	res, body := env.doJSON(t, http.MethodPost, "/v1/chat/completions", true, map[string]any{
 		"model":          "o3-mini",
 		"messages":       []any{map[string]any{"role": "user", "content": "fix it"}},
@@ -164,7 +164,7 @@ func TestVerbosityEnabled_StreamingToolCallsPassthrough(t *testing.T) {
 // This confirms verbosity runs AFTER model override.
 func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 	// "What is..." (simple lookup) triggers a subagent-router downgrade from
-	// pro → deepseek-v4-flash (same-provider small). No OpenRouter key here so
+	// pro → deepseek-flash (same-provider small). No OpenRouter key here so
 	// peak reroute cannot swap the model — keeps this test time-independent.
 	var upstreamBody map[string]any
 	var upstreamModel string
@@ -221,8 +221,8 @@ func TestVerbosityEnabled_DowngradedToFlashAppliesControls(t *testing.T) {
 	}
 
 	// Downgraded to same-provider small; no OR key → no peak reroute swap.
-	if upstreamModel != "deepseek-v4-flash-vision-exp" {
-		t.Fatalf("expected downgrade to deepseek-v4-flash-vision-exp, got %q", upstreamModel)
+	if upstreamModel != "deepseek-flash" {
+		t.Fatalf("expected downgrade to deepseek-flash, got %q", upstreamModel)
 	}
 
 	// DeepSeek flash has verbosity config — the directive must be injected and

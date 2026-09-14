@@ -1843,14 +1843,13 @@
     // Per-model distinct colors for Spend by Period chart: { "provider::model": "#hex" }
     const MODEL_COLORS = {
       'deepseek::deepseek-v4-pro': '#2563eb', // deep blue
-      'deepseek::deepseek-v4-flash': '#06b6d4', // cyan
-      'deepseek::deepseek-v4-flash-vision-exp': '#22d3ee', // lighter cyan
+      'deepseek::deepseek-flash': '#06b6d4', // cyan
       'moonshot::kimi-k3': '#7c3aed', // deep purple
       'moonshot::kimi-k2.7-code': '#e879f9', // hot pink / magenta
       'thaura::thaura': '#059669', // emerald green
       'zai::glm-5.3': '#ec4899', // hot pink
       'zai::glm-5.3-flash': '#f472b6', // light pink
-      'openrouter::deepseek/deepseek-v4-flash-0731': '#7dd3fc',
+      'openrouter::deepseek/deepseek-v4.1-flash': '#7dd3fc',
       'openrouter::deepseek/deepseek-v4-pro-0813': '#0ea5e9',
     };
     function modelColor(provider, modelName) {
@@ -1978,13 +1977,9 @@
         'kimi-k2.7-code': { cache_hit: 0.19, input: 0.95, output: 4.00 },
       },
       deepseek: {
-        'deepseek-v4-flash': {
-          off_peak: { cache_hit: 0.007, input: 0.22, output: 0.66 },
-          peak: { cache_hit: 0.014, input: 0.44, output: 1.32 },
-        },
-        'deepseek-v4-flash-vision-exp': {
-          off_peak: { cache_hit: 0.007, input: 0.22, output: 0.66 },
-          peak: { cache_hit: 0.014, input: 0.44, output: 1.32 },
+        'deepseek-flash': {
+          off_peak: { cache_hit: 0.003, input: 0.15, output: 0.6 },
+          peak: { cache_hit: 0.006, input: 0.30, output: 1.2 },
         },
         'deepseek-v4-pro': {
           off_peak: { cache_hit: 0.022, input: 0.66, output: 1.98 },
@@ -1995,7 +1990,7 @@
         'thaura': { input: 0.50, output: 2.00 },
       },
       openrouter: {
-        'deepseek/deepseek-v4-flash-0731': { cache_hit: 0.014, input: 0.065, output: 0.14 },
+        'deepseek/deepseek-v4.1-flash': { cache_hit: 0.003, input: 0.15, output: 0.6 },
         'deepseek/deepseek-v4-pro-0813': { cache_hit: 0.022, input: 0.66, output: 1.98 },
         'z-ai/glm-5.3': { cache_hit: 0.26, input: 1.40, output: 4.40 },
         'z-ai/glm-5.3-flash': { cache_hit: 0.015, input: 0.075, output: 0.25 },
@@ -4027,22 +4022,13 @@
 
     // --- Provider Peak / Off-peak indicator ---
     // DeepSeek peak windows (UTC): 01:00–04:00 and 06:00–10:00 (half-open: hours
-    // 1,2,3 and 6,7,8,9) on Beijing weekdays. Off-peak is everything else.
-    // From 2026-08-23 00:00 Beijing, weekends (Beijing time) are off-peak all day.
-
-    const DEEPSEEK_WEEKEND_CUTOVER_MS = Date.UTC(2026, 7, 22, 16, 0, 0); // Aug 23 00:00 Beijing
-
-    function deepseekBeijingWeekday(utcMs) {
-      const beijing = new Date(utcMs + 8 * 60 * 60 * 1000);
-      return beijing.getUTCDay(); // 0=Sun … 6=Sat in Beijing local calendar
-    }
+    // 1,2,3 and 6,7,8,9) on UTC weekdays (Monday–Friday).
 
     function deepseekIsPeak(utcMs) {
-      if (utcMs >= DEEPSEEK_WEEKEND_CUTOVER_MS) {
-        const wd = deepseekBeijingWeekday(utcMs);
-        if (wd === 0 || wd === 6) return false;
-      }
-      const h = new Date(utcMs).getUTCHours();
+      const d = new Date(utcMs);
+      const wd = d.getUTCDay();
+      if (wd === 0 || wd === 6) return false;
+      const h = d.getUTCHours();
       return (h >= 1 && h < 4) || (h >= 6 && h < 10);
     }
 
@@ -4190,7 +4176,7 @@
         '<div class="pk-row"><span class="pk-label">Z.AI</span><span class="pk-value">' + zActive + '</span></div>' +
         '<div class="pk-row"><span class="pk-label">' + zNextLabel + ' starts in</span><span class="pk-value">' + zCountdown + '</span></div>' +
         orRow +
-        '<div class="pk-note">DeepSeek peak: Beijing weekdays 01:00–04:00 &amp; 06:00–10:00 UTC (weekends off-peak). Z.AI peak: Mon–Fri 06:00–10:00 UTC.</div>';
+        '<div class="pk-note">DeepSeek peak: Mon–Fri 01:00–04:00 &amp; 06:00–10:00 UTC. Z.AI peak: Mon–Fri 06:00–10:00 UTC.</div>';
     }
 
     // --- Init ---

@@ -25,7 +25,7 @@ func TestStoreRecordAndSessionSummary(t *testing.T) {
 					PromptTokens: 1_000_000, RequestID: "r1",
 				},
 				{
-					ID: "e2", SessionID: "sess-a", Provider: config.ProviderDeepSeek, Model: "deepseek-v4-flash",
+					ID: "e2", SessionID: "sess-a", Provider: config.ProviderDeepSeek, Model: "deepseek-flash",
 					PromptTokens: 1_000_000, CompletionTokens: 1_000_000, RequestID: "r2",
 				},
 				{

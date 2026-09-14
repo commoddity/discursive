@@ -135,7 +135,7 @@ Change the model in Cursor's picker - no restart needed:
 | `kimi-k3`                      | Moonshot | Planning / flagship                        |
 | `kimi-k2.7-code`               | Moonshot | Coding; always thinks                      |
 | `deepseek-v4-pro`              | DeepSeek | Hard execution                             |
-| `deepseek-v4-flash-vision-exp` | DeepSeek | Cheap execution; native vision             |
+| `deepseek-flash`               | DeepSeek | Cheap execution; native vision             |
 | `glm-5.3`                      | Z.AI     | Planning; always thinks                    |
 | `glm-5.3-flash`                | Z.AI     | Cheap execution; 1M context; native vision |
 | `thaura`                       | Thaura   | Optional ethical AI provider               |
@@ -192,7 +192,7 @@ The dashboard runs automatically as part of the Go binary with `discursive start
 ## 🪐 Providers
 
 > 💡 Models with configurable reasoning (`kimi-k3`, `deepseek-v4-pro`,
-> `deepseek-v4-flash-vision-exp`, `glm-5.3`, `glm-5.3-flash`) can be tuned from
+> `deepseek-flash`, `glm-5.3`, `glm-5.3-flash`) can be tuned from
 > the dashboard **Reasoning Effort** card. `kimi-k2.7-code` always thinks.
 
 
@@ -218,15 +218,15 @@ from MTD totals; subscription cost appears in the month projection.
 
 ### 🐋 DeepSeek <!-- omit in toc -->
 
-Peak hours (01:00–04:00 and 06:00–10:00 UTC) bill at 2× off-peak rates.
+Peak hours (01:00–04:00 and 06:00–10:00 UTC, Monday–Friday) bill at 2× off-peak rates.
 
 
-| API model ID                   | Tier     | Cache hit / MTok | Cache miss / MTok | Output / MTok | Role           |
-| ------------------------------ | -------- | ---------------- | ----------------- | ------------- | -------------- |
-| `deepseek-v4-pro`              | Off-peak | $0.022           | $0.66             | $1.98         | Hard reasoning |
-| `deepseek-v4-pro`              | Peak     | $0.044           | $1.32             | $3.96         |                |
-| `deepseek-v4-flash-vision-exp` | Off-peak | $0.007           | $0.22             | $0.66         | Cheap + vision |
-| `deepseek-v4-flash-vision-exp` | Peak     | $0.014           | $0.44             | $1.32         |                |
+| API model ID      | Tier     | Cache hit / MTok | Cache miss / MTok | Output / MTok | Role           |
+| ----------------- | -------- | ---------------- | ----------------- | ------------- | -------------- |
+| `deepseek-v4-pro` | Off-peak | $0.022           | $0.66             | $1.98         | Hard reasoning |
+| `deepseek-v4-pro` | Peak     | $0.044           | $1.32             | $3.96         |                |
+| `deepseek-flash`  | Off-peak | $0.003           | $0.15             | $0.60         | Cheap + vision |
+| `deepseek-flash`  | Peak     | $0.006           | $0.30             | $1.20         |                |
 
 
 - [Pricing](https://api-docs.deepseek.com/quick_start/pricing) · [API docs](https://api-docs.deepseek.com/)
@@ -269,7 +269,7 @@ Otherwise, traffic falls through to the direct provider and pays peak rates.
 
 | Provider | Peak window                                        | Direct model → OpenRouter twin                                                                                          |
 | -------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| DeepSeek | 01:00–04:00 and 06:00–10:00 UTC (Beijing weekdays) | `deepseek-v4-flash-vision-exp` → `deepseek/deepseek-v4-flash-0731`; `deepseek-v4-pro` → `deepseek/deepseek-v4-pro-0813` |
+| DeepSeek | 01:00–04:00 and 06:00–10:00 UTC (Mon–Fri) | `deepseek-flash` → `deepseek/deepseek-v4.1-flash`; `deepseek-v4-pro` → `deepseek/deepseek-v4-pro-0813` |
 | Z.AI     | Mon–Fri 06:00–10:00 UTC                            | `glm-5.3` → `z-ai/glm-5.3`; `glm-5.3-flash` → `z-ai/glm-5.3-flash`                                                      |
 
 
@@ -283,7 +283,7 @@ OpenRouter list pricing (no peak/off-peak tiers):
 
 | Upstream ID                       | Cache hit / MTok | Input / MTok | Output / MTok |
 | --------------------------------- | ---------------- | ------------ | ------------- |
-| `deepseek/deepseek-v4-flash-0731` | $0.014           | $0.065       | $0.14         |
+| `deepseek/deepseek-v4.1-flash` | $0.003           | $0.15        | $0.60         |
 | `deepseek/deepseek-v4-pro-0813`   | $0.022           | $0.66        | $1.98         |
 | `z-ai/glm-5.3`                    | $0.26            | $1.40        | $4.40         |
 | `z-ai/glm-5.3-flash`              | $0.015           | $0.075       | $0.25         |
@@ -366,7 +366,7 @@ Downgrades use `config.SmallModelFor(provider)` - never cross-provider.
 
 **Examples:**
 
-- DeepSeek `deepseek-v4-pro` → `deepseek-v4-flash-vision-exp`
+- DeepSeek `deepseek-v4-pro` → `deepseek-flash`
 - Moonshot `kimi-k3` → `kimi-k2.7-code`
 - Z.AI `glm-5.3` → `glm-5.3-flash`
 

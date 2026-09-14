@@ -1,5 +1,5 @@
 // Package gateway implements compression of verbose tool results to reduce
-// token cost. It uses a cheap summarizer model (deepseek-v4-flash) with a
+// token cost. It uses a cheap summarizer model (deepseek-flash) with a
 // content-hash cache, singleflight deduplication, and semaphore-bounded
 // concurrency.
 //
@@ -40,7 +40,7 @@ const (
 	compressCacheTTL = 30 * time.Minute
 
 	// compressMaxConcurrent is the semaphore limit for concurrent summarizer
-	// calls to deepseek-v4-flash.
+	// calls to deepseek-flash.
 	compressMaxConcurrent = 4
 
 	// compressMinTotalChars is the minimum total characters across all

@@ -31,7 +31,7 @@ func testStore(t *testing.T) *usage.Store {
 	_, _ = store.Record(usage.Event{
 		SessionID:        "sess-deep",
 		Provider:         config.ProviderDeepSeek,
-		Model:            "deepseek-v4-flash",
+		Model:            "deepseek-flash",
 		PromptTokens:     5000,
 		CompletionTokens: 1000,
 		Timestamp:        time.Now().UTC(),

@@ -54,7 +54,7 @@ func stubErrorFlashServer(t *testing.T) *httptest.Server {
 func testCompressCtx(srvURL string) CompressContext {
 	return CompressContext{
 		Provider: config.ProviderDeepSeek,
-		Model:    config.ModelDeepSeekV4Flash,
+		Model:    config.ModelDeepSeekFlash,
 		ChatURL:  srvURL + "/chat/completions",
 		APIKey:   "ds-test-key",
 	}
@@ -258,7 +258,7 @@ func TestCompress_NoDeepSeekKey(t *testing.T) {
 	}
 	long := longString(30000)
 	body := bodyWithMessages(shortToolResult(long))
-	_, err := c.Compress(t.Context(), body, CompressContext{Provider: config.ProviderDeepSeek, Model: config.ModelDeepSeekV4Flash, ChatURL: "http://example.invalid/chat/completions"})
+	_, err := c.Compress(t.Context(), body, CompressContext{Provider: config.ProviderDeepSeek, Model: config.ModelDeepSeekFlash, ChatURL: "http://example.invalid/chat/completions"})
 	if err == nil {
 		t.Fatal("expected error when DeepSeek key is missing")
 	}

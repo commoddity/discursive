@@ -45,14 +45,14 @@ func TestController_ApplyRequest_InjectsDirective(t *testing.T) {
 	const directive = "CRITICAL OUTPUT CONSTRAINT — ALWAYS FOLLOW"
 	c := NewController(VerbosityConfig{
 		Models: map[string]ModelConfig{
-			"deepseek-v4-flash": {SystemMessageDirective: directive, MaxTokens: 4096},
+			"deepseek-flash": {SystemMessageDirective: directive, MaxTokens: 4096},
 		},
 	})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body := map[string]any{"messages": tt.messages, "model": "deepseek-v4-flash"}
-			c.ApplyRequest(body, "deepseek-v4-flash")
+			body := map[string]any{"messages": tt.messages, "model": "deepseek-flash"}
+			c.ApplyRequest(body, "deepseek-flash")
 
 			msgs := body["messages"].([]any)
 			count := 0
@@ -144,7 +144,7 @@ func TestController_ApplyRequest_CapsTokens(t *testing.T) {
 
 func TestController_ApplyRequest_UnknownModelNoOp(t *testing.T) {
 	c := NewController(VerbosityConfig{
-		Models: map[string]ModelConfig{"deepseek-v4-flash": {MaxTokens: 4096}},
+		Models: map[string]ModelConfig{"deepseek-flash": {MaxTokens: 4096}},
 	})
 	body := map[string]any{"messages": []any{}, "model": "glm-5.3", "max_tokens": json.Number("5000")}
 	c.ApplyRequest(body, "glm-5.3")

@@ -24,7 +24,7 @@ const (
 	imageStrippedWarning = "[note: one or more images in this conversation were removed because the selected model does not support vision. Switch to a Kimi model for image-aware responses.]"
 
 	// flashVerbosityMaxTokens is the output-token ceiling applied to
-	// deepseek-v4-flash when verbosity control is enabled. It is generous
+	// deepseek-flash when verbosity control is enabled. It is generous
 	// enough for substantive coding responses but prevents the model from
 	// emitting run-away prose.
 	flashVerbosityMaxTokens = 4096
@@ -45,7 +45,7 @@ const (
 	glmMaxVerbosityMaxTokens = 16384
 )
 
-// flashTersenessDirective is appended to deepseek-v4-flash system messages
+// flashTersenessDirective is appended to deepseek-flash system messages
 // when verbosity control is enabled. Each rule is a hard MANDATORY constraint
 // — the model must follow every one without exception.
 const flashTersenessDirective = "" +

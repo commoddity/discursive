@@ -1,5 +1,5 @@
 // Package verbosity provides toggle-able output-verbosity control for upstream
-// models. It coerces models like deepseek-v4-flash to be less verbose via two
+// models. It coerces models like deepseek-flash to be less verbose via two
 // request-side mechanisms — it never edits response content:
 //
 //  1. System-message directive injection — appends an authority-marked,

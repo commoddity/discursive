@@ -21,11 +21,11 @@ func TestOptimize_PromptCacheKeyMoonshot(t *testing.T) {
 
 func TestOptimize_PromptCacheKeyDeepSeekOmitted(t *testing.T) {
 	body := map[string]any{
-		"model":    "deepseek-v4-flash",
+		"model":    "deepseek-flash",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}
 	cfg := OptimizeConfig{PromptCacheKey: "sess_test123"}
-	OptimizeRequest(SanitizeResult{Body: body, Provider: config.ProviderDeepSeek, Model: "deepseek-v4-flash"}, cfg)
+	OptimizeRequest(SanitizeResult{Body: body, Provider: config.ProviderDeepSeek, Model: "deepseek-flash"}, cfg)
 	if _, ok := body["prompt_cache_key"]; ok {
 		t.Fatal("prompt_cache_key should not be present for DeepSeek")
 	}

@@ -107,7 +107,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Apply verbosity controls (gated per-model on the live map so each model's
 	// toggle can be set independently at runtime). Runs AFTER routing/downgrade
 	// so the directive + token cap key on the FINAL model actually served (e.g.
-	// deepseek-v4-pro downgraded to deepseek-v4-flash for subagent-like work
+	// deepseek-v4-pro downgraded to deepseek-flash for subagent-like work
 	// still gets flash's verbosity controls). Configuration only exists for
 	// models we target.
 	if s.verbosity != nil {
@@ -142,7 +142,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// Vision keys on the FINAL model (after router + peak). Native-vision
 	// models keep image_url; everything else is described by that provider's
-	// vision worker (DeepSeek pro → deepseek-v4-flash-vision-exp, glm-5.3 → glm-4.6v).
+	// vision worker (DeepSeek pro → deepseek-flash, glm-5.3 → glm-4.6v).
 	if !s.applyVision(w, r, sanitized, requestID) {
 		return
 	}
@@ -472,7 +472,7 @@ func visionWorkerFor(provider config.Provider, model string) (config.Provider, s
 }
 
 // isDescribeAfterNative reports flagship chat models that do not accept images.
-// Cursor still resends pixels from a prior native-vision turn (flash / vision-exp).
+// Cursor still resends pixels from a prior native-vision turn (flash).
 func isDescribeAfterNative(model string) bool {
 	if real, _, ok := config.OpenRouterRealFor(model); ok {
 		model = real

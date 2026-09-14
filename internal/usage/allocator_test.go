@@ -57,7 +57,7 @@ func TestAllocateByModel(t *testing.T) {
 
 	t.Run("supports deepseek", func(t *testing.T) {
 		models := []ModelWeight{
-			{Model: "deepseek-v4-flash", Provider: config.ProviderDeepSeek, Weight: 1.0},
+			{Model: "deepseek-flash", Provider: config.ProviderDeepSeek, Weight: 1.0},
 			{Model: "deepseek-v4-pro", Provider: config.ProviderDeepSeek, Weight: 1.0},
 		}
 		allocated, _ := AllocateByModel(6.0, models)

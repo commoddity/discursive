@@ -65,7 +65,7 @@ func TestEstimateUSD(t *testing.T) {
 		{
 			name:     "deepseek_flash_miss",
 			provider: config.ProviderDeepSeek,
-			model:    "deepseek-v4-flash",
+			model:    "deepseek-flash",
 			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
 			want:     0.14 + 0.28,
 		},
@@ -79,7 +79,7 @@ func TestEstimateUSD(t *testing.T) {
 		{
 			name:     "deepseek_flash_split",
 			provider: config.ProviderDeepSeek,
-			model:    "deepseek-v4-flash",
+			model:    "deepseek-flash",
 			tokens: UsageTokens{
 				CacheHitTokens:   1_000_000,
 				CacheMissTokens:  2_000_000,
@@ -196,16 +196,16 @@ func TestEstimateUSD(t *testing.T) {
 		{
 			name:     "openrouter_flash_input_output",
 			provider: config.ProviderOpenRouter,
-			model:    "deepseek/deepseek-v4-flash-0731",
+			model:    "deepseek/deepseek-v4.1-flash",
 			tokens:   UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
-			want:     0.065 + 0.14,
+			want:     0.15 + 0.6,
 		},
 		{
 			name:     "openrouter_flash_cache_hit",
 			provider: config.ProviderOpenRouter,
-			model:    "deepseek/deepseek-v4-flash-0731",
+			model:    "deepseek/deepseek-v4.1-flash",
 			tokens:   UsageTokens{CacheHitTokens: 1_000_000},
-			want:     0.014,
+			want:     0.003,
 		},
 		{
 			name:     "openrouter_pro_input_output",
@@ -268,49 +268,42 @@ func TestEstimateUSDDepSeekPeakOffPeak(t *testing.T) {
 	}{
 		{
 			name:  "flash_off_peak",
-			model: "deepseek-v4-flash",
-			at:    post,
-			toks:  flash,
-			want:  0.22 + 0.66,
-		},
-		{
-			name:  "flash_vision_exp_off_peak",
-			model: "deepseek-v4-flash-vision-exp",
+			model: "deepseek-flash",
 			at:    post,
 			toks:  flash,
 			want:  0.22 + 0.66,
 		},
 		{
 			name:  "flash_peak_hour_1",
-			model: "deepseek-v4-flash",
+			model: "deepseek-flash",
 			at:    time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC),
 			toks:  flash,
 			want:  0.44 + 1.32,
 		},
 		{
 			name:  "flash_peak_hour_9",
-			model: "deepseek-v4-flash",
+			model: "deepseek-flash",
 			at:    time.Date(2026, 8, 17, 9, 59, 59, 0, time.UTC),
 			toks:  flash,
 			want:  0.44 + 1.32,
 		},
 		{
 			name:  "flash_off_peak_hour_4_start",
-			model: "deepseek-v4-flash",
+			model: "deepseek-flash",
 			at:    time.Date(2026, 8, 17, 4, 0, 0, 0, time.UTC),
 			toks:  flash,
 			want:  0.22 + 0.66,
 		},
 		{
 			name:  "flash_off_peak_hour_5_lunch_gap",
-			model: "deepseek-v4-flash",
+			model: "deepseek-flash",
 			at:    time.Date(2026, 8, 17, 5, 0, 0, 0, time.UTC),
 			toks:  flash,
 			want:  0.22 + 0.66,
 		},
 		{
 			name:  "flash_off_peak_hour_10_start",
-			model: "deepseek-v4-flash",
+			model: "deepseek-flash",
 			at:    time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC),
 			toks:  flash,
 			want:  0.22 + 0.66,
@@ -331,7 +324,7 @@ func TestEstimateUSDDepSeekPeakOffPeak(t *testing.T) {
 		},
 		{
 			name:  "flash_sunday_post_weekend_cutover_off_peak",
-			model: "deepseek-v4-flash",
+			model: "deepseek-flash",
 			at:    time.Date(2026, 8, 23, 7, 0, 0, 0, time.UTC), // Sunday Beijing, UTC peak hour
 			toks:  flash,
 			want:  0.22 + 0.66,
@@ -358,7 +351,7 @@ func TestDeepSeekPeakHours(t *testing.T) {
 	}{
 		{"tuesday 07:00 utc peak", time.Date(2026, 8, 18, 7, 0, 0, 0, time.UTC), true},
 		{"tuesday 12:00 utc off-peak", time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC), false},
-		{"sunday pre-weekend-cutover peak hour", time.Date(2026, 1, 11, 7, 0, 0, 0, time.UTC), true},
+		{"sunday off-peak", time.Date(2026, 1, 11, 7, 0, 0, 0, time.UTC), false},
 		{"saturday post-weekend-cutover off-peak", time.Date(2026, 8, 29, 7, 0, 0, 0, time.UTC), false},
 		{"sunday post-weekend-cutover off-peak", time.Date(2026, 8, 23, 7, 0, 0, 0, time.UTC), false},
 		{"monday post-weekend-cutover peak", time.Date(2026, 8, 24, 7, 0, 0, 0, time.UTC), true},
@@ -372,6 +365,30 @@ func TestDeepSeekPeakHours(t *testing.T) {
 	}
 }
 
+// TestDeepSeekFlashPricingCutover pins the 2026-09-14 flash rate update.
+func TestDeepSeekFlashPricingCutover(t *testing.T) {
+	const eps = 1e-9
+	toks := UsageTokens{PromptTokens: 1_000_000, CompletionTokens: 1_000_000}
+	before := time.Date(2026, 9, 13, 23, 59, 59, 0, time.UTC)
+	at := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
+
+	gotOld, err := EstimateUSDAt(config.ProviderDeepSeek, "deepseek-flash", toks, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(gotOld-(0.22+0.66)) > eps {
+		t.Fatalf("pre flash-pricing-cutover = %v, want 0.88", gotOld)
+	}
+
+	gotNew, err := EstimateUSDAt(config.ProviderDeepSeek, "deepseek-flash", toks, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(gotNew-(0.15+0.6)) > eps {
+		t.Fatalf("flash-pricing-cutover instant = %v, want 0.75", gotNew)
+	}
+}
+
 // TestDeepSeekCutoverBoundary pins the exact switchover instant.
 func TestDeepSeekCutoverBoundary(t *testing.T) {
 	const eps = 1e-9
@@ -379,7 +396,7 @@ func TestDeepSeekCutoverBoundary(t *testing.T) {
 	before := time.Date(2026, 8, 16, 15, 59, 59, 0, time.UTC)
 	at := time.Date(2026, 8, 16, 16, 0, 0, 0, time.UTC)
 
-	gotLegacy, err := EstimateUSDAt(config.ProviderDeepSeek, "deepseek-v4-flash", toks, before)
+	gotLegacy, err := EstimateUSDAt(config.ProviderDeepSeek, "deepseek-flash", toks, before)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +404,7 @@ func TestDeepSeekCutoverBoundary(t *testing.T) {
 		t.Fatalf("pre-cutover flash input = %v, want 0.14 (legacy flat card)", gotLegacy)
 	}
 
-	gotNew, err := EstimateUSDAt(config.ProviderDeepSeek, "deepseek-v4-flash", toks, at)
+	gotNew, err := EstimateUSDAt(config.ProviderDeepSeek, "deepseek-flash", toks, at)
 	if err != nil {
 		t.Fatal(err)
 	}

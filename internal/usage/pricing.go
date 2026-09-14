@@ -20,9 +20,8 @@ import (
 //	https://openrouter.ai/docs
 //
 // DeepSeek switched to peak/off-peak billing at 2026-08-16 16:00 UTC; peak
-// hours (01:00–04:00 and 06:00–10:00 UTC) bill at 2x the off-peak rates on
-// Beijing weekdays. From 2026-08-23 00:00 Beijing, weekends (Beijing time)
-// are off-peak all day.
+// hours (01:00–04:00 and 06:00–10:00 UTC, Monday–Friday) bill at 2x the
+// off-peak rates. Flash pricing updated 2026-09-14 per DeepSeek docs.
 
 var ErrUnknownModel = errors.New("unknown model for pricing")
 
@@ -61,42 +60,39 @@ type deepseekRates struct {
 // Retained because pricing is per-request: events recorded before the cutover
 // must keep estimating at legacy rates, not the new card.
 var deepseekPricing = map[string]deepseekRates{
-	"deepseek-v4-flash":            {0.0028, 0.14, 0.28},
-	"deepseek-v4-flash-vision-exp": {0.0028, 0.14, 0.28}, // vision worker; same card as flash until published separately
-	"deepseek-v4-pro":              {0.003625, 0.435, 0.87},
+	"deepseek-flash":  {0.0028, 0.14, 0.28},
+	"deepseek-v4-pro": {0.003625, 0.435, 0.87},
 }
 
-// deepseekPricingOffPeak is the new off-peak card (2026-08-16 16:00 UTC onward).
-// Peak = 2x off-peak on every billing item.
+// deepseekPricingOffPeak is the off-peak card (2026-08-16 16:00 UTC through
+// 2026-09-14 00:00 UTC). Peak = 2x off-peak on every billing item.
 var deepseekPricingOffPeak = map[string]deepseekRates{
-	"deepseek-v4-flash":            {0.007, 0.22, 0.66},
-	"deepseek-v4-flash-vision-exp": {0.007, 0.22, 0.66},
-	"deepseek-v4-pro":              {0.022, 0.66, 1.98},
+	"deepseek-flash":  {0.007, 0.22, 0.66},
+	"deepseek-v4-pro": {0.022, 0.66, 1.98},
+}
+
+// deepseekPricingCurrent is the current off-peak card (2026-09-14 00:00 UTC onward).
+// Source: https://api-docs.deepseek.com/quick_start/pricing
+var deepseekPricingCurrent = map[string]deepseekRates{
+	"deepseek-flash":  {0.003, 0.15, 0.6},
+	"deepseek-v4-pro": {0.022, 0.66, 1.98},
 }
 
 // DeepSeekPeakCutover is when the new peak/off-peak card takes effect.
 // Source: https://api-docs.deepseek.com/quick_start/pricing
 var DeepSeekPeakCutover = time.Date(2026, 8, 16, 16, 0, 0, 0, time.UTC)
 
-// DeepSeekWeekendOffPeakCutover is when Beijing weekend days stop having peak
-// billing windows (effective 2026-08-23 00:00 Beijing = 2026-08-22 16:00 UTC).
-var DeepSeekWeekendOffPeakCutover = time.Date(2026, 8, 22, 16, 0, 0, 0, time.UTC)
-
-// beijingTZ is China Standard Time (UTC+8). DeepSeek defines weekday/weekend
-// billing in Beijing time.
-var beijingTZ = time.FixedZone("Asia/Shanghai", 8*60*60)
+// DeepSeekFlashPricingCutover is when the current flash rate card took effect.
+var DeepSeekFlashPricingCutover = time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
 
 // DeepSeekPeakHours reports whether at falls in a DeepSeek peak billing window.
 // Peak windows are half-open [01:00,04:00) and [06:00,10:00) UTC (hours
-// 1,2,3 and 6,7,8,9) on Beijing weekdays. From DeepSeekWeekendOffPeakCutover
-// onward, Beijing Saturday and Sunday are off-peak all day.
+// 1,2,3 and 6,7,8,9) on UTC weekdays (Monday–Friday).
 func DeepSeekPeakHours(at time.Time) bool {
 	utc := at.UTC()
-	if !utc.Before(DeepSeekWeekendOffPeakCutover) {
-		wd := utc.In(beijingTZ).Weekday()
-		if wd == time.Saturday || wd == time.Sunday {
-			return false
-		}
+	wd := utc.Weekday()
+	if wd == time.Saturday || wd == time.Sunday {
+		return false
 	}
 	h := utc.Hour()
 	return (h >= 1 && h < 4) || (h >= 6 && h < 10)
@@ -112,7 +108,11 @@ func deepseekRateFor(model string, at time.Time) (deepseekRates, error) {
 		}
 		return r, nil
 	}
-	r, ok := deepseekPricingOffPeak[model]
+	card := deepseekPricingOffPeak
+	if !at.Before(DeepSeekFlashPricingCutover) {
+		card = deepseekPricingCurrent
+	}
+	r, ok := card[model]
 	if !ok {
 		return deepseekRates{}, fmt.Errorf("%w: deepseek %q", ErrUnknownModel, model)
 	}
@@ -151,13 +151,13 @@ var zaiPricing = map[string]zaiRates{
 }
 
 // openrouterRates USD per 1M tokens (cache hit, input, output).
-// Source: https://openrouter.ai/deepseek/deepseek-v4-flash-0731
+// Source: https://openrouter.ai/deepseek/deepseek-v4.1-flash
 //
 //	https://openrouter.ai/deepseek/deepseek-v4-pro-0813
 //
 // OpenRouter charges one flat list rate year-round — it does NOT have
 // peak/off-peak pricing (https://openrouter.ai/blog/insights/why-openrouter-for-deepseek/).
-// These are the catalog list rates: flash $0.014/$0.065/$0.14;
+// These are the catalog list rates: flash $0.003/$0.15/$0.60;
 // pro $0.022/$0.66/$1.98. Weighted-average "typical blended" provider rates
 // (informational): flash ≈ $0.0476 in / $0.384 out; pro ≈ $0.2365 in / $3.174 out.
 type openrouterRates struct {
@@ -165,7 +165,7 @@ type openrouterRates struct {
 }
 
 var openrouterPricing = map[string]openrouterRates{
-	"deepseek/deepseek-v4-flash-0731":   {0.014, 0.065, 0.14},
+	"deepseek/deepseek-v4.1-flash":      {0.003, 0.15, 0.6},
 	"deepseek/deepseek-v4-pro-0813":     {0.022, 0.66, 1.98},
 	config.ModelOpenRouterZaiGLM53:      {0.26, 1.40, 4.40},   // verified 2026-08 openrouter.ai/z-ai/glm-5.3
 	config.ModelOpenRouterZaiGLM53Flash: {0.015, 0.075, 0.25}, // Z.AI flash promo USD; list $0.03/$0.15/$0.50
@@ -230,8 +230,7 @@ func CursorComparisonReference() (input, cache, output float64) {
 // EstimateUSDAt computes estimated cost for provider + real model id at the
 // billing instant (per-request timestamp). For DeepSeek the rate card depends
 // on the instant: legacy flat card before 2026-08-16 16:00 UTC, then
-// off-peak/peak (Beijing weekdays: peak hours 01:00–04:00 and 06:00–10:00 UTC
-// bill at 2x; Beijing weekends off-peak all day from Aug 23 2026).
+// off-peak/peak (UTC weekdays: peak hours 01:00–04:00 and 06:00–10:00 UTC bill at 2x).
 func EstimateUSDAt(provider config.Provider, model string, u UsageTokens, at time.Time) (float64, error) {
 	if at.IsZero() {
 		at = time.Now().UTC()

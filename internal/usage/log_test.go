@@ -19,7 +19,7 @@ func TestLogEventIsDebug(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
 	LogEvent(Event{
-		SessionID: "sess-1", Provider: config.ProviderDeepSeek, Model: "deepseek-v4-flash",
+		SessionID: "sess-1", Provider: config.ProviderDeepSeek, Model: "deepseek-flash",
 		PromptTokens: 100, EstUSD: 0.0001, RequestID: "req-1",
 	})
 	out := buf.String()
@@ -87,7 +87,7 @@ func TestAggregatorIdleFlush(t *testing.T) {
 		PromptTokens: 1_000_000, EstUSD: 3.0, RequestID: "r1",
 	})
 	agg.Observe(Event{
-		SessionID: "sess-a", Provider: config.ProviderDeepSeek, Model: "deepseek-v4-flash",
+		SessionID: "sess-a", Provider: config.ProviderDeepSeek, Model: "deepseek-flash",
 		PromptTokens: 1_000_000, CompletionTokens: 1_000_000, EstUSD: 0.42, RequestID: "r2",
 	})
 

@@ -29,7 +29,7 @@ Primary Agent-safe aliases (see `gateway.mdc` for full map):
 | `kimi-k3`        | Moonshot `kimi-k3` (planning; **prefer** — Cursor 1M context default) |
 | `kimi-k2.7-code` | Moonshot `kimi-k2.7-code` (coding; always thinks; **prefer**) |
 | `deepseek-v4-pro` | DeepSeek pro (hard execution; **prefer**) |
-| `deepseek-v4-flash-vision-exp` | DeepSeek flash (cheap execution; native vision; **prefer**) |
+| `deepseek-flash` | DeepSeek flash (cheap execution; native vision; **prefer**) |
 | `thaura`         | Thaura `thaura` (ethical AI; optional)         |
 | `glm-5.3`        | Z.AI `glm-5.3` (planning; always thinks; **prefer**) |
 | `glm-5.3-flash`  | Z.AI `glm-5.3-flash` (cheap execution, 1M context; **prefer**) |
@@ -39,7 +39,7 @@ Primary Agent-safe aliases (see `gateway.mdc` for full map):
 | ~~`gpt-4.1-turbo`~~ | **Deprecated** — same as `glm-5.3`; Cursor assumes ~200k context |
 | ~~`gpt-4.1`~~    | **Deprecated** — same as `glm-5.3-flash`; Cursor assumes ~200k context |
 | ~~`o1`~~         | **Deprecated** — same as `deepseek-v4-pro`; Cursor assumes ~200k context |
-| ~~`o3-mini`~~    | **Deprecated** — same as `deepseek-v4-flash-vision-exp`; Cursor assumes ~200k context |
+| ~~`o3-mini`~~    | **Deprecated** — same as `deepseek-flash`; Cursor assumes ~200k context |
 
 > **Heads-up:** Cursor sometimes rewrites `gpt-4.1-turbo` → `gpt-4-turbo` before
 > sending (client-side model-name matching). That is expected and handled — the
