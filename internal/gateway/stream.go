@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/commoddity/discursive/internal/config"
@@ -130,6 +131,7 @@ func (s *Server) recordAuxUsage(sessionID string, provider config.Provider, mode
 
 // sseUsageScanner extracts usage from streamed SSE chunks.
 type sseUsageScanner struct {
+	mu     sync.Mutex
 	buf    strings.Builder
 	usage  *tokenUsage
 	found  bool
@@ -142,6 +144,11 @@ type modelNotAvailableError struct {
 }
 
 func (sc *sseUsageScanner) feed(p []byte) {
+	if sc == nil {
+		return
+	}
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
 	sc.buf.Write(p)
 	data := sc.buf.String()
 	for {
@@ -155,6 +162,15 @@ func (sc *sseUsageScanner) feed(p []byte) {
 		data = data[idx+1:]
 		sc.consumeLine(line)
 	}
+}
+
+func (sc *sseUsageScanner) snapshot() (found bool, usage *tokenUsage, orHost string, err *modelNotAvailableError) {
+	if sc == nil {
+		return
+	}
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.found, sc.usage, sc.orHost, sc.err
 }
 
 func (sc *sseUsageScanner) consumeLine(line string) {
@@ -277,30 +293,148 @@ func (t *teeScanReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// copySSE copies upstream SSE to the client while scanning usage.
-func copySSE(w http.ResponseWriter, upstream io.Reader, scan *sseUsageScanner) error {
+// SSE comments keep Cursor/cloudflare from idle-dropping a live stream while
+// the upstream model is thinking and emitting no bytes. Only injected at event
+// boundaries (before first byte, or after \n\n / \r\n\r\n) so a ping can never
+// splice into a partial data: JSON line.
+const (
+	sseHeartbeatInterval = 10 * time.Second
+	sseHeartbeatComment  = ": ping\n\n"
+)
+
+type sseCopyStats struct {
+	TTFB       time.Duration
+	Heartbeats int
+}
+
+func sseCopyLogAttrs(stats sseCopyStats) []any {
+	attrs := []any{"ttfb_ms", stats.TTFB.Milliseconds()}
+	if stats.Heartbeats > 0 {
+		attrs = append(attrs, "sse_heartbeats", stats.Heartbeats)
+	}
+	return attrs
+}
+
+func atSSEEventBoundary(tail []byte) bool {
+	if len(tail) == 0 {
+		return true
+	}
+	return bytes.HasSuffix(tail, []byte("\n\n")) || bytes.HasSuffix(tail, []byte("\r\n\r\n"))
+}
+
+func sseTail(tail, p []byte) []byte {
+	const keep = 4
+	if len(p) >= keep {
+		out := make([]byte, keep)
+		copy(out, p[len(p)-keep:])
+		return out
+	}
+	tail = append(append([]byte(nil), tail...), p...)
+	if len(tail) > keep {
+		tail = tail[len(tail)-keep:]
+	}
+	return tail
+}
+
+// copySSE copies upstream SSE to the client while scanning usage and injecting
+// keep-alive comments during silent gaps at event boundaries.
+func copySSE(w http.ResponseWriter, upstream io.Reader, scan *sseUsageScanner) (sseCopyStats, error) {
+	return copySSEWithHeartbeat(w, upstream, scan, sseHeartbeatInterval)
+}
+
+func copySSEWithHeartbeat(w http.ResponseWriter, upstream io.Reader, scan *sseUsageScanner, interval time.Duration) (sseCopyStats, error) {
+	var stats sseCopyStats
 	flusher, _ := w.(http.Flusher)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
+	if flusher != nil {
+		flusher.Flush()
+	}
+
 	reader := bufio.NewReader(teeReader(upstream, scan))
-	buf := make([]byte, 32*1024)
+	type readResult struct {
+		b   []byte
+		err error
+	}
+	ch := make(chan readResult)
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := reader.Read(buf)
+			var b []byte
+			if n > 0 {
+				b = bytes.Clone(buf[:n])
+			}
+			select {
+			case ch <- readResult{b, err}:
+			case <-done:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	started := time.Now()
+	var tail []byte
+	var timerC <-chan time.Time
+	var timer *time.Timer
+	if interval > 0 {
+		timer = time.NewTimer(interval)
+		defer timer.Stop()
+		timerC = timer.C
+	}
+
 	for {
-		n, err := reader.Read(buf)
-		if n > 0 {
-			if _, werr := w.Write(buf[:n]); werr != nil {
-				return werr
+		select {
+		case r := <-ch:
+			if len(r.b) > 0 {
+				if stats.TTFB == 0 {
+					stats.TTFB = time.Since(started)
+				}
+				if _, werr := w.Write(r.b); werr != nil {
+					return stats, werr
+				}
+				if flusher != nil {
+					flusher.Flush()
+				}
+				tail = sseTail(tail, r.b)
 			}
-			if flusher != nil {
-				flusher.Flush()
+			if r.err == io.EOF {
+				return stats, nil
 			}
-		}
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
+			if r.err != nil {
+				return stats, r.err
+			}
+			if timer != nil {
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(interval)
+			}
+		case <-timerC:
+			if atSSEEventBoundary(tail) {
+				if _, werr := w.Write([]byte(sseHeartbeatComment)); werr != nil {
+					return stats, werr
+				}
+				if flusher != nil {
+					flusher.Flush()
+				}
+				tail = sseTail(tail, []byte(sseHeartbeatComment))
+				stats.Heartbeats++
+			}
+			if timer != nil {
+				timer.Reset(interval)
+			}
 		}
 	}
 }

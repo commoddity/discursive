@@ -188,27 +188,34 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Buffer error / non-SSE responses; stream SSE success without buffering.
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 && wantsStream && isSSEContentType(resp.Header.Get("Content-Type")) {
 		scan := &sseUsageScanner{}
-		cerr := copySSE(w, resp.Body, scan)
+		stats, cerr := copySSE(w, resp.Body, scan)
 		_ = resp.Body.Close()
 		lat := time.Since(started)
-		if scan.found && scan.usage != nil {
-			s.recordUsage(sanitized.Provider, sanitized.Model, effort, requestID, lat, *scan.usage)
+		found, usage, _, scanErr := scan.snapshot()
+		if found && usage != nil {
+			s.recordUsage(sanitized.Provider, sanitized.Model, effort, requestID, lat, *usage)
 		}
 		if cerr != nil {
 			logRequest(requestID, "sse_copy_error", cerr.Error(), "effort", effort)
 		}
-		if scan.err != nil {
+		if scanErr != nil {
 			slog.Error("upstream_error",
 				"request_id", requestID,
 				"provider", string(sanitized.Provider),
 				"model", sanitized.Model,
 				"effort", effort,
-				"body", scan.err.message,
+				"body", scanErr.message,
 			)
 		}
-		logRequest(requestID, completionLogAttrs(started, resp.Header, scan, nil,
-			"status", resp.StatusCode, "provider", string(sanitized.Provider), "model", sanitized.Model, "effort", effort, "stream", "passthrough",
-		)...)
+		logAttrs := []any{
+			"status", resp.StatusCode,
+			"provider", string(sanitized.Provider),
+			"model", sanitized.Model,
+			"effort", effort,
+			"stream", "passthrough",
+		}
+		logAttrs = append(logAttrs, sseCopyLogAttrs(stats)...)
+		logRequest(requestID, completionLogAttrs(started, resp.Header, scan, nil, logAttrs...)...)
 		return
 	}
 
@@ -241,26 +248,34 @@ func (s *Server) finishUpstream(w http.ResponseWriter, resp *http.Response, want
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 && wantsStream && isSSEContentType(resp.Header.Get("Content-Type")) {
 		scan := &sseUsageScanner{}
-		cerr := copySSE(w, resp.Body, scan)
+		stats, cerr := copySSE(w, resp.Body, scan)
 		if cerr != nil {
 			logRequest(requestID, "sse_copy_error", cerr.Error(), "effort", effort, "retry", true)
 		}
 		lat := time.Since(started)
-		if scan.found && scan.usage != nil {
-			s.recordUsage(provider, model, effort, requestID, lat, *scan.usage)
+		found, usage, _, scanErr := scan.snapshot()
+		if found && usage != nil {
+			s.recordUsage(provider, model, effort, requestID, lat, *usage)
 		}
-		if scan.err != nil {
+		if scanErr != nil {
 			slog.Error("upstream_error",
 				"request_id", requestID,
 				"provider", string(provider),
 				"model", model,
 				"effort", effort,
-				"body", scan.err.message,
+				"body", scanErr.message,
 			)
 		}
-		logRequest(requestID, completionLogAttrs(started, resp.Header, scan, nil,
-			"status", resp.StatusCode, "provider", string(provider), "model", model, "effort", effort, "stream", "passthrough", "retry", true,
-		)...)
+		logAttrs := []any{
+			"status", resp.StatusCode,
+			"provider", string(provider),
+			"model", model,
+			"effort", effort,
+			"stream", "passthrough",
+			"retry", true,
+		}
+		logAttrs = append(logAttrs, sseCopyLogAttrs(stats)...)
+		logRequest(requestID, completionLogAttrs(started, resp.Header, scan, nil, logAttrs...)...)
 		return
 	}
 	respBody, err := io.ReadAll(resp.Body)
@@ -486,7 +501,7 @@ func isDescribeAfterNative(model string) bool {
 func completionLogAttrs(started time.Time, hdr http.Header, scan *sseUsageScanner, completion map[string]any, extra ...any) []any {
 	host := openRouterHostFromHeaders(hdr)
 	if host == "" && scan != nil {
-		host = scan.orHost
+		_, _, host, _ = scan.snapshot()
 	}
 	if host == "" {
 		host = openRouterHostFromObject(completion)

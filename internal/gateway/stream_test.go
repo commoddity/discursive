@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSSEUsageScanner_DeepSeekHitsAndMisses(t *testing.T) {
@@ -242,7 +243,7 @@ func TestCopySSE_Basic(t *testing.T) {
 	var sc sseUsageScanner
 	w := httptest.NewRecorder()
 
-	err := copySSE(w, upstream, &sc)
+	_, err := copySSE(w, upstream, &sc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +269,7 @@ data: [DONE]
 	var sc sseUsageScanner
 	w := httptest.NewRecorder()
 
-	err := copySSE(w, upstream, &sc)
+	_, err := copySSE(w, upstream, &sc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,5 +563,184 @@ func TestSynthesizeSSE_UsageOnlyOnFinish(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected exactly 1 usage occurrence, got %d", count)
+	}
+}
+
+func TestAtSSEEventBoundary(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{name: "empty is boundary", in: "", want: true},
+		{name: "lf event", in: "data: x\n\n", want: true},
+		{name: "crlf event", in: "data: x\r\n\r\n", want: true},
+		{name: "comment", in: sseHeartbeatComment, want: true},
+		{name: "partial json", in: `data: {"x":`, want: false},
+		{name: "single lf", in: "data: x\n", want: false},
+		{name: "single crlf", in: "data: x\r\n", want: false},
+		{name: "suffix only last 4", in: "abc\n\n", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := atSSEEventBoundary([]byte(tt.in)); got != tt.want {
+				t.Fatalf("atSSEEventBoundary(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSSETail(t *testing.T) {
+	tests := []struct {
+		name string
+		tail string
+		p    string
+		want string
+	}{
+		{name: "short from empty", tail: "", p: "ab", want: "ab"},
+		{name: "keeps last 4 of long p", tail: "zz", p: "abcdefgh", want: "efgh"},
+		{name: "append under 4", tail: "ab", p: "c", want: "abc"},
+		{name: "append overflow", tail: "abc", p: "de", want: "bcde"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := string(sseTail([]byte(tt.tail), []byte(tt.p)))
+			if got != tt.want {
+				t.Fatalf("sseTail(%q, %q) = %q, want %q", tt.tail, tt.p, got, tt.want)
+			}
+		})
+	}
+}
+
+type stallReader struct {
+	chunks [][]byte
+	delays []time.Duration
+	i      int
+}
+
+func (s *stallReader) Read(p []byte) (int, error) {
+	if s.i >= len(s.chunks) {
+		return 0, io.EOF
+	}
+	if s.i < len(s.delays) && s.delays[s.i] > 0 {
+		time.Sleep(s.delays[s.i])
+	}
+	n := copy(p, s.chunks[s.i])
+	s.i++
+	return n, nil
+}
+
+func TestCopySSEHeartbeat(t *testing.T) {
+	const interval = 20 * time.Millisecond
+	const stall = 150 * time.Millisecond
+
+	tests := []struct {
+		name           string
+		chunks         [][]byte
+		delays         []time.Duration
+		wantMinBeats   int
+		wantContains   []string
+		wantContiguous string
+	}{
+		{
+			name:         "ttfb silence gets comment",
+			chunks:       [][]byte{[]byte("data: {\"a\":1}\n\ndata: [DONE]\n\n")},
+			delays:       []time.Duration{stall},
+			wantMinBeats: 1,
+			wantContains: []string{sseHeartbeatComment, `data: {"a":1}`, "data: [DONE]"},
+		},
+		{
+			name:           "mid-line stall does not splice",
+			chunks:         [][]byte{[]byte(`data: {"x":`), []byte("1}\n\ndata: [DONE]\n\n")},
+			delays:         []time.Duration{0, stall},
+			wantMinBeats:   0,
+			wantContains:   []string{"data: [DONE]"},
+			wantContiguous: `data: {"x":1}`,
+		},
+		{
+			name:         "silence after complete event gets comment",
+			chunks:       [][]byte{[]byte("data: {\"a\":1}\n\n"), []byte("data: [DONE]\n\n")},
+			delays:       []time.Duration{0, stall},
+			wantMinBeats: 1,
+			wantContains: []string{sseHeartbeatComment, `data: {"a":1}`, "data: [DONE]"},
+		},
+		{
+			name:         "immediate stream no comment",
+			chunks:       [][]byte{[]byte("data: hello\n\ndata: [DONE]\n\n")},
+			delays:       nil,
+			wantMinBeats: 0,
+			wantContains: []string{"data: hello", "data: [DONE]"},
+		},
+		{
+			name:         "lf event split across reads then silence",
+			chunks:       [][]byte{[]byte("data: {\"a\":1}\n"), []byte("\n"), []byte("data: [DONE]\n\n")},
+			delays:       []time.Duration{0, 0, stall},
+			wantMinBeats: 1,
+			wantContains: []string{sseHeartbeatComment, `data: {"a":1}`, "data: [DONE]"},
+		},
+		{
+			name:         "crlf event split across reads then silence",
+			chunks:       [][]byte{[]byte("data: {\"a\":1}\r\n"), []byte("\r\n"), []byte("data: [DONE]\r\n\r\n")},
+			delays:       []time.Duration{0, 0, stall},
+			wantMinBeats: 1,
+			wantContains: []string{sseHeartbeatComment, "data: [DONE]"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sc sseUsageScanner
+			w := httptest.NewRecorder()
+			src := &stallReader{chunks: tt.chunks, delays: tt.delays}
+			stats, err := copySSEWithHeartbeat(w, src, &sc, interval)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := w.Body.String()
+			if tt.wantMinBeats == 0 {
+				if stats.Heartbeats != 0 {
+					t.Fatalf("heartbeats=%d, want 0; body=%q", stats.Heartbeats, body)
+				}
+			} else if stats.Heartbeats < tt.wantMinBeats {
+				t.Fatalf("heartbeats=%d, want >= %d; body=%q", stats.Heartbeats, tt.wantMinBeats, body)
+			}
+			for _, s := range tt.wantContains {
+				if !strings.Contains(body, s) {
+					t.Fatalf("missing %q in %q", s, body)
+				}
+			}
+			if tt.wantContiguous != "" && !strings.Contains(body, tt.wantContiguous) {
+				t.Fatalf("spliced JSON, missing contiguous %q in %q", tt.wantContiguous, body)
+			}
+			if tt.name == "mid-line stall does not splice" {
+				bad := ": ping\n\n1}"
+				if strings.Contains(body, bad) {
+					t.Fatalf("ping spliced into JSON: %q", body)
+				}
+			}
+		})
+	}
+}
+
+func TestSSETailCrossChunkBoundary(t *testing.T) {
+	tests := []struct {
+		name   string
+		chunks []string
+		want   bool
+	}{
+		{name: "lf split short second", chunks: []string{"data: x\n", "\n"}, want: true},
+		{name: "crlf split short second", chunks: []string{"data: x\r\n", "\r\n"}, want: true},
+		{name: "lf then long next event complete", chunks: []string{"data: x\n", "\ndata: [DONE]\n\n"}, want: true},
+		{name: "lf then next event incomplete", chunks: []string{"data: x\n", "\ndata: {\"a\":"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var tail []byte
+			for _, c := range tt.chunks {
+				tail = sseTail(tail, []byte(c))
+			}
+			if got := atSSEEventBoundary(tail); got != tt.want {
+				t.Fatalf("atSSEEventBoundary after chunks %q = %v, want %v (tail=%q)", tt.chunks, got, tt.want, tail)
+			}
+		})
 	}
 }

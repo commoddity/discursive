@@ -416,6 +416,46 @@ func TestSnapshotControllerCapture_InsertsSnapshots(t *testing.T) {
 	}
 }
 
+func TestSnapshotControllerCapture_SkipsUnconfigured(t *testing.T) {
+	mock := newMockBalanceServer()
+	defer mock.close()
+
+	store, err := usage.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client := &http.Client{
+		Transport: transportTo(mock.server.URL),
+		Timeout:   10 * time.Second,
+	}
+	ctrl := &SnapshotController{
+		store:  store,
+		client: client,
+		ks: KeySource{
+			Moonshot: func() (string, bool) { return "", false },
+			DeepSeek: func() (string, bool) { return "sk-ds-test", true },
+			Zai:      func() (string, bool) { return "sk-zai-test", true },
+		},
+		log: slog.Default(),
+	}
+
+	ctrl.capture(context.Background())
+
+	snaps, err := store.LatestBalanceSnapshots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range snaps {
+		if s.Provider == config.ProviderMoonshot {
+			t.Fatalf("unexpected moonshot snapshot with no key")
+		}
+	}
+	if len(snaps) != 2 {
+		t.Fatalf("got %d snapshots, want 2 (deepseek + zai)", len(snaps))
+	}
+}
+
 func TestSnapshotControllerCapture_IgnoresFailedBalances(t *testing.T) {
 	mock := newMockBalanceServer()
 	defer mock.close()

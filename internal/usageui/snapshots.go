@@ -135,37 +135,46 @@ func (c *SnapshotController) captureOnce(ctx context.Context) {
 
 	go func() {
 		defer wg.Done()
+		if !c.providerConfigured(config.ProviderMoonshot) {
+			return
+		}
 		bal := fetchMoonshotBalance(c.client, c.ks.Moonshot)
 		if bal.AvailableUSD != nil {
 			moonUSD = *bal.AvailableUSD
 			moonTopped = bal.ToppedUp
 			moonOK = true
-		} else {
-			log.Warn("moonshot balance no USD", "err", bal.Error)
+			return
 		}
+		log.Warn("moonshot balance no USD", "err", bal.Error)
 	}()
 
 	go func() {
 		defer wg.Done()
+		if !c.providerConfigured(config.ProviderDeepSeek) {
+			return
+		}
 		bal := fetchDeepSeekBalance(c.client, c.ks.DeepSeek)
 		if bal.AvailableUSD != nil {
 			dsUSD = *bal.AvailableUSD
 			dsTopped = bal.ToppedUp
 			dsOK = true
-		} else {
-			log.Warn("deepseek balance no USD", "err", bal.Error)
+			return
 		}
+		log.Warn("deepseek balance no USD", "err", bal.Error)
 	}()
 
 	go func() {
 		defer wg.Done()
+		if !c.providerConfigured(config.ProviderZai) {
+			return
+		}
 		bal := fetchZaiBalance(c.client, c.ks.Zai)
 		if bal.Amount != nil {
 			zaiCredits = *bal.Amount
 			zaiOK = true
-		} else {
-			log.Warn("zai balance no amount", "err", bal.Error)
+			return
 		}
+		log.Warn("zai balance no amount", "err", bal.Error)
 	}()
 
 	wg.Wait()
